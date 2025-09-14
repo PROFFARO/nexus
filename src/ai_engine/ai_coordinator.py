@@ -15,6 +15,7 @@ import hashlib
 from .llm_interface import LLMInterface
 from .behavioral_analyzer import BehavioralAnalyzer
 from .response_generator import ResponseGenerator
+from .correlation.correlation_engine import CorrelationEngine, ServiceEvent
 
 
 @dataclass
@@ -78,6 +79,8 @@ class AttackContext:
     interaction_patterns: List[str] = field(default_factory=list)  # Pattern IDs
     threat_score: float = 0.0
     session_id: str = field(init=False)
+    correlated_sessions: List[List[str]] = field(default_factory=list)
+    correlation_data: Dict[str, Any] = field(default_factory=dict)
     
     def __post_init__(self):
         """Generate unique session ID"""
@@ -95,6 +98,7 @@ class AICoordinator:
         self.llm_interface = LLMInterface()
         self.behavioral_analyzer = BehavioralAnalyzer()
         self.response_generator = ResponseGenerator()
+        self.correlation_engine = CorrelationEngine()
         
         # Enhanced attack tracking
         self.active_attacks: Dict[str, AttackContext] = {}
@@ -174,6 +178,49 @@ class AICoordinator:
                 attack_context = self._update_attack_context(
                     service, attacker_ip, command, context
                 )
+                
+                # Analyze behavior and get threat assessment
+                behavior_analysis = self.behavioral_analyzer.analyze_command(
+                    command, service, attack_context
+                )
+                
+                # Create correlation event
+                correlation_event = ServiceEvent(
+                    timestamp=datetime.now(),
+                    service=service,
+                    source_ip=attacker_ip,
+                    command=command,
+                    session_id=attack_context.session_id,
+                    attack_type=behavior_analysis["attack_type"],
+                    threat_score=behavior_analysis["threat_score"]["total_score"],
+                    confidence=behavior_analysis["threat_score"]["confidence"],
+                    patterns=behavior_analysis["patterns_detected"],
+                    behavioral_data={
+                        "indicators": behavior_analysis["behavioral_indicators"],
+                        "risk_score": behavior_analysis["risk_score"],
+                        "anomaly_score": behavior_analysis["anomaly_score"]
+                    }
+                )
+                
+                # Process correlation
+                correlation_results = self.correlation_engine.process_event(correlation_event)
+                
+                # Update attack context with correlation results
+                if correlation_results:
+                    attack_context.correlated_sessions = [
+                        r.session_ids for r in correlation_results
+                    ]
+                    attack_context.correlation_data = {
+                        "results": [
+                            {
+                                "type": r.correlation_type,
+                                "score": r.score,
+                                "confidence": r.confidence,
+                                "evidence": r.evidence
+                            }
+                            for r in correlation_results
+                        ]
+                    }
                 
                 # Extract and analyze patterns
                 self._analyze_interaction_patterns(interaction, attack_context)
