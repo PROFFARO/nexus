@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from .patterns.sequence_patterns import (
     BehaviorPattern, CommandSequence, SequencePatternMatcher
 )
+from .scoring.threat_scorer import ThreatScorer, ThreatMetrics
 
 
 class BehavioralAnalyzer:
@@ -42,6 +43,9 @@ class BehavioralAnalyzer:
         
         # Load attack pattern definitions
         self.load_attack_patterns()
+        
+        # Initialize threat scorer
+        self.threat_scorer = ThreatScorer()
     
     def initialize(self):
         """Initialize behavioral analyzer with pattern recognition"""
@@ -148,6 +152,45 @@ class BehavioralAnalyzer:
             
             # Learn from this interaction
             self._update_pattern_learning(command, service, analysis)
+            
+            # Calculate threat score
+            threat_metrics = ThreatMetrics(
+                attack_type=analysis["attack_type"],
+                pattern_confidence=analysis["confidence"],
+                complexity=self.analyze_command_complexity(command)["complexity_score"],
+                service_risk=self.threat_scorer.service_risk_levels.get(service, 0.5),
+                behavioral_risk=analysis["risk_score"],
+                frequency=self.command_frequencies[service][command],
+                first_seen=datetime.now(),  # This will be updated if pattern exists
+                last_seen=datetime.now()
+            )
+            
+            # Update temporal metrics if we have history
+            pattern_key = f"{service}:{command}"
+            if pattern_key in self.known_patterns:
+                pattern = self.known_patterns[pattern_key]
+                threat_metrics.first_seen = pattern.first_seen
+                threat_metrics.last_seen = pattern.last_seen
+                
+                # Calculate progression rate from pattern history
+                progression = self.threat_scorer.analyze_threat_progression(pattern_key)
+                threat_metrics.progression_rate = progression["progression_rate"]
+            
+            # Calculate complete threat score
+            threat_score = self.threat_scorer.calculate_threat_score(threat_metrics)
+            
+            # Add threat information to analysis
+            analysis["threat_score"] = {
+                "total_score": threat_score.total_score,
+                "base_score": threat_score.base_score,
+                "temporal_score": threat_score.temporal_score,
+                "impact_score": threat_score.impact_score,
+                "threat_level": threat_score.threat_level.name,
+                "confidence": threat_score.confidence
+            }
+            
+            # Update threat history
+            self.threat_scorer.update_threat_history(pattern_key, threat_score)
             
         except Exception as e:
             print(f"[{datetime.now()}] Enhanced pattern analysis error: {e}")
