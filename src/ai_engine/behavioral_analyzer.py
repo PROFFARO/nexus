@@ -13,6 +13,7 @@ from .patterns.sequence_patterns import (
     BehaviorPattern, CommandSequence, SequencePatternMatcher
 )
 from .scoring.threat_scorer import ThreatScorer, ThreatMetrics
+from .scoring.threat_responder import ThreatResponder
 
 
 class BehavioralAnalyzer:
@@ -44,8 +45,9 @@ class BehavioralAnalyzer:
         # Load attack pattern definitions
         self.load_attack_patterns()
         
-        # Initialize threat scorer
+        # Initialize threat handling components
         self.threat_scorer = ThreatScorer()
+        self.threat_responder = ThreatResponder()
     
     def initialize(self):
         """Initialize behavioral analyzer with pattern recognition"""
@@ -191,6 +193,29 @@ class BehavioralAnalyzer:
             
             # Update threat history
             self.threat_scorer.update_threat_history(pattern_key, threat_score)
+            
+            # Evaluate and execute response actions
+            context = {
+                "source": attack_context.source if attack_context else "unknown",
+                "service": service,
+                "session_id": attack_context.session_id if attack_context else None,
+                "command": command,
+                "pattern_key": pattern_key
+            }
+            
+            actions = self.threat_responder.evaluate_actions(analysis, context)
+            
+            # Add action results to analysis
+            analysis["actions_taken"] = [
+                {
+                    "type": action.action_type.value,
+                    "success": action.success,
+                    "timestamp": action.timestamp.isoformat(),
+                    "details": action.details,
+                    "error": action.error
+                }
+                for action in actions
+            ]
             
         except Exception as e:
             print(f"[{datetime.now()}] Enhanced pattern analysis error: {e}")
