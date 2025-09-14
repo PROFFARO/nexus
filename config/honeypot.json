@@ -1,0 +1,108 @@
+{
+  "services": {
+    "ssh": {
+      "port": 22,
+      "enabled": true,
+      "ai_enabled": true,
+      "adaptive_responses": true,
+      "max_connections": 50,
+      "connection_timeout": 300
+    },
+    "ftp": {
+      "port": 21,
+      "enabled": true,
+      "ai_enabled": true,
+      "adaptive_responses": true,
+      "max_connections": 30,
+      "connection_timeout": 180
+    },
+    "smb": {
+      "port": 445,
+      "enabled": true,
+      "ai_enabled": true,
+      "adaptive_responses": true,
+      "max_connections": 40,
+      "connection_timeout": 240
+    },
+    "rdp": {
+      "port": 3389,
+      "enabled": true,
+      "ai_enabled": true,
+      "adaptive_responses": true,
+      "max_connections": 20,
+      "connection_timeout": 600
+    },
+    "mysql": {
+      "port": 3306,
+      "enabled": true,
+      "ai_enabled": true,
+      "adaptive_responses": true,
+      "max_connections": 25,
+      "connection_timeout": 120
+    }
+  },
+  "ai_engine": {
+    "model": "llama3-8b",
+    "response_delay": {
+      "min": 0.5,
+      "max": 3.0
+    },
+    "adaptive_learning": true,
+    "behavioral_analysis": true,
+    "real_time_responses": true,
+    "deception_level": 0.7,
+    "engagement_strategy": "adaptive"
+  },
+  "logging": {
+    "level": "INFO",
+    "forensic_chain": true,
+    "real_time_analysis": true,
+    "log_directory": "logs",
+    "retention_days": 90,
+    "compress_old_logs": true,
+    "threat_detection": true
+  },
+  "container": {
+    "enabled": true,
+    "isolation_level": "high",
+    "network_isolation": true,
+    "resource_limits": {
+      "cpu": "1.0",
+      "memory": "512m",
+      "disk": "1g"
+    },
+    "auto_restart": true
+  },
+  "security": {
+    "rate_limiting": {
+      "enabled": true,
+      "max_connections_per_ip": 10,
+      "time_window": 300
+    },
+    "ip_blocking": {
+      "enabled": true,
+      "auto_block_threshold": 50,
+      "block_duration": 3600
+    },
+    "geo_filtering": {
+      "enabled": false,
+      "allowed_countries": [],
+      "blocked_countries": []
+    }
+  },
+  "reporting": {
+    "enabled": true,
+    "daily_reports": true,
+    "weekly_summaries": true,
+    "threat_alerts": true,
+    "export_formats": ["json", "csv", "pdf"],
+    "email_notifications": false
+  },
+  "visualization": {
+    "enabled": true,
+    "dashboard_port": 8080,
+    "real_time_updates": true,
+    "attack_maps": true,
+    "statistics_graphs": true
+  }
+}
