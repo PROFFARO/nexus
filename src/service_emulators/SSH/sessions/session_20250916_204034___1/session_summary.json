@@ -1,0 +1,160 @@
+{
+  "commands": [
+    {
+      "timestamp": "2025-09-16T20:40:46.007637+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T20:40:45.988457+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T20:40:59.437523+00:00",
+      "command": "cd scripts/",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cd scripts/",
+        "timestamp": "2025-09-16T20:40:59.436466+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T20:41:06.490073+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T20:41:06.490073+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T20:41:38.932404+00:00",
+      "command": "chmod +x build_project.sh",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "chmod +x build_project.sh",
+        "timestamp": "2025-09-16T20:41:38.927447+00:00",
+        "attack_types": [
+          "malware_deployment"
+        ],
+        "severity": "critical",
+        "indicators": [
+          "remote_execution",
+          "compilation",
+          "executable_creation",
+          "malware_installation",
+          "shell_deployment"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "malware_deployment",
+            "pattern": "chmod.*\\+x",
+            "severity": "critical"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T20:41:50.262255+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T20:41:50.262255+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    }
+  ],
+  "files_uploaded": [],
+  "files_downloaded": [],
+  "vulnerabilities": [],
+  "attack_analysis": [
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T20:40:45.988457+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cd scripts/",
+      "timestamp": "2025-09-16T20:40:59.436466+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T20:41:06.490073+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "chmod +x build_project.sh",
+      "timestamp": "2025-09-16T20:41:38.927447+00:00",
+      "attack_types": [
+        "malware_deployment"
+      ],
+      "severity": "critical",
+      "indicators": [
+        "remote_execution",
+        "compilation",
+        "executable_creation",
+        "malware_installation",
+        "shell_deployment"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "malware_deployment",
+          "pattern": "chmod.*\\+x",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T20:41:50.262255+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    }
+  ],
+  "start_time": "2025-09-16T20:40:34.093910+00:00",
+  "end_time": "2025-09-16T20:42:18.969891+00:00",
+  "duration": "0:01:44.875981"
+}

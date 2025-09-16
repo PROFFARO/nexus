@@ -9,11 +9,16 @@ import sys
 import json
 import os
 import traceback
-from typing import Optional
+from typing import Optional, Dict, List, Any
 import logging
 import datetime
 import uuid
-from base64 import b64encode
+import hashlib
+import re
+import time
+import shutil
+from pathlib import Path
+from base64 import b64encode, b64decode
 from operator import itemgetter
 from langchain_openai import ChatOpenAI, AzureChatOpenAI
 from langchain_aws import ChatBedrock, ChatBedrockConverse
@@ -27,6 +32,264 @@ from langchain_core.runnables import RunnablePassthrough
 from asyncssh.misc import ConnectionLost
 import socket
 
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
+    print("Environment variables will be loaded from system environment only.")
+
+class AttackAnalyzer:
+    """AI-based attack behavior analyzer with integrated JSON patterns"""
+    
+    def __init__(self):
+        # Load attack patterns from JSON file
+        self.attack_patterns = self._load_attack_patterns()
+        # Load vulnerability signatures from JSON file  
+        self.vulnerability_signatures = self._load_vulnerability_signatures()
+        
+    def _load_attack_patterns(self) -> Dict[str, Any]:
+        """Load attack patterns from JSON configuration"""
+        try:
+            patterns_file = Path(__file__).parent / "attack_patterns.json"
+            with open(patterns_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load attack patterns: {e}")
+            # Fallback to basic patterns
+            return {
+                'reconnaissance': {'patterns': [r'whoami', r'id', r'uname'], 'severity': 'medium'},
+                'privilege_escalation': {'patterns': [r'sudo', r'su -'], 'severity': 'high'}
+            }
+            
+    def _load_vulnerability_signatures(self) -> Dict[str, Any]:
+        """Load vulnerability signatures from JSON configuration"""
+        try:
+            vuln_file = Path(__file__).parent / "vulnerability_signatures.json"
+            with open(vuln_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load vulnerability signatures: {e}")
+            return {}
+        
+    def analyze_command(self, command: str) -> Dict[str, Any]:
+        """Analyze a command for attack patterns using integrated JSON data"""
+        analysis = {
+            'command': command,
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'attack_types': [],
+            'severity': 'low',
+            'indicators': [],
+            'vulnerabilities': [],
+            'pattern_matches': []
+        }
+        
+        # Check attack patterns from JSON
+        for attack_type, attack_data in self.attack_patterns.items():
+            patterns = attack_data.get('patterns', [])
+            for pattern in patterns:
+                if re.search(pattern, command, re.IGNORECASE):
+                    analysis['attack_types'].append(attack_type)
+                    analysis['indicators'].extend(attack_data.get('indicators', []))
+                    analysis['pattern_matches'].append({
+                        'type': attack_type,
+                        'pattern': pattern,
+                        'severity': attack_data.get('severity', 'medium')
+                    })
+                    
+        # Check vulnerability signatures
+        for vuln_id, vuln_data in self.vulnerability_signatures.items():
+            patterns = vuln_data.get('patterns', [])
+            for pattern in patterns:
+                if re.search(pattern, command, re.IGNORECASE):
+                    analysis['vulnerabilities'].append({
+                        'id': vuln_id,
+                        'name': vuln_data.get('name', vuln_id),
+                        'severity': vuln_data.get('severity', 'medium'),
+                        'cvss_score': vuln_data.get('cvss_score', 0.0),
+                        'pattern_matched': pattern
+                    })
+                    
+        # Determine overall severity based on patterns and vulnerabilities
+        severity_scores = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+        max_severity = 'low'
+        
+        # Check attack pattern severities
+        for match in analysis['pattern_matches']:
+            if severity_scores.get(match['severity'], 1) > severity_scores[max_severity]:
+                max_severity = match['severity']
+                
+        # Check vulnerability severities
+        for vuln in analysis['vulnerabilities']:
+            if severity_scores.get(vuln['severity'], 1) > severity_scores[max_severity]:
+                max_severity = vuln['severity']
+                
+        analysis['severity'] = max_severity
+        return analysis
+
+class FileUploadHandler:
+    """Handle file uploads and downloads with forensic logging"""
+    
+    def __init__(self, session_dir: str):
+        self.session_dir = Path(session_dir)
+        self.downloads_dir = self.session_dir / "downloads"
+        self.uploads_dir = self.session_dir / "uploads"
+        self.downloads_dir.mkdir(parents=True, exist_ok=True)
+        self.uploads_dir.mkdir(parents=True, exist_ok=True)
+        
+    def handle_download(self, command: str, content: Optional[bytes] = None) -> Dict[str, Any]:
+        """Handle file download commands (wget, curl, etc.)"""
+        download_info = {
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'command': command,
+            'type': 'download',
+            'status': 'attempted'
+        }
+        
+        # Extract URL from command
+        url_match = re.search(r'(https?://[^\s]+)', command)
+        if url_match:
+            url = url_match.group(1)
+            download_info['url'] = url
+            
+            # Generate fake file
+            filename = url.split('/')[-1] or 'downloaded_file'
+            if '?' in filename:
+                filename = filename.split('?')[0]
+            
+            file_path = self.downloads_dir / filename
+            
+            # Create fake content if not provided
+            if content is None:
+                content = f"# Fake downloaded content from {url}\n# Downloaded at {datetime.datetime.now(datetime.timezone.utc)}\n".encode()
+            
+            with open(file_path, 'wb') as f:
+                f.write(content)
+                
+            download_info.update(
+                filename=filename,
+                file_path=str(file_path),
+                file_size=str(len(content)),
+                file_hash=hashlib.sha256(content).hexdigest(),
+                status='completed'
+            )
+            
+        return download_info
+        
+    def handle_upload(self, filename: str, content: bytes) -> Dict[str, Any]:
+        """Handle file uploads via SCP, SFTP, etc."""
+        upload_info = {
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'filename': filename,
+            'type': 'upload',
+            'file_size': len(content),
+            'file_hash': hashlib.sha256(content).hexdigest()
+        }
+        
+        file_path = self.uploads_dir / filename
+        with open(file_path, 'wb') as f:
+            f.write(content)
+            
+        upload_info['file_path'] = str(file_path)
+        upload_info['status'] = 'completed'
+        
+        return upload_info
+
+class VulnerabilityLogger:
+    """Log and analyze vulnerability exploitation attempts using integrated JSON data"""
+    
+    def __init__(self):
+        # Load vulnerability signatures from JSON file (shared with AttackAnalyzer)
+        self.vulnerability_signatures = self._load_vulnerability_signatures()
+        
+    def _load_vulnerability_signatures(self) -> Dict[str, Any]:
+        """Load vulnerability signatures from JSON configuration"""
+        try:
+            vuln_file = Path(__file__).parent / "vulnerability_signatures.json"
+            with open(vuln_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load vulnerability signatures: {e}")
+            # Fallback patterns
+            return {
+                'CVE-2021-44228': {'patterns': [r'\$\{jndi:', r'ldap://'], 'severity': 'critical'},
+                'COMMAND_INJECTION': {'patterns': [r';.*rm.*-rf', r'&&.*cat'], 'severity': 'critical'}
+            }
+        
+    def analyze_for_vulnerabilities(self, command: str, headers: Optional[Dict] = None) -> List[Dict[str, Any]]:
+        """Analyze command/input for vulnerability exploitation attempts using JSON data"""
+        vulnerabilities = []
+        
+        for vuln_id, vuln_data in self.vulnerability_signatures.items():
+            patterns = vuln_data.get('patterns', [])
+            for pattern in patterns:
+                if re.search(pattern, command, re.IGNORECASE):
+                    vulnerabilities.append({
+                        'vulnerability_id': vuln_id,
+                        'name': vuln_data.get('name', vuln_id),
+                        'description': vuln_data.get('description', ''),
+                        'pattern_matched': pattern,
+                        'input': command,
+                        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                        'severity': vuln_data.get('severity', 'medium'),
+                        'cvss_score': vuln_data.get('cvss_score', 0.0),
+                        'indicators': vuln_data.get('indicators', [])
+                    })
+                    
+        return vulnerabilities
+
+class ForensicChainLogger:
+    """Generate forensic chain of custody for attacks"""
+    
+    def __init__(self, session_dir: str):
+        self.session_dir = Path(session_dir)
+        self.chain_file = self.session_dir / "forensic_chain.json"
+        self.chain_data = {
+            'session_id': str(uuid.uuid4()),
+            'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'events': [],
+            'evidence': [],
+            'attack_timeline': []
+        }
+        
+    def log_event(self, event_type: str, data: Dict[str, Any]):
+        """Log forensic event"""
+        event = {
+            'event_id': str(uuid.uuid4()),
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'event_type': event_type,
+            'data': data,
+            'hash': hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()
+        }
+        
+        self.chain_data['events'].append(event)
+        self._save_chain()
+        
+    def add_evidence(self, evidence_type: str, file_path: str, description: str):
+        """Add evidence to forensic chain"""
+        if os.path.exists(file_path):
+            with open(file_path, 'rb') as f:
+                content = f.read()
+                
+            evidence = {
+                'evidence_id': str(uuid.uuid4()),
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'type': evidence_type,
+                'file_path': file_path,
+                'file_hash': hashlib.sha256(content).hexdigest(),
+                'file_size': len(content),
+                'description': description
+            }
+            
+            self.chain_data['evidence'].append(evidence)
+            self._save_chain()
+            
+    def _save_chain(self):
+        """Save forensic chain to file"""
+        with open(self.chain_file, 'w') as f:
+            json.dump(self.chain_data, f, indent=2)
+
 class JSONFormatter(logging.Formatter):
     def __init__(self, sensor_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -36,17 +299,17 @@ class JSONFormatter(logging.Formatter):
         log_record = {
             "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds"),
             "level": record.levelname,
-            "task_name": record.task_name,
-            "src_ip": record.src_ip,
-            "src_port": record.src_port,
-            "dst_ip": record.dst_ip,
-            "dst_port": record.dst_port,
+            "task_name": getattr(record, "task_name", "-"),
+            "src_ip": getattr(record, "src_ip", "-"),
+            "src_port": getattr(record, "src_port", "-"),
+            "dst_ip": getattr(record, "dst_ip", "-"),
+            "dst_port": getattr(record, "dst_port", "-"),
             "message": record.getMessage(),
             "sensor_name": self.sensor_name,
             "sensor_protocol": "ssh"
         }
         if hasattr(record, 'interactive'):
-            log_record["interactive"] = record.interactive
+            log_record["interactive"] = getattr(record, "interactive", True)
         # Include any additional fields from the extra dictionary
         for key, value in record.__dict__.items():
             if key not in log_record and key != 'args' and key != 'msg':
@@ -57,6 +320,14 @@ class MySSHServer(asyncssh.SSHServer):
     def __init__(self):
         super().__init__()
         self.summary_generated = False
+        self.session_data = {
+            'commands': [],
+            'files_uploaded': [],
+            'files_downloaded': [],
+            'vulnerabilities': [],
+            'attack_analysis': [],
+            'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat()
+        }
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         # Get the source and destination IPs and ports
@@ -79,9 +350,89 @@ class MySSHServer(asyncssh.SSHServer):
         thread_local.dst_ip = dst_ip
         thread_local.dst_port = dst_port
 
-        # Log the connection details
-        logger.info("SSH connection received", extra={"src_ip": src_ip, "src_port": src_port, "dst_ip": dst_ip, "dst_port": dst_port})
+        # -- SAFE SESSION DIR NAME (Windows-safe) --
+        # Build a session id including timestamp + sanitized client IP
+        raw_ip_part = str(src_ip)
+        # Replace anything that is not A-Z a-z 0-9 . _ - with underscore
+        safe_ip_part = re.sub(r'[^A-Za-z0-9._-]', '_', raw_ip_part)
+        # Keep it reasonably short
+        safe_ip_part = safe_ip_part[:100]
 
+        session_id = f"session_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{safe_ip_part}"
+        sessions_dir = Path(config['honeypot'].get('sessions_dir', 'sessions'))
+        self.session_dir = sessions_dir / session_id
+
+        # Create the directory safely (parents=True, exist_ok=True)
+        try:
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            # Fallback: generate a uuid-based session dir if filesystem still rejects name
+            logger.warning("Failed to create session_dir with sanitized name; falling back to uuid", extra={"path": str(self.session_dir), "error": str(e)})
+            safe_uuid = uuid.uuid4().hex
+            self.session_dir = sessions_dir / f"session_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{safe_uuid}"
+            self.session_dir.mkdir(parents=True, exist_ok=True)
+
+        # Initialize integrated components with error handling
+        try:
+            self.attack_analyzer = AttackAnalyzer()
+            self.file_handler = FileUploadHandler(str(self.session_dir))
+            self.vuln_logger = VulnerabilityLogger()
+            self.forensic_logger = ForensicChainLogger(str(self.session_dir))
+            
+            # Cross-reference components for unified threat intelligence
+            self._integrate_threat_intelligence()
+        except Exception as e:
+            logger.error(f"Failed to initialize honeypot components: {e}")
+            # Initialize with minimal functionality
+            self.attack_analyzer = None
+            self.file_handler = None
+            self.vuln_logger = None
+            self.forensic_logger = None
+
+        # Log connection with enhanced details
+        connection_info = {
+            "src_ip": src_ip,
+            "src_port": src_port,
+            "dst_ip": dst_ip,
+            "dst_port": dst_port,
+            "session_id": session_id,
+            "session_dir": str(self.session_dir)
+        }
+        
+        # Add threat intelligence info if available
+        if self.attack_analyzer:
+            connection_info["threat_signatures_loaded"] = len(getattr(self.attack_analyzer, 'vulnerability_signatures', {}))
+            connection_info["attack_patterns_loaded"] = len(getattr(self.attack_analyzer, 'attack_patterns', {}))
+
+        logger.info("SSH connection received", extra=connection_info)
+        
+        if self.forensic_logger:
+            try:
+                self.forensic_logger.log_event("connection_established", connection_info)
+            except Exception as e:
+                logger.error(f"Forensic logging failed: {e}")
+
+    def _integrate_threat_intelligence(self):
+        """Integrate threat intelligence across all components"""
+        try:
+            # Share vulnerability signatures between components
+            if (self.attack_analyzer and self.vuln_logger and 
+                hasattr(self.attack_analyzer, 'vulnerability_signatures') and 
+                hasattr(self.vuln_logger, 'vulnerability_signatures')):
+                # Ensure both components use the same vulnerability data
+                shared_vulns = self.attack_analyzer.vulnerability_signatures
+                self.vuln_logger.vulnerability_signatures = shared_vulns
+                
+            # Log integration status
+            if self.attack_analyzer:
+                logger.info("Threat intelligence integration completed", extra={
+                    "attack_patterns": len(getattr(self.attack_analyzer, 'attack_patterns', {})),
+                    "vulnerability_signatures": len(getattr(self.attack_analyzer, 'vulnerability_signatures', {})),
+                    "components_integrated": ["AttackAnalyzer", "VulnerabilityLogger", "FileUploadHandler", "ForensicChainLogger"]
+                })
+        except Exception as e:
+            logger.error(f"Failed to integrate threat intelligence: {e}")
+        
     def connection_lost(self, exc: Optional[Exception]) -> None:
         if exc:
             logger.error('SSH connection error', extra={"error": str(exc)})
@@ -89,9 +440,33 @@ class MySSHServer(asyncssh.SSHServer):
                 traceback.print_exception(exc)
         else:
             logger.info("SSH connection closed")
+            
+        # Save session summary and forensic data
+        if hasattr(self, 'session_data'):
+            self.session_data['end_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            self.session_data['duration'] = str(datetime.datetime.fromisoformat(self.session_data['end_time']) - 
+                                               datetime.datetime.fromisoformat(self.session_data['start_time']))
+            
+            # Save session data
+            if hasattr(self, 'session_dir'):
+                session_file = self.session_dir / "session_summary.json"
+                with open(session_file, 'w') as f:
+                    json.dump(self.session_data, f, indent=2)
+                    
+                # Add session summary as evidence
+                if hasattr(self, 'forensic_logger') and self.forensic_logger:
+                    try:
+                        self.forensic_logger.add_evidence("session_summary", str(session_file), "Complete session activity summary")
+                        self.forensic_logger.log_event("connection_closed", {"reason": str(exc) if exc else "normal_closure"})
+                    except Exception as e:
+                        logger.error(f"Final forensic logging failed: {e}")
+        
         # Ensure session summary is called on connection loss if attributes are set
         if hasattr(self, '_process') and hasattr(self, '_llm_config') and hasattr(self, '_session'):
-            asyncio.create_task(session_summary(self._process, self._llm_config, self._session, self))
+            try:
+                asyncio.create_task(session_summary(self._process, self._llm_config, self._session, self))
+            except Exception as e:
+                logger.error(f"Failed to create session summary task: {e}")
 
     def begin_auth(self, username: str) -> bool:
         if accounts.get(username) != '':
@@ -125,12 +500,13 @@ async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, 
     if server.summary_generated:
         return
 
-    # When the SSH session ends, ask the LLM to give a nice
-    # summary of the attacker's actions and probable intent,
-    # as well as a snap judgement about whether we should be 
-    # concerned or not.
+    try:
+        # When the SSH session ends, ask the LLM to give a nice
+        # summary of the attacker's actions and probable intent,
+        # as well as a snap judgement about whether we should be 
+        # concerned or not.
 
-    prompt = '''
+        prompt = '''
 Examine the list of all the SSH commands the user issued during
 this session. The user is likely (but not proven) to be an 
 attacker. Analyze the commands and provide the following:
@@ -156,30 +532,47 @@ not need to explain every command, just provide the highlights or
 representative examples.
 '''
 
-    # Ask the LLM for its summary
-    llm_response = await session.ainvoke(
-        {
-            "messages": [HumanMessage(content=prompt)],
-            "username": process.get_extra_info('username'),
-            "interactive": True,
-            "hostname": "corp-edge-ssh-04.corp.example.com",
-            "client_ip": "192.168.1.50"
-        },
-            config=llm_config
-    )
+        # Ask the LLM for its summary with rate limiting protection
+        try:
+            llm_response = await session.ainvoke(
+                {
+                    "messages": [HumanMessage(content=prompt)],
+                    "username": process.get_extra_info('username'),
+                    "interactive": True  # Ensure interactive flag is passed
+                },
+                    config=llm_config
+            )
+            
+            # Extract the judgement from the response
+            judgement = "UNKNOWN"
+            if "Judgement: BENIGN" in llm_response.content:
+                judgement = "BENIGN"
+            elif "Judgement: SUSPICIOUS" in llm_response.content:
+                judgement = "SUSPICIOUS"
+            elif "Judgement: MALICIOUS" in llm_response.content:
+                judgement = "MALICIOUS"
 
-    # Extract the judgement from the response
-    judgement = "UNKNOWN"
-    if "Judgement: BENIGN" in llm_response.content:
-        judgement = "BENIGN"
-    elif "Judgement: SUSPICIOUS" in llm_response.content:
-        judgement = "SUSPICIOUS"
-    elif "Judgement: MALICIOUS" in llm_response.content:
-        judgement = "MALICIOUS"
+            logger.info("Session summary", extra={"details": llm_response.content, "judgement": judgement})
+            
+        except Exception as e:
+            logger.error(f"LLM session summary failed: {e}")
+            # Generate basic summary from session data
+            command_count = len(server.session_data.get('commands', []))
+            attack_count = len(server.session_data.get('attack_analysis', []))
+            
+            if attack_count > 0:
+                judgement = "SUSPICIOUS"
+                summary = f"Session with {command_count} commands and {attack_count} potential attacks detected"
+            else:
+                judgement = "BENIGN"
+                summary = f"Session with {command_count} commands, no obvious threats detected"
+                
+            logger.info("Session summary (fallback)", extra={"details": summary, "judgement": judgement})
 
-    logger.info("Session summary", extra={"details": llm_response.content, "judgement": judgement})
-
-    server.summary_generated = True
+    except Exception as e:
+        logger.error(f"Session summary generation failed: {e}")
+    finally:
+        server.summary_generated = True
 
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
     # This is the main loop for handling SSH client connections. 
@@ -188,88 +581,440 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     # Give each session a unique name
     task_uuid = f"session-{uuid.uuid4()}"
     current_task = asyncio.current_task()
-    current_task.set_name(task_uuid)
+    if current_task is not None and hasattr(current_task, "set_name"):
+        current_task.set_name(task_uuid)
 
     llm_config = {"configurable": {"session_id": task_uuid}}
+    
+    # Store references for session summary
+    server._process = process
+    server._llm_config = llm_config
+    server._session = with_message_history
 
     try:
         if process.command:
             # Handle non-interactive command execution
             command = process.command
-            logger.info("User input", extra={"details": b64encode(command.encode('utf-8')).decode('utf-8'), "interactive": False})
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=command)],
-                    "username": process.get_extra_info('username'),
-                    "interactive": False,
-                    "hostname": "corp-edge-ssh-04.corp.example.com",
-                    "client_ip": "192.168.1.50"
-                },
-                    config=llm_config
-            )
-            process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": False})
-            await session_summary(process, llm_config, with_message_history, server)
+            
+            # Enhanced logging and analysis
+            await process_command(command, process, server, llm_config, interactive=False)
+            try:
+                await session_summary(process, llm_config, with_message_history, server)
+            except Exception as e:
+                logger.error(f"Session summary failed: {e}")
             process.exit(0)
         else:
-            # Handle interactive session
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content="login")],
-                    "username": process.get_extra_info('username'),
-                    "interactive": True,
-                    "hostname": "corp-edge-ssh-04.corp.example.com",
-                    "client_ip": "192.168.1.50"
-                },
-                    config=llm_config
-            )
-
-            process.stdout.write(f"{llm_response.content}")
-            logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
-
-            async for line in process.stdin:
-                line = line.rstrip('\n')
-                logger.info("User input", extra={"details": b64encode(line.encode('utf-8')).decode('utf-8'), "interactive": True})
-
-                # Send the command to the LLM and give the response to the user
+            # Handle interactive session - show banner and MOTD
+            banner = config['ssh'].get('banner', '')
+            motd = config['ssh'].get('motd', '').replace('\\n', '\n')
+            
+            if banner:
+                process.stdout.write(f"{banner}\n")
+            
+            try:
                 llm_response = await with_message_history.ainvoke(
                     {
-                        "messages": [HumanMessage(content=line)],
+                        "messages": [HumanMessage(content="login")],
                         "username": process.get_extra_info('username'),
-                        "interactive": True,
-                        "hostname": "corp-edge-ssh-04.corp.example.com",
-                        "client_ip": "192.168.1.50"
+                        "interactive": True
                     },
                         config=llm_config
                 )
-                if llm_response.content == "YYY-END-OF-SESSION-YYY":
-                    await session_summary(process, llm_config, with_message_history, server)
-                    process.exit(0)
-                    return
-                else:
-                    process.stdout.write(f"{llm_response.content}")
-                    logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+                
+                if motd:
+                    process.stdout.write(f"{motd}\n")
+                process.stdout.write(f"{llm_response.content}")
+                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+            except Exception as e:
+                logger.error(f"Initial LLM request failed: {e}")
+                process.stdout.write("$ ")
+
+            try:
+                async for line in process.stdin:
+                    line = line.rstrip('\n')
+                    
+                    # Process command with enhanced analysis
+                    response = await process_command(line, process, server, llm_config, interactive=True)
+                    
+                    if response == "XXX-END-OF-SESSION-XXX":
+                        try:
+                            await session_summary(process, llm_config, with_message_history, server)
+                        except Exception as e:
+                            logger.error(f"Session summary failed: {e}")
+                        process.exit(0)
+                        return
+            except asyncssh.misc.TerminalSizeChanged:
+                # Handle terminal size changes gracefully
+                logger.info("Terminal size changed, continuing session")
+                pass
+            except Exception as e:
+                logger.error(f"Session handling error: {e}")
 
     except asyncssh.BreakReceived:
         pass
+    except Exception as e:
+        logger.error(f"Client handling error: {e}")
     finally:
-        await session_summary(process, llm_config, with_message_history, server)
+        try:
+            await session_summary(process, llm_config, with_message_history, server)
+        except Exception as e:
+            logger.error(f"Final session summary failed: {e}")
         process.exit(0)
 
-    # Just in case we ever get here, which we probably shouldn't
-    # process.exit(0)
+async def process_command(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool = True) -> str:
+    """Process a command with comprehensive analysis and logging"""
+    
+    # Log user input
+    logger.info("User input", extra={
+        "details": b64encode(command.encode('utf-8')).decode('utf-8'), 
+        "interactive": interactive,
+        "command": command,
+        "username": process.get_extra_info('username')
+    })
+    
+    # Initialize default analysis results
+    attack_analysis = {
+        'command': command,
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'attack_types': [],
+        'severity': 'low',
+        'indicators': [],
+        'vulnerabilities': []
+    }
+    vulnerabilities = []
+    
+    # Analyze command for attacks if analyzer is available
+    if server.attack_analyzer:
+        try:
+            attack_analysis = server.attack_analyzer.analyze_command(command)
+            server.session_data['attack_analysis'].append(attack_analysis)
+        except Exception as e:
+            logger.error(f"Attack analysis failed: {e}")
+    
+    # Check for vulnerabilities if logger is available
+    if server.vuln_logger:
+        try:
+            vulnerabilities = server.vuln_logger.analyze_for_vulnerabilities(command)
+            server.session_data['vulnerabilities'].extend(vulnerabilities)
+            
+            # Cross-reference vulnerabilities with attack patterns for enhanced analysis
+            if vulnerabilities and attack_analysis.get('vulnerabilities'):
+                # Merge vulnerability data for comprehensive threat assessment
+                for vuln in vulnerabilities:
+                    # Check if this vulnerability was also detected by attack analyzer
+                    matching_attack_vulns = [av for av in attack_analysis['vulnerabilities'] if av['id'] == vuln['vulnerability_id']]
+                    if matching_attack_vulns:
+                        vuln['confirmed_by_attack_analyzer'] = True
+                        vuln['attack_context'] = matching_attack_vulns[0]
+        except Exception as e:
+            logger.error(f"Vulnerability analysis failed: {e}")
+    
+    # Log attack analysis if threats detected
+    if attack_analysis.get('attack_types'):
+        logger.warning("Attack pattern detected", extra={
+            "attack_types": attack_analysis['attack_types'],
+            "severity": attack_analysis['severity'],
+            "indicators": attack_analysis.get('indicators', []),
+            "command": command
+        })
+        if server.forensic_logger:
+            try:
+                server.forensic_logger.log_event("attack_detected", attack_analysis)
+            except Exception as e:
+                logger.error(f"Forensic logging failed: {e}")
+    
+    # Log vulnerabilities with enhanced context
+    for vuln in vulnerabilities:
+        try:
+            enhanced_vuln = dict(vuln)
+            enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
+            enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
+            logger.critical("Vulnerability exploitation attempt", extra=enhanced_vuln)
+            if server.forensic_logger:
+                server.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
+        except Exception as e:
+            logger.error(f"Vulnerability logging failed: {e}")
+    
+    # Handle file operations
+    if re.search(r'wget|curl.*-o|scp.*:', command, re.IGNORECASE) and server.file_handler:
+        try:
+            download_info = server.file_handler.handle_download(command)
+            server.session_data['files_downloaded'].append(download_info)
+            logger.info("File download attempt", extra=download_info)
+            if server.forensic_logger:
+                server.forensic_logger.log_event("file_download", download_info)
+                
+                if download_info.get('file_path'):
+                    server.forensic_logger.add_evidence("downloaded_file", download_info['file_path'], f"File downloaded via: {command}")
+        except Exception as e:
+            logger.error(f"File handling failed: {e}")
+    
+    # Store command in session data
+    server.session_data['commands'].append({
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'command': command,
+        'interactive': interactive,
+        'attack_analysis': attack_analysis,
+        'vulnerabilities': vulnerabilities
+    })
+    
+    # Add artificial latency if enabled
+    if config['honeypot'].getboolean('latency_enable', False):
+        min_latency = config['honeypot'].getint('latency_min_ms', 20) / 1000
+        max_latency = config['honeypot'].getint('latency_max_ms', 250) / 1000
+        await asyncio.sleep(min_latency + (max_latency - min_latency) * time.time() % 1)
+    
+    # Handle manual commands first (before LLM)
+    manual_response = handle_manual_commands(command, process)
+    if manual_response:
+        response_content = manual_response
+    else:
+        # Get LLM response with enhanced context and rate limiting protection
+        enhanced_command = command
+        if attack_analysis.get('attack_types'):
+            enhanced_command += f" [HONEYPOT_CONTEXT: Detected {', '.join(attack_analysis['attack_types'])} behavior]"
+        
+        try:
+            llm_response = await with_message_history.ainvoke(
+                {
+                    "messages": [HumanMessage(content=enhanced_command)],
+                    "username": process.get_extra_info('username'),
+                    "interactive": interactive
+                },
+                config=llm_config
+            )
+            response_content = llm_response.content
+        except Exception as e:
+            logger.error(f"LLM request failed: {e}")
+            if "rate limit" in str(e).lower():
+                response_content = "$ "
+            else:
+                response_content = f"bash: {command.split()[0] if command.split() else command}: command not found\n$ "
+    
+    # Handle special commands
+    if command.strip() in ['help', '--help', '-h']:
+        response_content = get_help_text()
+    elif command.strip() == 'exit' or command.strip() == 'logout':
+        response_content = "XXX-END-OF-SESSION-XXX"
+    elif command.startswith('echo ') and '>' in command:
+        handle_file_creation(command, server)
+    
+    if response_content != "XXX-END-OF-SESSION-XXX":
+        process.stdout.write(f"{response_content}")
+        logger.info("LLM response", extra={
+            "details": b64encode(response_content.encode('utf-8')).decode('utf-8'), 
+            "interactive": interactive
+        })
+    
+    return response_content
+
+def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess) -> Optional[str]:
+    """Handle common Unix commands manually for realism"""
+    cmd_parts = command.strip().split()
+    if not cmd_parts:
+        return "$ "
+    
+    cmd = cmd_parts[0].lower()
+    username = process.get_extra_info('username') or 'guest'
+    
+    # ANSI color codes
+    BLUE = '\033[1;34m'
+    GREEN = '\033[1;32m'
+    CYAN = '\033[1;36m'
+    RESET = '\033[0m'
+    
+    if cmd == 'clear':
+        return f"\033[2J\033[H{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'ls':
+        if '-la' in command or '-al' in command:
+            return f"""total 48
+drwxr-xr-x  8 {username} {username} 4096 Jan 15 14:23 {BLUE}.{RESET}
+drwxr-xr-x  3 root     root     4096 Jan 10 09:15 {BLUE}..{RESET}
+-rw-------  1 {username} {username}  220 Jan 10 09:15 .bash_logout
+-rw-------  1 {username} {username} 3526 Jan 10 09:15 .bashrc
+-rw-------  1 {username} {username}  807 Jan 10 09:15 .profile
+drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Desktop{RESET}
+drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Documents{RESET}
+drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Downloads{RESET}
+drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}scripts{RESET}
+-rw-r--r--  1 {username} {username} 1024 Jan 15 14:20 project_notes.txt
+{username}@corp-srv-prod-01:~$ """
+        else:
+            return f"{BLUE}Desktop{RESET}/  {BLUE}Documents{RESET}/  {BLUE}Downloads{RESET}/  {BLUE}scripts{RESET}/  project_notes.txt\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'pwd':
+        return f"/home/{username}\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'whoami':
+        return f"{username}\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'id':
+        return f"uid=1000({username}) gid=1000({username}) groups=1000({username}),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),120(lpadmin),131(lxd),132(sambashare)\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'uname':
+        if '-a' in command:
+            return f"Linux corp-srv-prod-01 5.10.0-21-amd64 #1 SMP Debian 5.10.162-1 (2023-01-21) x86_64 GNU/Linux\n{username}@corp-srv-prod-01:~$ "
+        else:
+            return f"Linux\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'ps':
+        return f"""  PID TTY          TIME CMD
+ 1234 pts/0    00:00:00 bash
+ 1456 pts/0    00:00:00 ps
+{username}@corp-srv-prod-01:~$ """
+    
+    elif cmd == 'date':
+        return f"{datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'uptime':
+        return f" 14:23:17 up 5 days,  3:42,  2 users,  load average: 0.15, 0.12, 0.08\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'df':
+        return f"""Filesystem     1K-blocks    Used Available Use% Mounted on
+/dev/sda1       20971520 8388608  11534336  43% /
+/dev/sda2        1048576  262144    786432  26% /boot
+tmpfs            2097152       0   2097152   0% /tmp
+{username}@corp-srv-prod-01:~$ """
+    
+    elif cmd == 'free':
+        return f"""              total        used        free      shared  buff/cache   available
+Mem:        4194304     1048576     2097152       65536     1048576     2883584
+Swap:       1048576           0     1048576
+{username}@corp-srv-prod-01:~$ """
+    
+    elif cmd == 'cat' and len(cmd_parts) > 1:
+        filename = cmd_parts[1]
+        if filename == 'project_notes.txt':
+            return f"""# Project Development Notes
+
+## Current Tasks
+- Implement user authentication system
+- Database optimization for game stats
+- Security audit scheduled for next week
+
+## Server Configuration
+- Production server: corp-srv-prod-01.nexus.local
+- Database: MySQL 8.0 on port 3306
+- Redis cache on port 6379
+
+{username}@corp-srv-prod-01:~$ """
+        else:
+            return f"cat: {filename}: No such file or directory\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'head' and len(cmd_parts) > 1:
+        filename = cmd_parts[1]
+        if filename == 'project_notes.txt':
+            return f"""# Project Development Notes
+
+## Current Tasks
+- Implement user authentication system
+- Database optimization for game stats
+{username}@corp-srv-prod-01:~$ """
+        else:
+            return f"head: cannot open '{filename}' for reading: No such file or directory\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'tail' and len(cmd_parts) > 1:
+        filename = cmd_parts[1]
+        if filename == 'project_notes.txt':
+            return f"""- Production server: corp-srv-prod-01.nexus.local
+- Database: MySQL 8.0 on port 3306
+- Redis cache on port 6379
+
+{username}@corp-srv-prod-01:~$ """
+        else:
+            return f"tail: cannot open '{filename}' for reading: No such file or directory\n{username}@corp-srv-prod-01:~$ "
+    
+    elif cmd == 'netstat':
+        return f"""Active Internet connections (w/o servers)
+Proto Recv-Q Send-Q Local Address           Foreign Address         State
+tcp        0      0 10.10.100.15:22         10.10.50.100:45678      ESTABLISHED
+tcp        0      0 10.10.100.15:3306       10.10.100.20:33456      ESTABLISHED
+tcp        0      0 10.10.100.15:6379       10.10.100.25:44567      ESTABLISHED
+{username}@corp-srv-prod-01:~$ """
+    
+    elif cmd == 'ifconfig':
+        return f"""eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+        inet 10.10.100.15  netmask 255.255.255.0  broadcast 10.10.100.255
+        inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>
+        ether 08:00:27:4e:66:a1  txqueuelen 1000  (Ethernet)
+        RX packets 125847  bytes 18612489 (17.7 MiB)
+        TX packets 89234   bytes 12456789 (11.8 MiB)
+
+lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
+        inet 127.0.0.1  netmask 255.0.0.0
+        inet6 ::1  prefixlen 128  scopeid 0x10<host>
+        loop  txqueuelen 1000  (Local Loopback)
+{username}@corp-srv-prod-01:~$ """
+    
+    return None
+
+def get_help_text() -> str:
+    """Return help text for common commands"""
+    return """Available commands:
+  ls, dir          - List directory contents
+  cd <dir>         - Change directory
+  pwd              - Print working directory
+  cat <file>       - Display file contents
+  ps               - Show running processes
+  top              - Display system processes
+  whoami           - Show current user
+  id               - Show user and group IDs
+  uname -a         - Show system information
+  netstat -an      - Show network connections
+  ifconfig         - Show network interfaces
+  history          - Show command history
+  clear            - Clear screen
+  exit, logout     - End session
+  help             - Show this help
+"""
+
+def handle_file_creation(command: str, server: MySSHServer):
+    """Handle file creation commands"""
+    try:
+        # Extract filename and content from echo command
+        match = re.match(r'echo\s+["\']?(.+?)["\']?\s*>\s*(.+)', command)
+        if match:
+            content, filename = match.groups()
+            
+            # Create file in session directory if available
+            if hasattr(server, 'session_dir') and server.session_dir:
+                file_path = server.session_dir / "created_files" / filename.strip()
+                file_path.parent.mkdir(parents=True, exist_ok=True)
+                
+                with open(file_path, 'w') as f:
+                    f.write(content.strip())
+                
+                # Log file creation
+                creation_info = {
+                    'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'filename': filename.strip(),
+                    'content': content.strip(),
+                    'file_path': str(file_path),
+                    'command': command
+                }
+                
+                server.session_data['files_uploaded'].append(creation_info)
+                
+                if server.forensic_logger:
+                    server.forensic_logger.log_event("file_created", creation_info)
+                    server.forensic_logger.add_evidence("created_file", str(file_path), f"File created via: {command}")
+            
+    except Exception as e:
+        logger.error(f"Error handling file creation: {e}")
 
 async def start_server() -> None:
+    server_instance = MySSHServer()
+    
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
-        server = process.get_server()
-        await handle_client(process, server)
+        await handle_client(process, server_instance)
 
     await asyncssh.listen(
         port=config['ssh'].getint("port", 8022),
         reuse_address=True,
-        server_factory=MySSHServer,
+        server_factory=lambda: server_instance,
         server_host_keys=config['ssh'].get("host_priv_key", "ssh_host_key"),
-        process_factory=lambda process: handle_client(process, MySSHServer()),
+        process_factory=process_factory,
         server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3")
     )
 
@@ -280,18 +1025,18 @@ class ContextFilter(logging.Filter):
     """
 
     def filter(self, record):
-
-        task = asyncio.current_task()
-        if task:
-            task_name = task.get_name()
-        else:
+        try:
+            # Safely get task name if we're in an async context
+            task_name = getattr(asyncio.current_task(), 'get_name', lambda: '-')()
+        except RuntimeError:
+            # Fallback if we're not in an async context
             task_name = thread_local.__dict__.get('session_id', '-')
 
+        # Add connection details from thread local storage
         record.src_ip = thread_local.__dict__.get('src_ip', '-')
         record.src_port = thread_local.__dict__.get('src_port', '-')   
         record.dst_ip = thread_local.__dict__.get('dst_ip', '-')
         record.dst_port = thread_local.__dict__.get('dst_port', '-')
-
         record.task_name = task_name
         
         return True
@@ -319,37 +1064,36 @@ def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = N
     
     # Get temperature parameter from config, default to 0.2 if not specified
     temperature = config['llm'].getfloat("temperature", 0.2)
+    
+    # Base model kwargs
+    base_kwargs = {"temperature": temperature}
+    
+    # Provider-specific kwargs
+    openai_kwargs = {**base_kwargs, "request_timeout": 30, "max_retries": 2}
+    gemini_kwargs = {**base_kwargs, "timeout": 30}
+    other_kwargs = {**base_kwargs, "request_timeout": 30, "max_retries": 2}
 
     if llm_provider_name == 'openai':
-        llm_model = ChatOpenAI(
-            model=model_name,
-            temperature=temperature
-        )
+        llm_model = ChatOpenAI(model=model_name, **openai_kwargs)
     elif llm_provider_name == 'azure':
         llm_model = AzureChatOpenAI(
             azure_deployment=config['llm'].get("azure_deployment"),
             azure_endpoint=config['llm'].get("azure_endpoint"),
             api_version=config['llm'].get("azure_api_version"),
-            model=config['llm'].get("model_name"),  # Ensure model_name is passed here
-            temperature=temperature
+            model=config['llm'].get("model_name"),
+            **openai_kwargs
         )
     elif llm_provider_name == 'ollama':
-        llm_model = ChatOllama(
-            model=model_name,
-            temperature=temperature
-        )
+        llm_model = ChatOllama(model=model_name, **other_kwargs)
     elif llm_provider_name == 'aws':
         llm_model = ChatBedrockConverse(
             model=model_name,
             region_name=config['llm'].get("aws_region", "us-east-1"),
             credentials_profile_name=config['llm'].get("aws_credentials_profile", "default"),
-            temperature=temperature
+            **other_kwargs
         )
     elif llm_provider_name == 'gemini':
-        llm_model = ChatGoogleGenerativeAI(
-            model=model_name,
-            temperature=temperature
-        )
+        llm_model = ChatGoogleGenerativeAI(model=model_name, **gemini_kwargs)
     else:
         raise ValueError(f"Invalid LLM provider {llm_provider_name}.")
 
@@ -529,4 +1273,3 @@ except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()
     sys.exit(1)
-

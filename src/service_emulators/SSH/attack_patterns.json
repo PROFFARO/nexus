@@ -1,0 +1,175 @@
+{
+  "reconnaissance": {
+    "description": "Information gathering and system enumeration",
+    "patterns": [
+      "whoami", "id", "uname.*-a", "hostname", "uptime", "w", "who", "last",
+      "ps.*aux", "ps.*-ef", "netstat.*-an", "ss.*-tulpn", "ifconfig", "ip.*addr",
+      "cat /etc/passwd", "cat /etc/shadow", "cat /etc/group", "cat /etc/hosts",
+      "ls.*-la", "find.*-name", "locate", "which", "whereis", "type",
+      "cat /proc/version", "cat /proc/cpuinfo", "cat /proc/meminfo",
+      "df.*-h", "mount", "lsblk", "fdisk.*-l", "lscpu", "lsusb", "lspci",
+      "systemctl.*list", "service.*--status-all", "chkconfig.*--list",
+      "crontab.*-l", "cat /etc/crontab", "ls /etc/cron.*",
+      "env", "printenv", "set", "history", "cat.*\\.bash_history"
+    ],
+    "severity": "medium",
+    "indicators": [
+      "system_enumeration", "user_enumeration", "network_discovery",
+      "service_discovery", "file_system_exploration"
+    ]
+  },
+  "privilege_escalation": {
+    "description": "Attempts to gain higher privileges",
+    "patterns": [
+      "sudo.*", "su.*-", "su.*root", "sudo.*-i", "sudo.*-s",
+      "chmod.*\\+s", "chmod.*4755", "find.*-perm.*4000", "find.*-perm.*2000",
+      "find.*-user.*root.*-perm", "find.*-group.*root.*-perm",
+      "cat /etc/sudoers", "cat /etc/passwd.*root", "cat /etc/shadow.*root",
+      "pkexec", "doas", "runuser", "setuid", "setgid",
+      "crontab.*-e", "echo.*>>.*crontab", "systemctl.*enable",
+      "/etc/init.d/", "update-rc.d", "chkconfig",
+      "passwd.*root", "usermod.*-a.*-G.*sudo", "usermod.*-a.*-G.*wheel",
+      "visudo", "NOPASSWD", "ALL=\\(ALL\\)", "kernel.*exploit",
+      "dirty.*cow", "overlayfs", "privilege.*escalation"
+    ],
+    "severity": "high",
+    "indicators": [
+      "sudo_abuse", "suid_exploitation", "cron_manipulation",
+      "service_manipulation", "kernel_exploitation"
+    ]
+  },
+  "persistence": {
+    "description": "Maintaining access to the system",
+    "patterns": [
+      "crontab.*-e", "echo.*>>.*\\.bashrc", "echo.*>>.*\\.profile",
+      "echo.*>>.*\\.bash_profile", "echo.*>>.*\\.zshrc",
+      "systemctl.*enable", "systemctl.*start", "service.*start",
+      "chkconfig.*on", "update-rc.d.*enable",
+      "authorized_keys", "ssh-keygen", "ssh-copy-id",
+      "echo.*>>.*authorized_keys", "cat.*>>.*authorized_keys",
+      "rc\\.local", "/etc/rc\\.local", "init\\.d", "/etc/init\\.d/",
+      "systemd.*service", "/etc/systemd/system/",
+      "at.*now", "batch", "anacron",
+      "nohup.*&", "screen.*-d", "tmux.*new-session.*-d",
+      "backdoor", "rootkit", "persistence", "maintain.*access"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "cron_persistence", "startup_persistence", "ssh_key_persistence",
+      "service_persistence", "background_process"
+    ]
+  },
+  "data_exfiltration": {
+    "description": "Data theft and information extraction",
+    "patterns": [
+      "tar.*czf", "tar.*czvf", "zip.*-r", "gzip", "compress",
+      "scp.*:", "rsync.*:", "nc.*-l", "netcat.*-l",
+      "python.*-m.*http\\.server", "python.*-m.*SimpleHTTPServer",
+      "wget.*--post-data", "curl.*-X.*POST", "curl.*-d",
+      "base64", "xxd", "hexdump", "od.*-x",
+      "cat.*>.*\\.txt", "cp.*sensitive", "mv.*sensitive",
+      "find.*-name.*\\*password\\*", "find.*-name.*\\*secret\\*",
+      "find.*-name.*\\*key\\*", "find.*-name.*\\*config\\*",
+      "grep.*-r.*password", "grep.*-r.*secret", "grep.*-r.*key",
+      "exfiltrate", "steal", "copy.*data", "backup.*data"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "file_compression", "network_transfer", "data_encoding",
+      "sensitive_file_access", "bulk_data_copy"
+    ]
+  },
+  "lateral_movement": {
+    "description": "Moving to other systems in the network",
+    "patterns": [
+      "ssh.*@", "ssh.*-i", "ssh.*-o", "telnet", "rsh", "rlogin",
+      "nmap.*-p", "nmap.*-sS", "nmap.*-sT", "nmap.*-sU",
+      "ping.*-c", "ping.*-i", "traceroute", "tracepath",
+      "arp.*-a", "arp.*-n", "ip.*neigh", "ip.*route",
+      "mount.*cifs", "mount.*nfs", "smbclient", "smbmount",
+      "ftp.*open", "sftp", "nc.*-z", "telnet.*port",
+      "proxychains", "ssh.*-D", "ssh.*-L", "ssh.*-R",
+      "pivot", "tunnel", "port.*forward", "lateral.*movement"
+    ],
+    "severity": "high",
+    "indicators": [
+      "network_scanning", "remote_access", "network_mounting",
+      "tunneling", "proxy_usage"
+    ]
+  },
+  "malware_deployment": {
+    "description": "Installing malicious software",
+    "patterns": [
+      "wget.*\\|.*sh", "curl.*\\|.*bash", "curl.*\\|.*sh",
+      "python.*-c", "perl.*-e", "ruby.*-e", "php.*-r",
+      "gcc.*-o", "make", "cmake", "configure",
+      "chmod.*\\+x", "./[a-zA-Z0-9_-]+", "bash.*[a-zA-Z0-9_-]+\\.sh",
+      "msfvenom", "metasploit", "payload", "shellcode",
+      "reverse.*shell", "bind.*shell", "backdoor",
+      "cryptominer", "botnet", "malware", "trojan",
+      "ransomware", "keylogger", "rootkit"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "remote_execution", "compilation", "executable_creation",
+      "malware_installation", "shell_deployment"
+    ]
+  },
+  "defense_evasion": {
+    "description": "Avoiding detection and analysis",
+    "patterns": [
+      "history.*-c", "history.*-d", "unset.*HISTFILE",
+      "export.*HISTSIZE=0", "export.*HISTFILESIZE=0",
+      "rm.*\\.bash_history", "rm.*\\.zsh_history",
+      "kill.*-9", "pkill", "killall",
+      "chattr.*\\+i", "chattr.*-i", "lsattr",
+      "touch.*-t", "touch.*-d", "touch.*-r",
+      "ln.*-sf", "alias", "unalias",
+      "nohup.*>/dev/null", ">/dev/null.*2>&1",
+      "anti.*forensic", "log.*clearing", "timestamp.*manipulation",
+      "steganography", "obfuscation", "evasion"
+    ],
+    "severity": "high",
+    "indicators": [
+      "log_clearing", "history_manipulation", "process_hiding",
+      "timestamp_manipulation", "anti_forensics"
+    ]
+  },
+  "vulnerability_exploitation": {
+    "description": "Exploiting known vulnerabilities",
+    "patterns": [
+      "\\$\\{jndi:", "ldap://", "rmi://", "dns://",
+      "\\(\\)\\s*\\{", "bash.*-c.*\\(\\)",
+      "%\\{", "ognl:", "struts", "CVE-",
+      "'.*or.*1=1", "union.*select", "drop.*table",
+      "<script>", "javascript:", "onerror=",
+      ";.*rm.*-rf", "&&.*cat", "\\|\\|.*cat",
+      "\\.\\./\\.\\./\\.\\./", "path.*traversal",
+      "A{100,}", "\\\\x90{10,}", "buffer.*overflow",
+      "format.*string", "heap.*overflow", "stack.*overflow"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "log4j_exploitation", "shellshock_exploitation", "struts_exploitation",
+      "sql_injection", "xss_attack", "command_injection",
+      "path_traversal", "buffer_overflow"
+    ]
+  },
+  "credential_access": {
+    "description": "Stealing or cracking credentials",
+    "patterns": [
+      "cat /etc/passwd", "cat /etc/shadow", "cat /etc/group",
+      "john", "hashcat", "hydra", "medusa", "ncrack",
+      "mimikatz", "secretsdump", "lsass", "sam",
+      "ssh.*-i.*id_rsa", "cat.*id_rsa", "cat.*id_dsa",
+      "cat.*\\.ssh/", "ls.*\\.ssh/", "authorized_keys",
+      "password.*crack", "hash.*crack", "brute.*force",
+      "dictionary.*attack", "credential.*dump"
+    ],
+    "severity": "high",
+    "indicators": [
+      "password_file_access", "credential_cracking", "ssh_key_theft",
+      "brute_force_attack", "credential_dumping"
+    ]
+  }
+}
