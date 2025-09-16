@@ -1045,8 +1045,18 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
             response_content = server.format_command_output(command, llm_response.content)
         except Exception as e:
             logger.error(f"LLM request failed: {e}")
-            # Provide a generic error response instead of command not found
-            response_content = "System temporarily unavailable. Please try again."
+            # Provide basic command responses as fallback
+            cmd_lower = command.lower().strip()
+            if cmd_lower == 'ls':
+                response_content = "GameProjects/    Art/           Scripts/       Builds/\nDocumentation/   Tools/         Temp/          .bashrc"
+            elif cmd_lower == 'pwd':
+                response_content = server.current_directory if server else '/home/guest'
+            elif cmd_lower == 'whoami':
+                response_content = process.get_extra_info('username') or 'guest'
+            elif cmd_lower in ['help', '--help', '-h']:
+                response_content = get_help_text()
+            else:
+                response_content = f"bash: {command.split()[0] if command.split() else command}: command not found"
     
     # No file caching - let LLM handle everything
     
@@ -1277,7 +1287,8 @@ def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = N
             **openai_kwargs
         )
     elif llm_provider_name == 'ollama':
-        llm_model = ChatOllama(model=model_name, **other_kwargs)
+        base_url = config['llm'].get('base_url', 'http://localhost:11434')
+        llm_model = ChatOllama(model=model_name, base_url=base_url, **other_kwargs)
     elif llm_provider_name == 'aws':
         llm_model = ChatBedrockConverse(
             model=model_name,
