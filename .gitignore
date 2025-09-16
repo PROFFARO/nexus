@@ -161,10 +161,47 @@ cython_debug/
 #  option (not recommended) you can uncomment the following to ignore the entire idea folder.
 #.idea/
 
-# SSH Keys
-*_host_key
-*.key 
+# SSH Keys and Certificates
+*_host_key*
+*.key
 *.pub
+*.pem
+*.crt
+*.p12
+*.pfx
+ssh_host_*
+id_rsa*
+id_dsa*
+id_ecdsa*
+id_ed25519*
 
-# config files
-*.ini 
+# Environment and Configuration Files
+*.env
+.env.*
+*.ini
+*.conf
+config.ini
+config.conf
+
+# Session Data and Logs
+sessions/
+*.log
+*.json
+forensic_chain.json
+session_summary.json
+attack_patterns.json
+vulnerability_signatures.json
+
+# Honeypot Specific Files
+downloads/
+uploads/
+ssh_log.log
+prompt.txt
+
+# API Keys and Secrets
+*api_key*
+*secret*
+*token*
+*password*
+credentials*
+auth* 

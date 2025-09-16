@@ -846,6 +846,9 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             if banner:
                 process.stdout.write(f"{banner}\n")
             
+            if motd:
+                process.stdout.write(f"{motd}\n")
+            
             try:
                 llm_response = await with_message_history.ainvoke(
                     {
@@ -856,26 +859,18 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                         config=llm_config
                 )
                 
-                if motd:
-                    process.stdout.write(f"{motd}\n")
                 formatted_content = server.format_command_output("login", llm_response.content)
                 if formatted_content.strip():
                     process.stdout.write(f"{formatted_content}\n")
-                process.stdout.write(get_prompt(server))
                 logger.info("LLM response", extra={"details": b64encode(formatted_content.encode('utf-8')).decode('utf-8'), "interactive": True})
             except Exception as e:
                 logger.error(f"Initial LLM request failed: {e}")
-                process.stdout.write(get_prompt(server))
+            
+            process.stdout.write(get_prompt(server))
 
             try:
-                while True:
+                async for line in process.stdin:
                     try:
-                        # Use asyncio.wait_for with a long timeout to prevent hanging
-                        line = await asyncio.wait_for(process.stdin.readline(), timeout=3600)
-                        if not line:
-                            # EOF received, client disconnected
-                            break
-                        
                         line = line.rstrip('\n')
                         
                         # Skip tab completion - let LLM handle everything
@@ -891,48 +886,35 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                             asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
                             process.exit(0)
                             return
-                    except asyncio.TimeoutError:
-                        # Send keepalive on timeout
-                        try:
-                            process.stdout.write("")
-                            await process.stdout.drain()
-                        except:
-                            break
+                    except Exception as cmd_error:
+                        logger.error(f"Command processing error: {cmd_error}")
+                        # Continue processing other commands
                         continue
             except asyncssh.misc.TerminalSizeChanged:
                 # Handle terminal size changes gracefully
                 logger.info("Terminal size changed, continuing session")
-                pass
             except asyncssh.BreakReceived:
                 # Handle Ctrl+C gracefully
                 logger.info("Break received, continuing session")
-                pass
             except (ConnectionResetError, asyncssh.misc.ConnectionLost):
                 # Handle connection issues
                 logger.info("Connection lost")
-                break
             except Exception as e:
                 logger.error(f"Session handling error: {e}")
-                # Don't break the loop for most errors
-                pass
+                # Don't exit on errors
 
     except asyncssh.BreakReceived:
         logger.info("Break received in main handler")
-        pass
     except ConnectionResetError:
         logger.info("Connection reset in main handler")
-        pass
     except Exception as e:
         logger.error(f"Client handling error: {e}")
     finally:
         try:
-            await session_summary(process, llm_config, with_message_history, server)
+            if not server.summary_generated:
+                await session_summary(process, llm_config, with_message_history, server)
         except Exception as e:
             logger.error(f"Final session summary failed: {e}")
-        try:
-            process.exit(0)
-        except:
-            pass
 
 async def process_command(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool = True) -> str:
     """Process a command with comprehensive analysis and logging"""
@@ -1063,10 +1045,8 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
             response_content = server.format_command_output(command, llm_response.content)
         except Exception as e:
             logger.error(f"LLM request failed: {e}")
-            if "rate limit" in str(e).lower():
-                response_content = "$ "
-            else:
-                response_content = f"bash: {command.split()[0] if command.split() else command}: command not found\n$ "
+            # Provide a generic error response instead of command not found
+            response_content = "System temporarily unavailable. Please try again."
     
     # No file caching - let LLM handle everything
     
@@ -1077,7 +1057,7 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         handle_file_creation(command, server)
     
     if response_content != "XXX-END-OF-SESSION-XXX":
-        if response_content.strip():
+        if response_content and response_content.strip():
             process.stdout.write(f"{response_content}\n")
         process.stdout.write(get_prompt(server))
         logger.info("LLM response", extra={
@@ -1228,8 +1208,7 @@ async def start_server() -> None:
         server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3"),
         keepalive_interval=30,
         keepalive_count_max=10,
-        login_timeout=3600,
-        idle_timeout=7200
+        login_timeout=3600
     )
 
 class ContextFilter(logging.Filter):
