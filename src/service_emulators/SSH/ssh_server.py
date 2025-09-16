@@ -320,6 +320,7 @@ class MySSHServer(asyncssh.SSHServer):
     def __init__(self):
         super().__init__()
         self.summary_generated = False
+        self.current_directory = '/home/guest'
         self.session_data = {
             'commands': [],
             'files_uploaded': [],
@@ -637,10 +638,8 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                     response = await process_command(line, process, server, llm_config, interactive=True)
                     
                     if response == "XXX-END-OF-SESSION-XXX":
-                        try:
-                            await session_summary(process, llm_config, with_message_history, server)
-                        except Exception as e:
-                            logger.error(f"Session summary failed: {e}")
+                        # Run session summary in background without blocking exit
+                        asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
                         process.exit(0)
                         return
             except asyncssh.misc.TerminalSizeChanged:
@@ -765,7 +764,7 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         await asyncio.sleep(min_latency + (max_latency - min_latency) * time.time() % 1)
     
     # Handle manual commands first (before LLM)
-    manual_response = handle_manual_commands(command, process)
+    manual_response = handle_manual_commands(command, process, server)
     if manual_response:
         response_content = manual_response
     else:
@@ -794,8 +793,6 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     # Handle special commands
     if command.strip() in ['help', '--help', '-h']:
         response_content = get_help_text()
-    elif command.strip() == 'exit' or command.strip() == 'logout':
-        response_content = "XXX-END-OF-SESSION-XXX"
     elif command.startswith('echo ') and '>' in command:
         handle_file_creation(command, server)
     
@@ -808,11 +805,11 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     
     return response_content
 
-def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess) -> Optional[str]:
-    """Handle common Unix commands manually for realism"""
+def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess, server: Optional['MySSHServer'] = None) -> Optional[str]:
+    """Handle only basic Unix commands manually, pass complex ones to LLM"""
     cmd_parts = command.strip().split()
     if not cmd_parts:
-        return "$ "
+        return get_prompt(server)
     
     cmd = cmd_parts[0].lower()
     username = process.get_extra_info('username') or 'guest'
@@ -823,131 +820,41 @@ def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess) -> 
     CYAN = '\033[1;36m'
     RESET = '\033[0m'
     
-    if cmd == 'clear':
-        return f"\033[2J\033[H{username}@corp-srv-prod-01:~$ "
+    # Handle exit commands immediately
+    if cmd in ['exit', 'logout', 'quit']:
+        return "XXX-END-OF-SESSION-XXX"
     
-    elif cmd == 'ls':
-        if '-la' in command or '-al' in command:
-            return f"""total 48
-drwxr-xr-x  8 {username} {username} 4096 Jan 15 14:23 {BLUE}.{RESET}
-drwxr-xr-x  3 root     root     4096 Jan 10 09:15 {BLUE}..{RESET}
--rw-------  1 {username} {username}  220 Jan 10 09:15 .bash_logout
--rw-------  1 {username} {username} 3526 Jan 10 09:15 .bashrc
--rw-------  1 {username} {username}  807 Jan 10 09:15 .profile
-drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Desktop{RESET}
-drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Documents{RESET}
-drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}Downloads{RESET}
-drwxr-xr-x  2 {username} {username} 4096 Jan 15 10:30 {BLUE}scripts{RESET}
--rw-r--r--  1 {username} {username} 1024 Jan 15 14:20 project_notes.txt
-{username}@corp-srv-prod-01:~$ """
-        else:
-            return f"{BLUE}Desktop{RESET}/  {BLUE}Documents{RESET}/  {BLUE}Downloads{RESET}/  {BLUE}scripts{RESET}/  project_notes.txt\n{username}@corp-srv-prod-01:~$ "
+    # Only handle very basic commands manually
+    elif cmd == 'clear':
+        return f"\033[2J\033[H{get_prompt(server)}"
     
     elif cmd == 'pwd':
-        return f"/home/{username}\n{username}@corp-srv-prod-01:~$ "
+        current_path = server.current_directory if server else f'/home/{username}'
+        return f"{current_path}\n{get_prompt(server)}"
     
     elif cmd == 'whoami':
-        return f"{username}\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'id':
-        return f"uid=1000({username}) gid=1000({username}) groups=1000({username}),4(adm),24(cdrom),27(sudo),30(dip),46(plugdev),120(lpadmin),131(lxd),132(sambashare)\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'uname':
-        if '-a' in command:
-            return f"Linux corp-srv-prod-01 5.10.0-21-amd64 #1 SMP Debian 5.10.162-1 (2023-01-21) x86_64 GNU/Linux\n{username}@corp-srv-prod-01:~$ "
-        else:
-            return f"Linux\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'ps':
-        return f"""  PID TTY          TIME CMD
- 1234 pts/0    00:00:00 bash
- 1456 pts/0    00:00:00 ps
-{username}@corp-srv-prod-01:~$ """
+        return f"{username}\n{get_prompt(server)}"
     
     elif cmd == 'date':
-        return f"{datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n{username}@corp-srv-prod-01:~$ "
+        return f"{datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n{get_prompt(server)}"
     
-    elif cmd == 'uptime':
-        return f" 14:23:17 up 5 days,  3:42,  2 users,  load average: 0.15, 0.12, 0.08\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'df':
-        return f"""Filesystem     1K-blocks    Used Available Use% Mounted on
-/dev/sda1       20971520 8388608  11534336  43% /
-/dev/sda2        1048576  262144    786432  26% /boot
-tmpfs            2097152       0   2097152   0% /tmp
-{username}@corp-srv-prod-01:~$ """
-    
-    elif cmd == 'free':
-        return f"""              total        used        free      shared  buff/cache   available
-Mem:        4194304     1048576     2097152       65536     1048576     2883584
-Swap:       1048576           0     1048576
-{username}@corp-srv-prod-01:~$ """
-    
-    elif cmd == 'cat' and len(cmd_parts) > 1:
-        filename = cmd_parts[1]
-        if filename == 'project_notes.txt':
-            return f"""# Project Development Notes
-
-## Current Tasks
-- Implement user authentication system
-- Database optimization for game stats
-- Security audit scheduled for next week
-
-## Server Configuration
-- Production server: corp-srv-prod-01.nexus.local
-- Database: MySQL 8.0 on port 3306
-- Redis cache on port 6379
-
-{username}@corp-srv-prod-01:~$ """
-        else:
-            return f"cat: {filename}: No such file or directory\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'head' and len(cmd_parts) > 1:
-        filename = cmd_parts[1]
-        if filename == 'project_notes.txt':
-            return f"""# Project Development Notes
-
-## Current Tasks
-- Implement user authentication system
-- Database optimization for game stats
-{username}@corp-srv-prod-01:~$ """
-        else:
-            return f"head: cannot open '{filename}' for reading: No such file or directory\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'tail' and len(cmd_parts) > 1:
-        filename = cmd_parts[1]
-        if filename == 'project_notes.txt':
-            return f"""- Production server: corp-srv-prod-01.nexus.local
-- Database: MySQL 8.0 on port 3306
-- Redis cache on port 6379
-
-{username}@corp-srv-prod-01:~$ """
-        else:
-            return f"tail: cannot open '{filename}' for reading: No such file or directory\n{username}@corp-srv-prod-01:~$ "
-    
-    elif cmd == 'netstat':
-        return f"""Active Internet connections (w/o servers)
-Proto Recv-Q Send-Q Local Address           Foreign Address         State
-tcp        0      0 10.10.100.15:22         10.10.50.100:45678      ESTABLISHED
-tcp        0      0 10.10.100.15:3306       10.10.100.20:33456      ESTABLISHED
-tcp        0      0 10.10.100.15:6379       10.10.100.25:44567      ESTABLISHED
-{username}@corp-srv-prod-01:~$ """
-    
-    elif cmd == 'ifconfig':
-        return f"""eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
-        inet 10.10.100.15  netmask 255.255.255.0  broadcast 10.10.100.255
-        inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>
-        ether 08:00:27:4e:66:a1  txqueuelen 1000  (Ethernet)
-        RX packets 125847  bytes 18612489 (17.7 MiB)
-        TX packets 89234   bytes 12456789 (11.8 MiB)
-
-lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536
-        inet 127.0.0.1  netmask 255.0.0.0
-        inet6 ::1  prefixlen 128  scopeid 0x10<host>
-        loop  txqueuelen 1000  (Local Loopback)
-{username}@corp-srv-prod-01:~$ """
-    
+    # Pass everything else to LLM for dynamic handling
     return None
+    
+
+
+def get_prompt(server: Optional['MySSHServer']) -> str:
+    """Generate dynamic prompt based on current directory"""
+    if server and hasattr(server, 'current_directory'):
+        path = server.current_directory
+        if path == '/home/guest':
+            return "guest@corp-srv-prod-01:~$ "
+        elif path.startswith('/home/guest/'):
+            short_path = path.replace('/home/guest/', '')
+            return f"guest@corp-srv-prod-01:~/{short_path}$ "
+        else:
+            return f"guest@corp-srv-prod-01:{path}$ "
+    return "guest@corp-srv-prod-01:~$ "
 
 def get_help_text() -> str:
     """Return help text for common commands"""

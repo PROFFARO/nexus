@@ -1,0 +1,726 @@
+{
+  "commands": [
+    {
+      "timestamp": "2025-09-16T21:06:34.611093+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:06:34.596096+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:40.728564+00:00",
+      "command": "cd .ssh",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cd .ssh",
+        "timestamp": "2025-09-16T21:06:40.727559+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:42.165038+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:06:42.163610+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:43.923633+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:06:43.922379+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:46.040675+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:06:46.040675+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:49.961271+00:00",
+      "command": "cd ..",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cd ..",
+        "timestamp": "2025-09-16T21:06:49.960268+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:51.053715+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:06:51.052720+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:55.311676+00:00",
+      "command": "pwd",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "pwd",
+        "timestamp": "2025-09-16T21:06:55.307568+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "w",
+            "severity": "medium"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:06:58.295612+00:00",
+      "command": "uname",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "uname",
+        "timestamp": "2025-09-16T21:06:58.295002+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:00.669749+00:00",
+      "command": "uname -a",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "uname -a",
+        "timestamp": "2025-09-16T21:07:00.665224+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "uname.*-a",
+            "severity": "medium"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:04.674898+00:00",
+      "command": "man",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "man",
+        "timestamp": "2025-09-16T21:07:04.674898+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:14.836166+00:00",
+      "command": "man ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "man ls",
+        "timestamp": "2025-09-16T21:07:14.832160+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:43.659413+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:07:43.657408+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:46.568942+00:00",
+      "command": "ls -la",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls -la",
+        "timestamp": "2025-09-16T21:07:46.566845+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "ls.*-la",
+            "severity": "medium"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:07:58.118093+00:00",
+      "command": "chmod +x .env_backup",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "chmod +x .env_backup",
+        "timestamp": "2025-09-16T21:07:58.115088+00:00",
+        "attack_types": [
+          "reconnaissance",
+          "malware_deployment"
+        ],
+        "severity": "critical",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration",
+          "remote_execution",
+          "compilation",
+          "executable_creation",
+          "malware_installation",
+          "shell_deployment"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "env",
+            "severity": "medium"
+          },
+          {
+            "type": "malware_deployment",
+            "pattern": "chmod.*\\+x",
+            "severity": "critical"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:08:11.893886+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:08:11.891896+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:08:12.968173+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:08:12.967078+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:08:19.996807+00:00",
+      "command": "cd confidential/",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cd confidential/",
+        "timestamp": "2025-09-16T21:08:19.991718+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "id",
+            "severity": "medium"
+          }
+        ]
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:11:10.732118+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:11:10.730199+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:11:15.208611+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:11:15.206600+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:11:17.221309+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:11:17.220083+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:11:24.125684+00:00",
+      "command": "cat .ssh",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cat .ssh",
+        "timestamp": "2025-09-16T21:11:24.123679+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:11:33.972713+00:00",
+      "command": "exit",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "exit",
+        "timestamp": "2025-09-16T21:11:33.963380+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    }
+  ],
+  "files_uploaded": [],
+  "files_downloaded": [],
+  "vulnerabilities": [],
+  "attack_analysis": [
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:06:34.596096+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cd .ssh",
+      "timestamp": "2025-09-16T21:06:40.727559+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:06:42.163610+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:06:43.922379+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:06:46.040675+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cd ..",
+      "timestamp": "2025-09-16T21:06:49.960268+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:06:51.052720+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "pwd",
+      "timestamp": "2025-09-16T21:06:55.307568+00:00",
+      "attack_types": [
+        "reconnaissance"
+      ],
+      "severity": "medium",
+      "indicators": [
+        "system_enumeration",
+        "user_enumeration",
+        "network_discovery",
+        "service_discovery",
+        "file_system_exploration"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "reconnaissance",
+          "pattern": "w",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "command": "uname",
+      "timestamp": "2025-09-16T21:06:58.295002+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "uname -a",
+      "timestamp": "2025-09-16T21:07:00.665224+00:00",
+      "attack_types": [
+        "reconnaissance"
+      ],
+      "severity": "medium",
+      "indicators": [
+        "system_enumeration",
+        "user_enumeration",
+        "network_discovery",
+        "service_discovery",
+        "file_system_exploration"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "reconnaissance",
+          "pattern": "uname.*-a",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "command": "man",
+      "timestamp": "2025-09-16T21:07:04.674898+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "man ls",
+      "timestamp": "2025-09-16T21:07:14.832160+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:07:43.657408+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls -la",
+      "timestamp": "2025-09-16T21:07:46.566845+00:00",
+      "attack_types": [
+        "reconnaissance"
+      ],
+      "severity": "medium",
+      "indicators": [
+        "system_enumeration",
+        "user_enumeration",
+        "network_discovery",
+        "service_discovery",
+        "file_system_exploration"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "reconnaissance",
+          "pattern": "ls.*-la",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "command": "chmod +x .env_backup",
+      "timestamp": "2025-09-16T21:07:58.115088+00:00",
+      "attack_types": [
+        "reconnaissance",
+        "malware_deployment"
+      ],
+      "severity": "critical",
+      "indicators": [
+        "system_enumeration",
+        "user_enumeration",
+        "network_discovery",
+        "service_discovery",
+        "file_system_exploration",
+        "remote_execution",
+        "compilation",
+        "executable_creation",
+        "malware_installation",
+        "shell_deployment"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "reconnaissance",
+          "pattern": "env",
+          "severity": "medium"
+        },
+        {
+          "type": "malware_deployment",
+          "pattern": "chmod.*\\+x",
+          "severity": "critical"
+        }
+      ]
+    },
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:08:11.891896+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:08:12.967078+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cd confidential/",
+      "timestamp": "2025-09-16T21:08:19.991718+00:00",
+      "attack_types": [
+        "reconnaissance"
+      ],
+      "severity": "medium",
+      "indicators": [
+        "system_enumeration",
+        "user_enumeration",
+        "network_discovery",
+        "service_discovery",
+        "file_system_exploration"
+      ],
+      "vulnerabilities": [],
+      "pattern_matches": [
+        {
+          "type": "reconnaissance",
+          "pattern": "id",
+          "severity": "medium"
+        }
+      ]
+    },
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:11:10.730199+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:11:15.206600+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:11:17.220083+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cat .ssh",
+      "timestamp": "2025-09-16T21:11:24.123679+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "exit",
+      "timestamp": "2025-09-16T21:11:33.963380+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    }
+  ],
+  "start_time": "2025-09-16T21:06:14.366653+00:00",
+  "end_time": "2025-09-16T21:11:54.430543+00:00",
+  "duration": "0:05:40.063890"
+}

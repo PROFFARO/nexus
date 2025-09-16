@@ -1,0 +1,199 @@
+{
+  "session_id": "d206c7d7-16bc-4f94-b309-ede08d223b63",
+  "start_time": "2025-09-16T21:06:19.500348+00:00",
+  "events": [
+    {
+      "event_id": "28a0e7de-36e9-45ba-9bd4-a781cdeee86e",
+      "timestamp": "2025-09-16T21:06:19.500348+00:00",
+      "event_type": "connection_established",
+      "data": {
+        "src_ip": "::1",
+        "src_port": 23774,
+        "dst_ip": "::1",
+        "dst_port": 8022,
+        "session_id": "session_20250916_210619___1",
+        "session_dir": "sessions\\session_20250916_210619___1",
+        "threat_signatures_loaded": 12,
+        "attack_patterns_loaded": 9
+      },
+      "hash": "14afd8599e1fdd0d4aa781b77826d784d3c551ad42cb0cc1fc8b3bba2f144d00"
+    },
+    {
+      "event_id": "ebe38bfb-7a5a-4a5b-bcb6-a4adaa3d5057",
+      "timestamp": "2025-09-16T21:06:55.309686+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "pwd",
+        "timestamp": "2025-09-16T21:06:55.307568+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "w",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "4088b05099e9ab7004bd716f55cf80d35ca32cbbe8d01674e6a34016c0f0c370"
+    },
+    {
+      "event_id": "55cb5886-72c7-44e8-814d-26da972dd5f1",
+      "timestamp": "2025-09-16T21:07:00.667739+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "uname -a",
+        "timestamp": "2025-09-16T21:07:00.665224+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "uname.*-a",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "3038a462032a1d2410e31bcc309bd45435c5646e6b09d17df1cf2363266e3409"
+    },
+    {
+      "event_id": "958fb0a0-5421-4e44-a13d-26b0401e78ae",
+      "timestamp": "2025-09-16T21:07:46.567943+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "ls -la",
+        "timestamp": "2025-09-16T21:07:46.566845+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "ls.*-la",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "c8adf449c65334077c2feec06f244fcdbfdff0355bfa321666f8a16f3f9a4825"
+    },
+    {
+      "event_id": "89758107-a085-481f-8004-eed89b6b5820",
+      "timestamp": "2025-09-16T21:07:58.117093+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "chmod +x .env_backup",
+        "timestamp": "2025-09-16T21:07:58.115088+00:00",
+        "attack_types": [
+          "reconnaissance",
+          "malware_deployment"
+        ],
+        "severity": "critical",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration",
+          "remote_execution",
+          "compilation",
+          "executable_creation",
+          "malware_installation",
+          "shell_deployment"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "env",
+            "severity": "medium"
+          },
+          {
+            "type": "malware_deployment",
+            "pattern": "chmod.*\\+x",
+            "severity": "critical"
+          }
+        ]
+      },
+      "hash": "65cd184abe061afd6eb6b65a5f9d941caefe19a114a1f8e97bfb5b0243c6e6a3"
+    },
+    {
+      "event_id": "f0170200-bf43-4a2c-855f-fa016fca2630",
+      "timestamp": "2025-09-16T21:08:19.993906+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "cd confidential/",
+        "timestamp": "2025-09-16T21:08:19.991718+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "id",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "7f8dc5dd8d8e04d3a4a1eda8d272e0ddc5cb065cb610c1a3eab51fa945639153"
+    },
+    {
+      "event_id": "a5060f90-fdae-41b7-9b43-87897f872806",
+      "timestamp": "2025-09-16T21:11:54.470198+00:00",
+      "event_type": "connection_closed",
+      "data": {
+        "reason": "normal_closure"
+      },
+      "hash": "174b3f51075cda033dd288753218cb6a65ec158a7dd6b7b5bc7f235566a88a9c"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "b842f469-e9f8-4161-b86c-37d70d810a73",
+      "timestamp": "2025-09-16T21:11:54.469194+00:00",
+      "type": "session_summary",
+      "file_path": "sessions\\session_20250916_210619___1\\session_summary.json",
+      "file_hash": "13fce8e40844c8554aea082e267ccb883353c0eee2c55b1b00cfab7e4a42552e",
+      "file_size": 19620,
+      "description": "Complete session activity summary"
+    }
+  ],
+  "attack_timeline": []
+}
