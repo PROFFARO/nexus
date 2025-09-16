@@ -1,0 +1,72 @@
+{
+  "session_id": "063a5e77-5d80-4338-944a-4e659319e2f4",
+  "start_time": "2025-09-16T22:15:12.748473+00:00",
+  "events": [
+    {
+      "event_id": "598b0f58-2e95-44df-9e54-6fdb296bf3f3",
+      "timestamp": "2025-09-16T22:15:12.749473+00:00",
+      "event_type": "connection_established",
+      "data": {
+        "src_ip": "::1",
+        "src_port": 34248,
+        "dst_ip": "::1",
+        "dst_port": 8022,
+        "session_id": "session_20250916_221512___1",
+        "session_dir": "sessions\\session_20250916_221512___1",
+        "threat_signatures_loaded": 12,
+        "attack_patterns_loaded": 9
+      },
+      "hash": "9663814ff0ce07a4e1eafcea71227b9362695de3821e9a156ce5b8964d1e3a01"
+    },
+    {
+      "event_id": "1f10d781-8c85-47e4-b6f3-7c5056200c2a",
+      "timestamp": "2025-09-16T22:15:34.395804+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "uname -a",
+        "timestamp": "2025-09-16T22:15:34.391808+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "uname.*-a",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "25b169b4d2b06a34eb744c12bcc4838451fc3394c46d26e4b4b4e80e3c4868df"
+    },
+    {
+      "event_id": "cfc922f8-f2ed-4ae8-af12-5755511962e2",
+      "timestamp": "2025-09-16T22:15:54.542077+00:00",
+      "event_type": "connection_closed",
+      "data": {
+        "reason": "normal_closure"
+      },
+      "hash": "174b3f51075cda033dd288753218cb6a65ec158a7dd6b7b5bc7f235566a88a9c"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "cc500d60-2260-4806-a99c-b771ac8758eb",
+      "timestamp": "2025-09-16T22:15:54.539865+00:00",
+      "type": "session_summary",
+      "file_path": "sessions\\session_20250916_221512___1\\session_summary.json",
+      "file_hash": "47212e9dbafa57e8b963e7fe56b1a13fc5f3d387e2d01234a0c35ffda8e63a34",
+      "file_size": 2298,
+      "description": "Complete session activity summary"
+    }
+  ],
+  "attack_timeline": []
+}

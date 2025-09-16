@@ -321,6 +321,7 @@ class MySSHServer(asyncssh.SSHServer):
         super().__init__()
         self.summary_generated = False
         self.current_directory = '/home/guest'
+        self.command_history = []  # Track command history for history command
         self.session_data = {
             'commands': [],
             'files_uploaded': [],
@@ -329,6 +330,239 @@ class MySSHServer(asyncssh.SSHServer):
             'attack_analysis': [],
             'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+
+    def format_command_output(self, command: str, output: str) -> str:
+        """Format command output to look like real Unix shell output"""
+        if not output or not output.strip():
+            return ""
+            
+        # Remove ALL ANSI escape sequences thoroughly
+        clean_output = re.sub(r'\x1b\[[0-9;]*[mK]', '', output)
+        clean_output = re.sub(r'\[\d*;?\d*m', '', clean_output)
+        clean_output = re.sub(r'\[0m', '', clean_output)
+        clean_output = re.sub(r'\[01;34m', '', clean_output)
+        
+        # Remove any existing prompts from output
+        clean_output = re.sub(r'guest@[^$]*\$\s*', '', clean_output)
+        
+        # Normalize whitespace
+        clean_output = re.sub(r'\s+', ' ', clean_output.strip())
+        
+        # Determine command type
+        cmd_lower = command.lower().strip()
+        
+        if cmd_lower.startswith('ls'):
+            return self._format_ls_output(clean_output, command)
+        elif cmd_lower.startswith('cd'):
+            return self._handle_cd_command(command)
+        elif cmd_lower.startswith('ps'):
+            return self._format_ps_output(clean_output)
+        elif cmd_lower.startswith('netstat'):
+            return self._format_netstat_output(clean_output)
+        elif cmd_lower.startswith('top'):
+            return self._format_top_output(clean_output)
+        elif cmd_lower.startswith('df'):
+            return self._format_df_output(clean_output)
+        elif cmd_lower.startswith('find'):
+            return self._format_find_output(clean_output)
+        elif cmd_lower.startswith('grep'):
+            return self._format_grep_output(clean_output)
+        elif cmd_lower.startswith('cat'):
+            return self._format_cat_output(clean_output)
+        elif cmd_lower.startswith('ifconfig'):
+            return self._format_ifconfig_output(clean_output)
+        elif cmd_lower.startswith('mount'):
+            return self._format_mount_output(clean_output)
+        else:
+            return clean_output
+    
+    def _format_ls_output(self, output: str, command: str = '') -> str:
+        """Format ls command output horizontally with proper spacing"""
+        items = output.split()
+        if not items:
+            return ""
+            
+        # Check if -l flag is used for long format
+        if '-l' in command:
+            return output
+            
+        # Format horizontally with colors and proper spacing
+        formatted_items = []
+        for item in items:
+            # Color directories (items ending with / or common directory patterns)
+            if item.endswith('/') or any(pattern in item.lower() for pattern in ['docs', 'config', 'scripts', 'reports', 'projects', 'tools', 'admin', 'backup', 'logs', 'temp']):
+                formatted_items.append(f'\033[34m{item:<18}\033[0m')
+            else:
+                formatted_items.append(f'{item:<18}')
+        
+        # Arrange in rows of 4 items each
+        rows = []
+        for i in range(0, len(formatted_items), 4):
+            row = formatted_items[i:i+4]
+            rows.append(''.join(row).rstrip())
+        
+        return '\n'.join(rows)
+    
+    def _handle_cd_command(self, command: str) -> str:
+        """Handle cd command and update current directory"""
+        parts = command.strip().split()
+        if len(parts) < 2:
+            return ""
+        
+        target_dir = parts[1].rstrip('/')
+        
+        if target_dir == '..':
+            # Go back to parent directory
+            if self.current_directory != '/home/guest':
+                path_parts = self.current_directory.split('/')
+                if len(path_parts) > 3:  # /home/guest/...
+                    self.current_directory = '/'.join(path_parts[:-1])
+                else:
+                    self.current_directory = '/home/guest'
+            return ""
+        elif target_dir == '~':
+            self.current_directory = '/home/guest'
+            return ""
+        elif target_dir == '' or target_dir == '.':
+            # Stay in current directory
+            return ""
+        elif target_dir.startswith('~/'):
+            # Handle ~/path format
+            relative_path = target_dir[2:]  # Remove ~/
+            self.current_directory = f'/home/guest/{relative_path}'
+            return ""
+        elif target_dir.startswith('/'):
+            # Absolute path - validate it's within allowed range
+            if target_dir.startswith('/home/guest'):
+                self.current_directory = target_dir
+            else:
+                return f"-bash: cd: {target_dir}: Permission denied"
+            return ""
+        else:
+            # Relative path - prevent duplicate directory names
+            if self.current_directory == '/home/guest':
+                self.current_directory = f'/home/guest/{target_dir}'
+            else:
+                # Check if we're already in the target directory to prevent duplication
+                current_basename = os.path.basename(self.current_directory)
+                if current_basename == target_dir:
+                    # Already in the target directory, don't duplicate
+                    return ""
+                else:
+                    self.current_directory = f'{self.current_directory}/{target_dir}'
+            return ""
+    
+    def _format_ps_output(self, output: str) -> str:
+        """Format ps command output with proper columns"""
+        formatted = "  PID TTY          TIME CMD\n"
+        formatted += " 1234 pts/0    00:00:01 bash\n"
+        formatted += " 5678 pts/0    00:00:00 ps\n"
+        return formatted.rstrip()
+    
+    def _format_netstat_output(self, output: str) -> str:
+        """Format netstat command output with proper columns"""
+        lines = output.split('\n')
+        if not lines:
+            return output
+        
+        formatted = "Proto Recv-Q Send-Q Local Address           Foreign Address         State\n"
+        for line in lines:
+            if line.strip() and not line.startswith('Proto'):
+                parts = line.split()
+                if len(parts) >= 6:
+                    proto = parts[0][:5].ljust(5)
+                    recv_q = parts[1][:6].ljust(6)
+                    send_q = parts[2][:6].ljust(6)
+                    local = parts[3][:23].ljust(23)
+                    foreign = parts[4][:23].ljust(23)
+                    state = parts[5] if len(parts) > 5 else ''
+                    formatted += f"{proto} {recv_q} {send_q} {local} {foreign} {state}\n"
+        return formatted.rstrip()
+    
+    def _format_top_output(self, output: str) -> str:
+        """Format top command output with proper structure"""
+        lines = output.split('\n')
+        if not lines:
+            return output
+        
+        formatted = "top - " + datetime.datetime.now().strftime("%H:%M:%S") + " up 1 day, 2:34, 1 user, load average: 0.15, 0.12, 0.08\n"
+        formatted += "Tasks: 142 total,   1 running, 141 sleeping,   0 stopped,   0 zombie\n"
+        formatted += "%Cpu(s):  2.3 us,  1.2 sy,  0.0 ni, 96.2 id,  0.3 wa,  0.0 hi,  0.0 si,  0.0 st\n"
+        formatted += "MiB Mem :   7982.4 total,   1234.5 free,   2345.6 used,   4402.3 buff/cache\n"
+        formatted += "MiB Swap:   2048.0 total,   2048.0 free,      0.0 used.   5234.8 avail Mem\n\n"
+        formatted += "  PID USER      PR  NI    VIRT    RES    SHR S  %CPU  %MEM     TIME+ COMMAND\n"
+        
+        for i, line in enumerate(lines[:10]):
+            if line.strip():
+                parts = line.split()
+                if len(parts) >= 4:
+                    pid = str(1000 + i).rjust(5)
+                    user = "guest"[:8].ljust(8)
+                    pr = "20".rjust(3)
+                    ni = "0".rjust(4)
+                    virt = "123456".rjust(8)
+                    res = "12345".rjust(7)
+                    shr = "1234".rjust(7)
+                    s = "S"
+                    cpu = "0.3".rjust(6)
+                    mem = "0.2".rjust(6)
+                    time = "0:00.12".rjust(10)
+                    cmd = parts[0] if parts else "bash"
+                    formatted += f"{pid} {user} {pr} {ni} {virt} {res} {shr} {s} {cpu} {mem} {time} {cmd}\n"
+        
+        return formatted.rstrip()
+    
+    def _format_df_output(self, output: str) -> str:
+        """Format df command output with proper columns"""
+        formatted = "Filesystem     1K-blocks    Used Available Use% Mounted on\n"
+        formatted += "/dev/sda1       20971520 8388608  12582912  40% /\n"
+        formatted += "tmpfs            4096000       0   4096000   0% /dev/shm\n"
+        formatted += "/dev/sda2       10485760 2097152   8388608  20% /home\n"
+        return formatted
+    
+    def _format_find_output(self, output: str) -> str:
+        """Format find command output with proper paths"""
+        lines = output.split('\n')
+        formatted_lines = []
+        for line in lines:
+            if line.strip() and not line.startswith('.'):
+                formatted_lines.append(f"./{line.strip()}")
+        return '\n'.join(formatted_lines)
+    
+    def _format_grep_output(self, output: str) -> str:
+        """Format grep command output with highlighting"""
+        lines = output.split('\n')
+        formatted_lines = []
+        for line in lines:
+            if line.strip():
+                formatted_lines.append(line.strip())
+        return '\n'.join(formatted_lines)
+    
+    def _format_cat_output(self, output: str) -> str:
+        """Format cat command output as plain text"""
+        return output.strip()
+    
+    def _format_ifconfig_output(self, output: str) -> str:
+        """Format ifconfig command output with proper network interface structure"""
+        formatted = "eth0: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500\n"
+        formatted += "        inet 192.168.1.100  netmask 255.255.255.0  broadcast 192.168.1.255\n"
+        formatted += "        inet6 fe80::a00:27ff:fe4e:66a1  prefixlen 64  scopeid 0x20<link>\n"
+        formatted += "        ether 08:00:27:4e:66:a1  txqueuelen 1000  (Ethernet)\n"
+        formatted += "        RX packets 1234  bytes 567890 (554.5 KiB)\n"
+        formatted += "        TX packets 987  bytes 123456 (120.5 KiB)\n\n"
+        formatted += "lo: flags=73<UP,LOOPBACK,RUNNING>  mtu 65536\n"
+        formatted += "        inet 127.0.0.1  netmask 255.0.0.0\n"
+        formatted += "        inet6 ::1  prefixlen 128  scopeid 0x10<host>\n"
+        formatted += "        loop  txqueuelen 1000  (Local Loopback)\n"
+        return formatted
+    
+    def _format_mount_output(self, output: str) -> str:
+        """Format mount command output with proper filesystem structure"""
+        formatted = "/dev/sda1 on / type ext4 (rw,relatime)\n"
+        formatted += "proc on /proc type proc (rw,nosuid,nodev,noexec,relatime)\n"
+        formatted += "sysfs on /sys type sysfs (rw,nosuid,nodev,noexec,relatime)\n"
+        formatted += "tmpfs on /tmp type tmpfs (rw,nosuid,nodev)\n"
+        return formatted
 
     def connection_made(self, conn: asyncssh.SSHServerConnection) -> None:
         # Get the source and destination IPs and ports
@@ -624,32 +858,69 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
                 
                 if motd:
                     process.stdout.write(f"{motd}\n")
-                process.stdout.write(f"{llm_response.content}")
-                logger.info("LLM response", extra={"details": b64encode(llm_response.content.encode('utf-8')).decode('utf-8'), "interactive": True})
+                formatted_content = server.format_command_output("login", llm_response.content)
+                if formatted_content.strip():
+                    process.stdout.write(f"{formatted_content}\n")
+                process.stdout.write(get_prompt(server))
+                logger.info("LLM response", extra={"details": b64encode(formatted_content.encode('utf-8')).decode('utf-8'), "interactive": True})
             except Exception as e:
                 logger.error(f"Initial LLM request failed: {e}")
-                process.stdout.write("$ ")
+                process.stdout.write(get_prompt(server))
 
             try:
-                async for line in process.stdin:
-                    line = line.rstrip('\n')
-                    
-                    # Process command with enhanced analysis
-                    response = await process_command(line, process, server, llm_config, interactive=True)
-                    
-                    if response == "XXX-END-OF-SESSION-XXX":
-                        # Run session summary in background without blocking exit
-                        asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
-                        process.exit(0)
-                        return
+                while True:
+                    try:
+                        # Use asyncio.wait_for with a long timeout to prevent hanging
+                        line = await asyncio.wait_for(process.stdin.readline(), timeout=3600)
+                        if not line:
+                            # EOF received, client disconnected
+                            break
+                        
+                        line = line.rstrip('\n')
+                        
+                        # Skip tab completion - let LLM handle everything
+                        if '\t' in line:
+                            line = line.replace('\t', '')
+                            # Just continue with the command without tab completion
+                        
+                        # Process command with enhanced analysis
+                        response = await process_command(line, process, server, llm_config, interactive=True)
+                        
+                        if response == "XXX-END-OF-SESSION-XXX":
+                            # Run session summary in background without blocking exit
+                            asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
+                            process.exit(0)
+                            return
+                    except asyncio.TimeoutError:
+                        # Send keepalive on timeout
+                        try:
+                            process.stdout.write("")
+                            await process.stdout.drain()
+                        except:
+                            break
+                        continue
             except asyncssh.misc.TerminalSizeChanged:
                 # Handle terminal size changes gracefully
                 logger.info("Terminal size changed, continuing session")
                 pass
+            except asyncssh.BreakReceived:
+                # Handle Ctrl+C gracefully
+                logger.info("Break received, continuing session")
+                pass
+            except (ConnectionResetError, asyncssh.misc.ConnectionLost):
+                # Handle connection issues
+                logger.info("Connection lost")
+                break
             except Exception as e:
                 logger.error(f"Session handling error: {e}")
+                # Don't break the loop for most errors
+                pass
 
     except asyncssh.BreakReceived:
+        logger.info("Break received in main handler")
+        pass
+    except ConnectionResetError:
+        logger.info("Connection reset in main handler")
         pass
     except Exception as e:
         logger.error(f"Client handling error: {e}")
@@ -658,7 +929,10 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             await session_summary(process, llm_config, with_message_history, server)
         except Exception as e:
             logger.error(f"Final session summary failed: {e}")
-        process.exit(0)
+        try:
+            process.exit(0)
+        except:
+            pass
 
 async def process_command(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool = True) -> str:
     """Process a command with comprehensive analysis and logging"""
@@ -748,7 +1022,7 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         except Exception as e:
             logger.error(f"File handling failed: {e}")
     
-    # Store command in session data
+    # Store command in session data and history
     server.session_data['commands'].append({
         'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
         'command': command,
@@ -756,6 +1030,10 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         'attack_analysis': attack_analysis,
         'vulnerabilities': vulnerabilities
     })
+    
+    # Add to command history (skip empty commands and history command itself)
+    if command.strip() and not command.strip().lower() == 'history':
+        server.command_history.append(command.strip())
     
     # Add artificial latency if enabled
     if config['honeypot'].getboolean('latency_enable', False):
@@ -782,13 +1060,15 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
                 },
                 config=llm_config
             )
-            response_content = llm_response.content
+            response_content = server.format_command_output(command, llm_response.content)
         except Exception as e:
             logger.error(f"LLM request failed: {e}")
             if "rate limit" in str(e).lower():
                 response_content = "$ "
             else:
                 response_content = f"bash: {command.split()[0] if command.split() else command}: command not found\n$ "
+    
+    # No file caching - let LLM handle everything
     
     # Handle special commands
     if command.strip() in ['help', '--help', '-h']:
@@ -797,7 +1077,9 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         handle_file_creation(command, server)
     
     if response_content != "XXX-END-OF-SESSION-XXX":
-        process.stdout.write(f"{response_content}")
+        if response_content.strip():
+            process.stdout.write(f"{response_content}\n")
+        process.stdout.write(get_prompt(server))
         logger.info("LLM response", extra={
             "details": b64encode(response_content.encode('utf-8')).decode('utf-8'), 
             "interactive": interactive
@@ -806,55 +1088,76 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     return response_content
 
 def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess, server: Optional['MySSHServer'] = None) -> Optional[str]:
-    """Handle only basic Unix commands manually, pass complex ones to LLM"""
+    """Handle only basic Unix commands that don't require file/folder arguments"""
     cmd_parts = command.strip().split()
     if not cmd_parts:
-        return get_prompt(server)
+        return ""
     
     cmd = cmd_parts[0].lower()
     username = process.get_extra_info('username') or 'guest'
-    
-    # ANSI color codes
-    BLUE = '\033[1;34m'
-    GREEN = '\033[1;32m'
-    CYAN = '\033[1;36m'
-    RESET = '\033[0m'
     
     # Handle exit commands immediately
     if cmd in ['exit', 'logout', 'quit']:
         return "XXX-END-OF-SESSION-XXX"
     
-    # Only handle very basic commands manually
+    # Handle cd command manually for directory tracking
+    elif cmd == 'cd':
+        if server:
+            return server._handle_cd_command(command)
+        return ""
+    
+    # Only handle basic commands that don't need file arguments
     elif cmd == 'clear':
-        return f"\033[2J\033[H{get_prompt(server)}"
+        return "\033[2J\033[H"
     
     elif cmd == 'pwd':
         current_path = server.current_directory if server else f'/home/{username}'
-        return f"{current_path}\n{get_prompt(server)}"
+        return current_path
     
     elif cmd == 'whoami':
-        return f"{username}\n{get_prompt(server)}"
+        return username
     
     elif cmd == 'date':
-        return f"{datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')}\n{get_prompt(server)}"
+        return datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Z %Y')
     
-    # Pass everything else to LLM for dynamic handling
+    elif cmd == 'history':
+        if server and hasattr(server, 'command_history'):
+            history_output = ""
+            for i, hist_cmd in enumerate(server.command_history, 1):
+                history_output += f"{i:5d}  {hist_cmd}\n"
+            return history_output.rstrip()
+        else:
+            return "bash: history: command not found"
+    
+    # Pass everything else to LLM (ls, cat, find, etc.)
     return None
     
 
+
+def clean_ansi_sequences(text: str) -> str:
+    """Clean malformed ANSI escape sequences from text"""
+    text = re.sub(r'\x1b\[[0-9;]*m', '', text)
+    text = re.sub(r'\s*\[\d*;?\d*m\s*', '', text)
+    text = re.sub(r'\s*\[\d+m\s*', '', text)
+    text = re.sub(r'\b\d+\s+', '\n', text)
+    text = re.sub(r'\s+', ' ', text)
+    text = re.sub(r'\n\s+', '\n', text)
+    return text.strip()
+
+# Removed file caching and tab completion functions - LLM handles everything
 
 def get_prompt(server: Optional['MySSHServer']) -> str:
     """Generate dynamic prompt based on current directory"""
     if server and hasattr(server, 'current_directory'):
         path = server.current_directory
         if path == '/home/guest':
-            return "guest@corp-srv-prod-01:~$ "
+            return "guest@corp-srv-01:~$ "
         elif path.startswith('/home/guest/'):
             short_path = path.replace('/home/guest/', '')
-            return f"guest@corp-srv-prod-01:~/{short_path}$ "
+            return f"guest@corp-srv-01:~/{short_path}$ "
         else:
-            return f"guest@corp-srv-prod-01:{path}$ "
-    return "guest@corp-srv-prod-01:~$ "
+            return f"guest@corp-srv-01:{path}$ "
+    return "guest@corp-srv-01:~$ "
 
 def get_help_text() -> str:
     """Return help text for common commands"""
@@ -922,7 +1225,11 @@ async def start_server() -> None:
         server_factory=lambda: server_instance,
         server_host_keys=config['ssh'].get("host_priv_key", "ssh_host_key"),
         process_factory=process_factory,
-        server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3")
+        server_version=config['ssh'].get("server_version_string", "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3"),
+        keepalive_interval=30,
+        keepalive_count_max=10,
+        login_timeout=3600,
+        idle_timeout=7200
     )
 
 class ContextFilter(logging.Filter):

@@ -1,0 +1,134 @@
+{
+  "session_id": "72e64c91-d195-4767-bfe0-c9b1780e36fc",
+  "start_time": "2025-09-16T21:41:55.918732+00:00",
+  "events": [
+    {
+      "event_id": "cee42a2b-f692-4dfa-bcde-3bb0359e56db",
+      "timestamp": "2025-09-16T21:41:55.919816+00:00",
+      "event_type": "connection_established",
+      "data": {
+        "src_ip": "::1",
+        "src_port": 29235,
+        "dst_ip": "::1",
+        "dst_port": 8022,
+        "session_id": "session_20250916_214155___1",
+        "session_dir": "sessions\\session_20250916_214155___1",
+        "threat_signatures_loaded": 12,
+        "attack_patterns_loaded": 9
+      },
+      "hash": "fcf2dfa0432505d9d69d66ab614e34e3551cfea96172b483054a66eb19f5512d"
+    },
+    {
+      "event_id": "52e2de8e-a838-42a9-b155-9cd92c8d3d27",
+      "timestamp": "2025-09-16T21:42:14.556358+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "guest@corp-srv-prod-01:~$ history",
+        "timestamp": "2025-09-16T21:42:14.555361+00:00",
+        "attack_types": [
+          "reconnaissance"
+        ],
+        "severity": "medium",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "history",
+            "severity": "medium"
+          }
+        ]
+      },
+      "hash": "65c82a6c7b6abd93e7300aecb46e6edc9d12c34174d79630539738f7e9b20077"
+    },
+    {
+      "event_id": "ebdcec10-63d9-4fd5-b74b-836af613fb25",
+      "timestamp": "2025-09-16T21:42:20.140814+00:00",
+      "event_type": "attack_detected",
+      "data": {
+        "command": "1 login 2 ls 3 clar 4 ls 5 cd Music/ 6 ls 7 cd .. 8 ls 9 file dev_notes.txt 10 ls 11 cet dev_notes.txt 12 cat dev_notes.txt 13 cd /src/assets/phoenix/charecters/ 14 cd / 15 ls 16 cd etc/secrets/db_config.ini 17 cd /etc/secrets/ 18 ls 19 ping google.com 20 history guest@corp-dev-01:/etc/secrets $",
+        "timestamp": "2025-09-16T21:42:20.135894+00:00",
+        "attack_types": [
+          "reconnaissance",
+          "reconnaissance",
+          "malware_deployment",
+          "defense_evasion"
+        ],
+        "severity": "critical",
+        "indicators": [
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration",
+          "system_enumeration",
+          "user_enumeration",
+          "network_discovery",
+          "service_discovery",
+          "file_system_exploration",
+          "remote_execution",
+          "compilation",
+          "executable_creation",
+          "malware_installation",
+          "shell_deployment",
+          "log_clearing",
+          "history_manipulation",
+          "process_hiding",
+          "timestamp_manipulation",
+          "anti_forensics"
+        ],
+        "vulnerabilities": [],
+        "pattern_matches": [
+          {
+            "type": "reconnaissance",
+            "pattern": "set",
+            "severity": "medium"
+          },
+          {
+            "type": "reconnaissance",
+            "pattern": "history",
+            "severity": "medium"
+          },
+          {
+            "type": "malware_deployment",
+            "pattern": "./[a-zA-Z0-9_-]+",
+            "severity": "critical"
+          },
+          {
+            "type": "defense_evasion",
+            "pattern": "history.*-d",
+            "severity": "high"
+          }
+        ]
+      },
+      "hash": "a746bb7498bff7208885a1ee81d4e9636b48d017bd279418ee69aeeb44b6b24b"
+    },
+    {
+      "event_id": "53fcb315-c4d6-4aea-9bff-20d77ed7bc1d",
+      "timestamp": "2025-09-16T21:44:00.084921+00:00",
+      "event_type": "connection_closed",
+      "data": {
+        "reason": "normal_closure"
+      },
+      "hash": "174b3f51075cda033dd288753218cb6a65ec158a7dd6b7b5bc7f235566a88a9c"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "98b36b31-41e6-4756-91ac-2368befe473a",
+      "timestamp": "2025-09-16T21:44:00.083910+00:00",
+      "type": "session_summary",
+      "file_path": "sessions\\session_20250916_214155___1\\session_summary.json",
+      "file_hash": "4c1b4a76b34db5b0c7d1ce81fc4df20344768369689b5a42f4d311341cd042fb",
+      "file_size": 11764,
+      "description": "Complete session activity summary"
+    }
+  ],
+  "attack_timeline": []
+}

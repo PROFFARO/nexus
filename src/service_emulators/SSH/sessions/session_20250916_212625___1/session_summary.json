@@ -1,0 +1,108 @@
+{
+  "commands": [
+    {
+      "timestamp": "2025-09-16T21:26:55.617391+00:00",
+      "command": "clear",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "clear",
+        "timestamp": "2025-09-16T21:26:55.601450+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:26:57.379265+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:26:57.379265+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:27:14.237103+00:00",
+      "command": "cd project_notes/",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "cd project_notes/",
+        "timestamp": "2025-09-16T21:27:14.234557+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:27:21.569583+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:27:21.569583+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    }
+  ],
+  "files_uploaded": [],
+  "files_downloaded": [],
+  "vulnerabilities": [],
+  "attack_analysis": [
+    {
+      "command": "clear",
+      "timestamp": "2025-09-16T21:26:55.601450+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:26:57.379265+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "cd project_notes/",
+      "timestamp": "2025-09-16T21:27:14.234557+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:27:21.569583+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    }
+  ],
+  "start_time": "2025-09-16T21:26:10.654875+00:00",
+  "end_time": "2025-09-16T21:27:48.268011+00:00",
+  "duration": "0:01:37.613136"
+}

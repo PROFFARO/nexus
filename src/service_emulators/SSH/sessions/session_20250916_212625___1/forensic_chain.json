@@ -1,0 +1,43 @@
+{
+  "session_id": "fe7f8565-43a5-4d1d-a114-9a1ea0205cf0",
+  "start_time": "2025-09-16T21:26:25.163277+00:00",
+  "events": [
+    {
+      "event_id": "cfc167d7-4355-47ce-a19d-632fa60aed64",
+      "timestamp": "2025-09-16T21:26:25.163277+00:00",
+      "event_type": "connection_established",
+      "data": {
+        "src_ip": "::1",
+        "src_port": 26698,
+        "dst_ip": "::1",
+        "dst_port": 8022,
+        "session_id": "session_20250916_212625___1",
+        "session_dir": "sessions\\session_20250916_212625___1",
+        "threat_signatures_loaded": 12,
+        "attack_patterns_loaded": 9
+      },
+      "hash": "ed3909010425f0e6cddebd48366496e0abba88447ab4be6a6cf3edee5d90a3b1"
+    },
+    {
+      "event_id": "4b67beae-4928-40e3-9b9a-1ce02a58428d",
+      "timestamp": "2025-09-16T21:27:48.300006+00:00",
+      "event_type": "connection_closed",
+      "data": {
+        "reason": "normal_closure"
+      },
+      "hash": "174b3f51075cda033dd288753218cb6a65ec158a7dd6b7b5bc7f235566a88a9c"
+    }
+  ],
+  "evidence": [
+    {
+      "evidence_id": "58736001-1e66-413f-b232-f6dc7673c048",
+      "timestamp": "2025-09-16T21:27:48.299013+00:00",
+      "type": "session_summary",
+      "file_path": "sessions\\session_20250916_212625___1\\session_summary.json",
+      "file_hash": "bd27956595bf041cf8726b21b0ef11de38e6e8229fd59e23bf809244b9af5eb7",
+      "file_size": 2935,
+      "description": "Complete session activity summary"
+    }
+  ],
+  "attack_timeline": []
+}

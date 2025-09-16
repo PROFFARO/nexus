@@ -1,0 +1,84 @@
+{
+  "commands": [
+    {
+      "timestamp": "2025-09-16T21:55:58.947291+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:55:58.923642+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:56:13.013173+00:00",
+      "command": "ls",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "ls",
+        "timestamp": "2025-09-16T21:56:13.013173+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    },
+    {
+      "timestamp": "2025-09-16T21:58:58.975099+00:00",
+      "command": "exit",
+      "interactive": true,
+      "attack_analysis": {
+        "command": "exit",
+        "timestamp": "2025-09-16T21:58:58.974019+00:00",
+        "attack_types": [],
+        "severity": "low",
+        "indicators": [],
+        "vulnerabilities": [],
+        "pattern_matches": []
+      },
+      "vulnerabilities": []
+    }
+  ],
+  "files_uploaded": [],
+  "files_downloaded": [],
+  "vulnerabilities": [],
+  "attack_analysis": [
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:55:58.923642+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "ls",
+      "timestamp": "2025-09-16T21:56:13.013173+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    },
+    {
+      "command": "exit",
+      "timestamp": "2025-09-16T21:58:58.974019+00:00",
+      "attack_types": [],
+      "severity": "low",
+      "indicators": [],
+      "vulnerabilities": [],
+      "pattern_matches": []
+    }
+  ],
+  "start_time": "2025-09-16T21:55:36.056627+00:00",
+  "end_time": "2025-09-16T21:58:59.987495+00:00",
+  "duration": "0:03:23.930868"
+}

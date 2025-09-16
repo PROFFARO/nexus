@@ -1,0 +1,24 @@
+{
+  "session_id": "a39dcc3a-810c-4211-93f6-18608e4aefa7",
+  "start_time": "2025-09-16T21:51:45.459335+00:00",
+  "events": [
+    {
+      "event_id": "3d1fb57c-03ea-4bad-9a79-537151075d57",
+      "timestamp": "2025-09-16T21:51:45.460291+00:00",
+      "event_type": "connection_established",
+      "data": {
+        "src_ip": "::1",
+        "src_port": 30727,
+        "dst_ip": "::1",
+        "dst_port": 8022,
+        "session_id": "session_20250916_215145___1",
+        "session_dir": "sessions\\session_20250916_215145___1",
+        "threat_signatures_loaded": 12,
+        "attack_patterns_loaded": 9
+      },
+      "hash": "a439c1c9f13fc4b0481aa2d228ed0b92975c20aba132d6637429ddc5a841a819"
+    }
+  ],
+  "evidence": [],
+  "attack_timeline": []
+}
