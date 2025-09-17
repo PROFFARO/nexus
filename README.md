@@ -23,18 +23,22 @@ NEXUS is an intelligent honeypot platform that simulates realistic corporate env
 - **AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama
 
 ### FTP Honeypot ✅ **ACTIVE**
-- **Status**: Fully operational with AI integration
+- **Status**: Fully operational with AI integration and telnet support
 - **Features**:
   - AI-powered adaptive FTP responses using multiple LLM providers
-  - Real-time FTP attack pattern recognition
-  - Directory traversal and bounce attack detection
-  - Forensic chain of custody logging
-  - File transfer monitoring and analysis
-  - Authentication brute force detection
-  - Behavioral analysis and threat scoring
+  - Real-time FTP attack pattern recognition and vulnerability detection
+  - Directory traversal, bounce attack, and brute force detection
+  - Forensic chain of custody logging with complete session recording
+  - File transfer monitoring with hash analysis and malware detection
+  - Telnet client compatibility with command aliases (ls/dir)
+  - Proper FTP data connection handling for standard clients
+  - Dynamic directory listing generation based on attack context
+  - Multi-line AI response support for complex interactions
+  - Standard FTP protocol compliance with consistent status codes
 - **Location**: `src/service_emulators/FTP/`
 - **Port**: 2121 (configurable)
 - **AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama
+- **Client Support**: Standard FTP clients, telnet, command-line tools
 
 ### HTTP/Web Honeypot 🚧 **PLANNED**
 - **Status**: Directory structure created, implementation pending
@@ -91,16 +95,27 @@ NEXUS is an intelligent honeypot platform that simulates realistic corporate env
 
 ### FTP Honeypot Setup
 
-1. **Configure Environment**:
+1. **Install Dependencies**:
+   ```bash
+   pip install asyncssh langchain-openai langchain-google-genai python-dotenv matplotlib seaborn pandas
+   ```
+
+2. **Configure Environment**:
    ```bash
    cp src/service_emulators/FTP/.env.example src/service_emulators/FTP/.env
    # Edit .env with your API keys
    ```
 
-2. **Run FTP Honeypot**:
+3. **Run FTP Honeypot**:
    ```bash
    cd src/service_emulators/FTP
    python ftp_server.py
+   ```
+
+4. **Test with Telnet** (for testing):
+   ```bash
+   telnet localhost 2121
+   # Commands: USER admin, PASS admin, ls, help, quit
    ```
 
 ### Using the Centralized CLI
@@ -111,6 +126,9 @@ python src/cli/nexus_cli.py ssh --port 8022
 
 # Start FTP honeypot
 python src/cli/nexus_cli.py ftp --port 2121
+
+# Test FTP honeypot with telnet
+telnet localhost 2121
 
 # Generate security reports
 python src/cli/nexus_cli.py report ssh --output reports/
@@ -137,6 +155,8 @@ python src/cli/nexus_cli.py list
 - **Environment**: `src/service_emulators/FTP/.env`
 - **Attack Patterns**: `src/service_emulators/FTP/attack_patterns.json`
 - **Vulnerability Signatures**: `src/service_emulators/FTP/vulnerability_signatures.json`
+- **User Accounts**: Configured in config.ini with 40+ honeypot accounts
+- **Client Support**: Standard FTP clients, telnet, FileZilla, WinSCP
 
 ### Supported LLM Providers
 - OpenAI (GPT-4, GPT-3.5)
@@ -148,18 +168,20 @@ python src/cli/nexus_cli.py list
 ## Data Collection & Analysis
 
 ### Session Data
-- Command history and analysis
-- Attack pattern detection results
-- Vulnerability exploitation attempts
-- File transfer activities
-- Behavioral analysis metrics
+- Complete command history with AI analysis
+- Real-time attack pattern detection results
+- Vulnerability exploitation attempt logging
+- File transfer activities with hash analysis
+- Behavioral analysis and threat scoring metrics
+- Multi-client session support (FTP clients, telnet)
 
 ### Forensic Evidence
-- Complete session recordings
-- File upload/download artifacts
-- Network connection logs
-- Attack timeline reconstruction
-- Chain of custody documentation
+- Complete session recordings with replay capability
+- File upload/download artifacts with malware detection
+- Network connection logs and data transfer analysis
+- Attack timeline reconstruction with AI-powered summaries
+- Chain of custody documentation with integrity verification
+- Session metadata and client fingerprinting
 
 ## Security Considerations
 
@@ -169,6 +191,9 @@ python src/cli/nexus_cli.py list
 - API keys must be configured in `.env` files
 - Session data contains sensitive attacker information
 - Forensic logs may include personally identifiable information
+- FTP honeypot accepts file uploads - monitor disk usage
+- Telnet support is for testing only - use proper FTP clients in production
+- AI responses may reveal honeypot nature to sophisticated attackers
 
 ## Development Roadmap
 
@@ -180,12 +205,15 @@ python src/cli/nexus_cli.py list
 - [x] Session management and analysis
 
 ### Phase 2: FTP Implementation ✅
-- [x] FTP honeypot implementation
-- [x] AI-enhanced FTP protocol simulation
-- [x] Directory traversal attack detection
-- [x] FTP bounce attack recognition
-- [x] File transfer forensic analysis
-- [x] Brute force authentication monitoring
+- [x] Complete FTP honeypot implementation with AI integration
+- [x] AI-enhanced FTP protocol simulation with dynamic responses
+- [x] Directory traversal and FTP bounce attack detection
+- [x] File transfer forensic analysis with hash verification
+- [x] Brute force authentication monitoring and logging
+- [x] Telnet client compatibility and command alias support
+- [x] Proper FTP data connection handling for standard clients
+- [x] Multi-line AI response support and consistent status codes
+- [x] Session recording with complete forensic chain of custody
 
 ### Phase 3: Additional Services 🚧
 - [ ] HTTP/Web application honeypot
@@ -206,6 +234,9 @@ python src/cli/nexus_cli.py list
 3. Add comprehensive logging for new features
 4. Include forensic chain integration for evidence collection
 5. Test with multiple LLM providers when applicable
+6. Test with both standard FTP clients and telnet for compatibility
+7. Ensure proper FTP protocol compliance and status code usage
+8. Verify AI responses are consistent and realistic
 
 ## License
 
@@ -218,3 +249,6 @@ For issues and questions:
 - Review configuration files for proper setup
 - Ensure API keys are correctly configured
 - Verify network connectivity and port availability
+- Test with telnet first: `telnet localhost 2121`
+- Check FTP client compatibility and data connection settings
+- Monitor AI response consistency and system prompt configuration
