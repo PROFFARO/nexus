@@ -20,8 +20,8 @@ class NexusCLI:
             },
             'ftp': {
                 'path': self.base_dir / 'service_emulators' / 'FTP' / 'ftp_server.py',
-                'implemented': False,
-                'description': 'FTP honeypot (not implemented)'
+                'implemented': True,
+                'description': 'FTP honeypot with AI-powered responses'
             },
             'http': {
                 'path': self.base_dir / 'service_emulators' / 'HTTP' / 'http_server.py',
@@ -91,13 +91,47 @@ Examples:
         ssh_parser = subparsers.add_parser('ssh', help='Start SSH honeypot')
         self._add_ssh_arguments(ssh_parser)
         
-        # Placeholder parsers for future services
-        ftp_parser = subparsers.add_parser('ftp', help='Start FTP honeypot (not implemented)')
+        # FTP service parser
+        ftp_parser = subparsers.add_parser('ftp', help='Start FTP honeypot')
+        self._add_ftp_arguments(ftp_parser)
         http_parser = subparsers.add_parser('http', help='Start HTTP honeypot (not implemented)')
         mysql_parser = subparsers.add_parser('mysql', help='Start MySQL honeypot (not implemented)')
         smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot (not implemented)')
         
         return parser
+
+    def _add_ftp_arguments(self, parser):
+        """Add FTP-specific arguments"""
+        # Configuration
+        parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-P', '--port', type=int, help='FTP port (default: 2121)')
+        parser.add_argument('-L', '--log-file', help='Log file path')
+        parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
+        
+        # LLM Configuration
+        parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
+                          help='LLM provider')
+        parser.add_argument('--model-name', help='LLM model name')
+        parser.add_argument('--temperature', type=float, help='LLM temperature (0.0-2.0)')
+        parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
+        parser.add_argument('--base-url', help='Base URL for Ollama/custom providers')
+        
+        # Azure OpenAI specific
+        parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
+        parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint')
+        parser.add_argument('--azure-api-version', help='Azure OpenAI API version')
+        
+        # AWS specific
+        parser.add_argument('--aws-region', help='AWS region')
+        parser.add_argument('--aws-profile', help='AWS credentials profile')
+        
+        # User accounts
+        parser.add_argument('-u', '--user-account', action='append',
+                          help='User account (username=password). Can be repeated')
+        
+        # Prompts
+        parser.add_argument('-p', '--prompt', help='System prompt text')
+        parser.add_argument('-f', '--prompt-file', help='System prompt file')
 
     def _add_ssh_arguments(self, parser):
         """Add SSH-specific arguments"""
@@ -207,6 +241,75 @@ Examples:
         
         return 0
 
+    def run_ftp_service(self, args):
+        """Run FTP honeypot with provided arguments"""
+        if not self.services['ftp']['implemented']:
+            print("Error: FTP service not implemented")
+            return 1
+            
+        ftp_script = self.services['ftp']['path']
+        if not ftp_script.exists():
+            print(f"Error: FTP script not found at {ftp_script}")
+            return 1
+        
+        # Build command arguments
+        cmd = [sys.executable, str(ftp_script)]
+        
+        # Add arguments
+        if args.config:
+            cmd.extend(['-c', args.config])
+        if args.port:
+            cmd.extend(['-P', str(args.port)])
+        if args.log_file:
+            cmd.extend(['-L', args.log_file])
+        if args.sensor_name:
+            cmd.extend(['-S', args.sensor_name])
+        if args.llm_provider:
+            cmd.extend(['-l', args.llm_provider])
+        if args.model_name:
+            cmd.extend(['-m', args.model_name])
+        if args.temperature is not None:
+            cmd.extend(['-r', str(args.temperature)])
+        if args.max_tokens:
+            cmd.extend(['-t', str(args.max_tokens)])
+        if args.prompt:
+            cmd.extend(['-p', args.prompt])
+        if args.prompt_file:
+            cmd.extend(['-f', args.prompt_file])
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        # Set environment variables for additional configs
+        env = os.environ.copy()
+        if args.base_url:
+            env['OLLAMA_BASE_URL'] = args.base_url
+        if args.azure_deployment:
+            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
+        if args.azure_endpoint:
+            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
+        if args.azure_api_version:
+            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
+        if args.aws_region:
+            env['AWS_DEFAULT_REGION'] = args.aws_region
+        if args.aws_profile:
+            env['AWS_PROFILE'] = args.aws_profile
+        
+        # Change to FTP directory
+        ftp_dir = self.services['ftp']['path'].parent
+        
+        try:
+            print(f"Starting FTP honeypot...")
+            print(f"Command: {' '.join(cmd)}")
+            subprocess.run(cmd, cwd=ftp_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nFTP honeypot stopped")
+        except Exception as e:
+            print(f"Error running FTP honeypot: {e}")
+            return 1
+        
+        return 0
+
     def generate_report(self, args):
         """Generate security report for specific service"""
         service_info = self.services.get(args.service)
@@ -276,14 +379,45 @@ print("Visualizations: {args.output}/visualizations/")
         return 0
     
     def _generate_ftp_report(self, args):
-        """Generate FTP-specific security report (placeholder)"""
-        print("FTP report generation not implemented")
-        print("FTP honeypot data structure:")
-        print("  - FTP command logs")
-        print("  - File transfer attempts")
-        print("  - Authentication attempts")
-        print("  - Directory traversal attacks")
-        return 1
+        """Generate FTP-specific security report"""
+        ftp_dir = self.services['ftp']['path'].parent
+        sessions_dir = args.sessions_dir or str(ftp_dir / 'sessions')
+        
+        # Build command for FTP report generator
+        cmd = [sys.executable, '-c', f'''
+import sys
+sys.path.append("{ftp_dir}")
+from report_generator import FTPHoneypotReportGenerator
+
+generator = FTPHoneypotReportGenerator(sessions_dir="{sessions_dir}")
+report_files = generator.generate_comprehensive_report(output_dir="{args.output}")
+
+if "error" in report_files:
+    print(f"Error: {{report_files['error']}}")
+    sys.exit(1)
+
+print("FTP Security Report Generated Successfully!")
+if "{args.format}" in ["json", "both"]:
+    print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+if "{args.format}" in ["html", "both"]:
+    print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+print("Visualizations: {args.output}/visualizations/")
+''']
+        
+        try:
+            print(f"Generating FTP security report...")
+            print(f"Sessions directory: {sessions_dir}")
+            print(f"Output directory: {args.output}")
+            print(f"Format: {args.format}")
+            subprocess.run(cmd, cwd=ftp_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error generating FTP report: {e}")
+            return 1
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return 1
+        
+        return 0
     
     def _generate_http_report(self, args):
         """Generate HTTP-specific security report (placeholder)"""
@@ -399,7 +533,9 @@ print("Visualizations: {args.output}/visualizations/")
             return self.view_logs(args)
         elif args.command == 'ssh':
             return self.run_ssh_service(args)
-        elif args.command in ['ftp', 'http', 'mysql', 'smb']:
+        elif args.command == 'ftp':
+            return self.run_ftp_service(args)
+        elif args.command in ['http', 'mysql', 'smb']:
             return self.run_placeholder_service(args.command)
         else:
             print(f"Unknown command: {args.command}")

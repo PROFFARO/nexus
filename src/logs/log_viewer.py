@@ -70,6 +70,61 @@ class LogViewer:
         
         return conversations
     
+    def parse_ftp_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
+                      filter_type: str = 'all') -> Dict[str, Any]:
+        """Parse FTP log file and extract conversations"""
+        conversations = {}
+        
+        if not os.path.exists(log_file):
+            raise FileNotFoundError(f"Log file not found: {log_file}")
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    task_name = log_entry.get('task_name', 'unknown')
+                    message = log_entry.get('message', '')
+                    
+                    if session_id and session_id not in task_name:
+                        continue
+                    
+                    if task_name not in conversations:
+                        conversations[task_name] = {
+                            'session_id': task_name,
+                            'src_ip': log_entry.get('src_ip', 'unknown'),
+                            'entries': []
+                        }
+                    
+                    entry = {
+                        'timestamp': log_entry.get('timestamp', ''),
+                        'message': message,
+                        'level': log_entry.get('level', 'INFO'),
+                        'raw': log_entry
+                    }
+                    
+                    # Decode base64 details
+                    if decode and 'details' in log_entry:
+                        try:
+                            decoded = b64decode(log_entry['details']).decode('utf-8')
+                            entry['decoded_details'] = decoded
+                        except:
+                            entry['decoded_details'] = 'Failed to decode'
+                    
+                    # Apply filters
+                    if filter_type == 'commands' and 'FTP command' not in message:
+                        continue
+                    elif filter_type == 'responses' and 'FTP response' not in message:
+                        continue
+                    elif filter_type == 'attacks' and 'attack' not in message.lower():
+                        continue
+                    
+                    conversations[task_name]['entries'].append(entry)
+                    
+                except (json.JSONDecodeError, Exception):
+                    continue
+        
+        return conversations
+    
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False) -> str:
         """Format conversations for display"""
@@ -78,7 +133,8 @@ class LogViewer:
         
         output = []
         output.append("=" * 80)
-        output.append("NEXUS SSH HONEYPOT - SESSION CONVERSATIONS")
+        service_name = "SSH" if self.service == 'ssh' else "FTP"
+        output.append(f"NEXUS {service_name} HONEYPOT - SESSION CONVERSATIONS")
         output.append("=" * 80)
         
         for session_id, conv in conversations.items():
@@ -92,14 +148,14 @@ class LogViewer:
                     timestamp = entry['timestamp'][:19] if entry['timestamp'] else 'Unknown'
                     message = entry['message']
                     
-                    if 'User input' in message:
+                    if 'User input' in message or 'FTP command' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 👤 USER COMMAND:")
                             output.append(f"   {entry['decoded_details']}")
                         else:
                             output.append(f"\n[{timestamp}] 👤 USER INPUT: {message}")
                     
-                    elif 'LLM response' in message:
+                    elif 'LLM response' in message or 'FTP response' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
                             output.append(f"   {entry['decoded_details']}")
@@ -117,8 +173,8 @@ class LogViewer:
                         emoji = {'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🚨'}.get(entry['level'], 'ℹ️')
                         output.append(f"\n[{timestamp}] {emoji} {entry['level']}: {message}")
             else:
-                commands = [e for e in conv['entries'] if 'User input' in e['message']]
-                responses = [e for e in conv['entries'] if 'LLM response' in e['message']]
+                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message']]
+                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'FTP response' in e['message']]
                 attacks = [e for e in conv['entries'] if 'attack' in e['message'].lower()]
                 
                 output.append(f"   Commands: {len(commands)}")
@@ -153,28 +209,40 @@ def main():
     
     args = parser.parse_args()
     
-    if args.service != 'ssh':
+    if args.service not in ['ssh', 'ftp']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
     # Default log file location - check both new and old locations
     if not args.log_file:
         base_dir = Path(__file__).parent.parent
-        new_log_path = base_dir / 'logs' / 'ssh_log.log'
-        old_log_path = base_dir / 'service_emulators' / 'SSH' / 'ssh_log.log'
+        new_log_path = None
+        old_log_path = None
+        if args.service == 'ssh':
+            new_log_path = base_dir / 'logs' / 'ssh_log.log'
+            old_log_path = base_dir / 'service_emulators' / 'SSH' / 'ssh_log.log'
+        elif args.service == 'ftp':
+            new_log_path = base_dir / 'logs' / 'ftp_log.log'
+            old_log_path = base_dir / 'service_emulators' / 'FTP' / 'ftp_log.log'
         
-        if new_log_path.exists():
+        if new_log_path and new_log_path.exists():
             args.log_file = str(new_log_path)
-        elif old_log_path.exists():
+        elif old_log_path and old_log_path.exists():
             args.log_file = str(old_log_path)
-        else:
+        elif new_log_path:
             args.log_file = str(new_log_path)  # Default to new location
     
     try:
         viewer = LogViewer(args.service)
-        conversations = viewer.parse_ssh_logs(
-            args.log_file, args.session_id, args.decode, args.filter
-        )
+        conversations = {}
+        if args.service == 'ssh':
+            conversations = viewer.parse_ssh_logs(
+                args.log_file, args.session_id, args.decode, args.filter
+            )
+        elif args.service == 'ftp':
+            conversations = viewer.parse_ftp_logs(
+                args.log_file, args.session_id, args.decode, args.filter
+            )
         
         if not conversations:
             print("No conversations found")
