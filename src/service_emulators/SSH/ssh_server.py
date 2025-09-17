@@ -160,9 +160,9 @@ class FileUploadHandler:
             
             file_path = self.downloads_dir / filename
             
-            # Create fake content if not provided
+            # Create realistic fake malware content based on filename
             if content is None:
-                content = f"# Fake downloaded content from {url}\n# Downloaded at {datetime.datetime.now(datetime.timezone.utc)}\n".encode()
+                content = self._generate_fake_malware_content(filename, url)
             
             with open(file_path, 'wb') as f:
                 f.write(content)
@@ -176,6 +176,74 @@ class FileUploadHandler:
             )
             
         return download_info
+        
+    def _generate_fake_malware_content(self, filename: str, url: str) -> bytes:
+        """Generate realistic fake malware content based on file type"""
+        filename_lower = filename.lower()
+        
+        if 'xmrig' in filename_lower or 'miner' in filename_lower:
+            # Fake cryptocurrency miner
+            content = f"""#!/bin/bash
+# XMRig Cryptocurrency Miner v6.18.0
+# Downloaded from: {url}
+# This is a honeypot simulation - no actual mining occurs
+
+echo "XMRig 6.18.0"
+echo "Mining pool: pool.minergate.com:45700"
+echo "Algorithm: RandomX"
+echo "Threads: 4"
+echo "Hashrate: 1.2 KH/s"
+echo "Status: Connected"
+
+# Simulate mining activity
+while true; do
+    echo "[$(date)] Accepted share $(($RANDOM % 100))/100"
+    sleep 30
+done
+""".encode()
+        elif filename_lower.endswith(('.sh', '.bash')):
+            # Fake shell script
+            content = f"""#!/bin/bash
+# Malicious script downloaded from {url}
+# This is a honeypot simulation
+
+echo "Installing backdoor..."
+echo "Creating persistence..."
+echo "Connecting to C&C server..."
+echo "Installation complete"
+""".encode()
+        elif filename_lower.endswith(('.py', '.python')):
+            # Fake Python malware
+            content = f"""#!/usr/bin/env python3
+# Malware downloaded from {url}
+# This is a honeypot simulation
+
+import os
+import sys
+import time
+
+print("Initializing payload...")
+print("Establishing connection...")
+print("Payload deployed successfully")
+
+while True:
+    time.sleep(60)
+    print("Heartbeat sent")
+""".encode()
+        elif filename_lower.endswith('.exe'):
+            # Fake Windows executable (PE header simulation)
+            content = b"MZ\x90\x00" + b"\x00" * 60 + b"PE\x00\x00" + f"Fake malware from {url}".encode() + b"\x00" * 1000
+        else:
+            # Generic fake malware
+            content = f"""# Malware file downloaded from {url}
+# Downloaded at {datetime.datetime.now(datetime.timezone.utc)}
+# This is a honeypot simulation - file contains no actual malware
+
+echo "Malware payload activated"
+echo "System compromised"
+""".encode()
+            
+        return content
         
     def handle_upload(self, filename: str, content: bytes) -> Dict[str, Any]:
         """Handle file uploads via SCP, SFTP, etc."""
@@ -352,6 +420,12 @@ class MySSHServer(asyncssh.SSHServer):
         cmd_lower = command.lower().strip()
         
         if cmd_lower.startswith('ls'):
+            # Additional cleaning for ls output to handle concatenated filenames
+            if not '-l' in command:
+                # Look for concatenated filenames and separate them
+                clean_output = re.sub(r'([a-zA-Z0-9_-]+\.[a-zA-Z0-9]{2,4})([A-Z][a-zA-Z0-9_-])', r'\1 \2', clean_output)
+                clean_output = re.sub(r'([a-zA-Z0-9_-]+/)([A-Z][a-zA-Z0-9_-])', r'\1 \2', clean_output)
+                clean_output = re.sub(r'([a-z])([A-Z][a-z])', r'\1 \2', clean_output)
             return self._format_ls_output(clean_output, command)
         elif cmd_lower.startswith('cd'):
             return self._handle_cd_command(command)
@@ -378,22 +452,46 @@ class MySSHServer(asyncssh.SSHServer):
     
     def _format_ls_output(self, output: str, command: str = '') -> str:
         """Format ls command output horizontally with proper spacing"""
-        items = output.split()
-        if not items:
-            return ""
-            
         # Check if -l flag is used for long format
         if '-l' in command:
             return output
             
-        # Format horizontally with colors and proper spacing
+        # Split output and handle concatenated filenames
+        items = []
+        words = output.split()
+        
+        for word in words:
+            # Check if word contains multiple filenames concatenated together
+            # Look for patterns like "file1.txtfile2.txt" or "dir1/dir2/"
+            if len(word) > 20 and ('.' in word or '/' in word):
+                # Try to split on common file extensions and directory patterns
+                parts = re.split(r'(\.[a-zA-Z0-9]{2,4}(?=[A-Z]|[a-z][A-Z])|/(?=[A-Z]|[a-z]))', word)
+                current = ""
+                for part in parts:
+                    if part:
+                        current += part
+                        # If this looks like a complete filename, add it
+                        if (part.endswith('/') or 
+                            re.match(r'\.[a-zA-Z0-9]{2,4}$', part) or
+                            (len(current) > 3 and not part.startswith('.'))):
+                            items.append(current)
+                            current = ""
+                if current:  # Add any remaining part
+                    items.append(current)
+            else:
+                items.append(word)
+        
+        if not items:
+            return ""
+            
+        # Format horizontally with proper spacing
         formatted_items = []
         for item in items:
             # Color directories (items ending with / or common directory patterns)
             if item.endswith('/') or any(pattern in item.lower() for pattern in ['docs', 'config', 'scripts', 'reports', 'projects', 'tools', 'admin', 'backup', 'logs', 'temp']):
-                formatted_items.append(f'\033[34m{item:<18}\033[0m')
+                formatted_items.append(f'{item:<20}')
             else:
-                formatted_items.append(f'{item:<18}')
+                formatted_items.append(f'{item:<20}')
         
         # Arrange in rows of 4 items each
         rows = []
@@ -741,30 +839,38 @@ async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, 
         # as well as a snap judgement about whether we should be 
         # concerned or not.
 
-        prompt = '''
-Examine the list of all the SSH commands the user issued during
-this session. The user is likely (but not proven) to be an 
-attacker. Analyze the commands and provide the following:
+        prompt = f'''
+Analyze this SSH session for malicious activity. You have access to:
+- Complete command history: {[cmd['command'] for cmd in server.session_data.get('commands', [])]}
+- Attack patterns detected: {[analysis['attack_types'] for analysis in server.session_data.get('attack_analysis', []) if analysis.get('attack_types')]}
+- Vulnerabilities exploited: {[vuln['vulnerability_id'] for vuln in server.session_data.get('vulnerabilities', [])]}
+- Files downloaded: {[file['filename'] for file in server.session_data.get('files_downloaded', [])]}
+- Files uploaded/created: {[file['filename'] for file in server.session_data.get('files_uploaded', [])]}
+- Session duration: {server.session_data.get('duration', 'unknown')}
+- Username used: {process.get_extra_info('username')}
 
-A concise, high-level description of what the user did during the 
-session, including whether this appears to be reconnaissance, 
-exploitation, post-foothold activity, or another stage of an attack. 
-Specify the likely goals of the user.
+Provide a concise analysis covering:
+1. Attack stage identification (reconnaissance, initial access, persistence, privilege escalation, defense evasion, credential access, discovery, lateral movement, collection, exfiltration, impact)
+2. Primary attacker objectives based on command patterns
+3. Threat level assessment
 
-A judgement of the session's nature as either "BENIGN," "SUSPICIOUS," 
-or "MALICIOUS," based on the observed activity.
+Key indicators to analyze:
+- System enumeration commands (whoami, id, uname, ps, netstat, ifconfig)
+- File system exploration (ls, find, cat sensitive files)
+- Download attempts (wget, curl) especially for malware/tools
+- Privilege escalation attempts (sudo, su, chmod +x)
+- Persistence mechanisms (crontab, systemctl, rc files)
+- Data collection (cat /etc/passwd, history, env)
+- Network reconnaissance (ping, nmap, netstat)
+- Process manipulation (kill, nohup, background processes)
+- File modifications (echo >, vim, nano)
 
-Ensure the high-level description accounts for the overall context and intent, 
-even if some commands seem benign in isolation.
+Classification criteria:
+- BENIGN: Basic system navigation, help commands, normal user behavior
+- SUSPICIOUS: System enumeration, reconnaissance, probing activities
+- MALICIOUS: Malware downloads, exploitation attempts, persistence installation, data theft
 
-End your response with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]".
-
-Be very terse, but always include the high-level attacker's goal (e.g., 
-"post-foothold reconnaisance", "cryptomining", "data theft" or similar). 
-Also do not label the sections (except for the judgement, which you should 
-label clearly), and don't provide bullet points or item numbers. You do 
-not need to explain every command, just provide the highlights or 
-representative examples.
+End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]" and specify the primary attack goal.
 '''
 
         # Ask the LLM for its summary with rate limiting protection
@@ -791,16 +897,25 @@ representative examples.
             
         except Exception as e:
             logger.error(f"LLM session summary failed: {e}")
-            # Generate basic summary from session data
-            command_count = len(server.session_data.get('commands', []))
-            attack_count = len(server.session_data.get('attack_analysis', []))
+            # Generate enhanced fallback summary from session data
+            commands = [cmd['command'] for cmd in server.session_data.get('commands', [])]
+            attack_patterns = [analysis for analysis in server.session_data.get('attack_analysis', []) if analysis.get('attack_types')]
+            downloads = server.session_data.get('files_downloaded', [])
+            uploads = server.session_data.get('files_uploaded', [])
             
-            if attack_count > 0:
+            # Analyze command patterns for fallback
+            suspicious_commands = [cmd for cmd in commands if any(pattern in cmd.lower() for pattern in 
+                ['wget', 'curl', 'chmod +x', 'sudo', 'su -', 'cat /etc/', 'find /', 'ps aux', 'netstat', 'uname -a'])]
+            
+            if downloads or any('malware' in str(attack).lower() for attack in attack_patterns):
+                judgement = "MALICIOUS"
+                summary = f"Malware download session with {len(commands)} commands, {len(downloads)} downloads, goal: malware deployment"
+            elif suspicious_commands or attack_patterns:
                 judgement = "SUSPICIOUS"
-                summary = f"Session with {command_count} commands and {attack_count} potential attacks detected"
+                summary = f"Reconnaissance session with {len(commands)} commands, {len(suspicious_commands)} suspicious activities, goal: system enumeration"
             else:
                 judgement = "BENIGN"
-                summary = f"Session with {command_count} commands, no obvious threats detected"
+                summary = f"Normal session with {len(commands)} basic commands, no threats detected"
                 
             logger.info("Session summary (fallback)", extra={"details": summary, "judgement": judgement})
 
@@ -868,40 +983,47 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             
             process.stdout.write(get_prompt(server))
 
-            try:
-                async for line in process.stdin:
-                    try:
-                        line = line.rstrip('\n')
-                        
-                        # Skip tab completion - let LLM handle everything
-                        if '\t' in line:
-                            line = line.replace('\t', '')
-                            # Just continue with the command without tab completion
-                        
-                        # Process command with enhanced analysis
-                        response = await process_command(line, process, server, llm_config, interactive=True)
-                        
-                        if response == "XXX-END-OF-SESSION-XXX":
-                            # Run session summary in background without blocking exit
-                            asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
-                            process.exit(0)
-                            return
-                    except Exception as cmd_error:
-                        logger.error(f"Command processing error: {cmd_error}")
-                        # Continue processing other commands
-                        continue
-            except asyncssh.misc.TerminalSizeChanged:
-                # Handle terminal size changes gracefully
-                logger.info("Terminal size changed, continuing session")
-            except asyncssh.BreakReceived:
-                # Handle Ctrl+C gracefully
-                logger.info("Break received, continuing session")
-            except (ConnectionResetError, asyncssh.misc.ConnectionLost):
-                # Handle connection issues
-                logger.info("Connection lost")
-            except Exception as e:
-                logger.error(f"Session handling error: {e}")
-                # Don't exit on errors
+            while True:
+                try:
+                    async for line in process.stdin:
+                        try:
+                            line = line.rstrip('\n')
+                            
+                            # Skip tab completion - let LLM handle everything
+                            if '\t' in line:
+                                line = line.replace('\t', '')
+                                # Just continue with the command without tab completion
+                            
+                            # Process command with enhanced analysis
+                            response = await process_command(line, process, server, llm_config, interactive=True)
+                            
+                            if response == "XXX-END-OF-SESSION-XXX":
+                                # Run session summary in background without blocking exit
+                                asyncio.create_task(session_summary(process, llm_config, with_message_history, server))
+                                process.exit(0)
+                                return
+                        except Exception as cmd_error:
+                            logger.error(f"Command processing error: {cmd_error}")
+                            # Continue processing other commands
+                            continue
+                    # If we reach here, stdin was closed
+                    break
+                except asyncssh.misc.TerminalSizeChanged:
+                    # Handle terminal size changes gracefully and continue
+                    logger.info("Terminal size changed, continuing session")
+                    continue
+                except asyncssh.BreakReceived:
+                    # Handle Ctrl+C gracefully
+                    logger.info("Break received, continuing session")
+                    continue
+                except (ConnectionResetError, asyncssh.misc.ConnectionLost):
+                    # Handle connection issues
+                    logger.info("Connection lost")
+                    break
+                except Exception as e:
+                    logger.error(f"Session handling error: {e}")
+                    # Continue on other errors
+                    continue
 
     except asyncssh.BreakReceived:
         logger.info("Break received in main handler")
@@ -1048,7 +1170,7 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
             # Provide basic command responses as fallback
             cmd_lower = command.lower().strip()
             if cmd_lower == 'ls':
-                response_content = "GameProjects/    Art/           Scripts/       Builds/\nDocumentation/   Tools/         Temp/          .bashrc"
+                response_content = "Desktop/            Documents/          Downloads/          Music/\nPictures/           Public/             Templates/          Videos/\ndev_notes.txt       my_project/         scripts/"
             elif cmd_lower == 'pwd':
                 response_content = server.current_directory if server else '/home/guest'
             elif cmd_lower == 'whoami':
@@ -1086,7 +1208,7 @@ def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess, ser
     cmd = cmd_parts[0].lower()
     username = process.get_extra_info('username') or 'guest'
     
-    # Handle exit commands immediately
+    # Handle exit commands immediately - these should always work
     if cmd in ['exit', 'logout', 'quit']:
         return "XXX-END-OF-SESSION-XXX"
     
@@ -1096,9 +1218,37 @@ def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess, ser
             return server._handle_cd_command(command)
         return ""
     
-    # Only handle basic commands that don't need file arguments
+    # Handle clear command immediately - should always work
     elif cmd == 'clear':
         return "\033[2J\033[H"
+    
+    # Handle download commands to show successful downloads
+    elif cmd in ['wget', 'curl'] and server and server.file_handler:
+        try:
+            download_info = server.file_handler.handle_download(command)
+            server.session_data['files_downloaded'].append(download_info)
+            
+            if download_info.get('filename'):
+                filename = download_info['filename']
+                file_size = download_info.get('file_size', '1024')
+                
+                if cmd == 'wget':
+                    return f"""--{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {download_info.get('url', 'http://example.com/file')}
+Resolving host... done.
+Connecting to host... connected.
+HTTP request sent, awaiting response... 200 OK
+Length: {file_size} [{file_size} bytes]
+Saving to: '{filename}'
+
+{filename}           100%[===================>]   {file_size}  --.-KB/s    in 0.1s
+
+{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({file_size} KB/s) - '{filename}' saved [{file_size}/{file_size}]"""
+                else:  # curl
+                    return f"""  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
+                                 Dload  Upload   Total   Spent    Left  Speed
+100  {file_size}  100  {file_size}    0     0   {file_size}      0 --:--:-- --:--:-- --:--:--  {file_size}"""
+        except Exception as e:
+            return f"bash: {cmd}: command failed"
     
     elif cmd == 'pwd':
         current_path = server.current_directory if server else f'/home/{username}'
@@ -1361,7 +1511,8 @@ try:
             config.read(default_config)
         else:
             # Use defaults when no config file found.
-            config['honeypot'] = {'log_file': 'ssh_log.log', 'sensor_name': socket.gethostname()}
+            default_log_file = str(Path(__file__).parent.parent.parent / 'logs' / 'ssh_log.log')
+            config['honeypot'] = {'log_file': default_log_file, 'sensor_name': socket.gethostname()}
             config['ssh'] = {'port': '8022', 'host_priv_key': 'ssh_host_key', 'server_version_string': 'SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3'}
             config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
             config['user_accounts'] = {}

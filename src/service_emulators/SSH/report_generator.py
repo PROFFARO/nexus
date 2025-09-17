@@ -499,35 +499,35 @@ class HoneypotReportGenerator:
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>NEXUS AI Honeypot Security Report</title>
     <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }
-        .container { max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }
-        .header { text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 30px; }
-        .header h1 { color: #2c3e50; margin: 0; font-size: 2.5em; }
-        .header p { color: #7f8c8d; margin: 10px 0 0 0; font-size: 1.1em; }
-        .section { margin-bottom: 40px; }
-        .section h2 { color: #34495e; border-left: 5px solid #3498db; padding-left: 15px; margin-bottom: 20px; }
-        .section h3 { color: #2c3e50; margin-top: 25px; margin-bottom: 15px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
-        .stat-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }
-        .stat-card h3 { margin: 0 0 10px 0; font-size: 2em; }
-        .stat-card p { margin: 0; opacity: 0.9; }
-        .severity-high { color: #e74c3c; font-weight: bold; }
-        .severity-medium { color: #f39c12; font-weight: bold; }
-        .severity-low { color: #27ae60; font-weight: bold; }
-        .severity-critical { color: #8e44ad; font-weight: bold; }
-        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
-        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }
-        th { background-color: #34495e; color: white; }
-        tr:hover { background-color: #f5f5f5; }
-        .timeline-item { border-left: 3px solid #3498db; padding-left: 20px; margin-bottom: 20px; }
-        .timeline-item.critical { border-left-color: #8e44ad; }
-        .timeline-item.high { border-left-color: #e74c3c; }
-        .timeline-item.medium { border-left-color: #f39c12; }
-        .timeline-item.low { border-left-color: #27ae60; }
-        .recommendations { background-color: #ecf0f1; padding: 20px; border-radius: 10px; }
-        .recommendations ul { margin: 10px 0; }
-        .recommendations li { margin-bottom: 8px; }
-        .footer { text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #bdc3c7; color: #7f8c8d; }
+        body {{ font-family: Arial, sans-serif; margin: 0; padding: 20px; background-color: #f5f5f5; }}
+        .container {{ max-width: 1200px; margin: 0 auto; background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 0 20px rgba(0,0,0,0.1); }}
+        .header {{ text-align: center; border-bottom: 3px solid #2c3e50; padding-bottom: 20px; margin-bottom: 30px; }}
+        .header h1 {{ color: #2c3e50; margin: 0; font-size: 2.5em; }}
+        .header p {{ color: #7f8c8d; margin: 10px 0 0 0; font-size: 1.1em; }}
+        .section {{ margin-bottom: 40px; }}
+        .section h2 {{ color: #34495e; border-left: 5px solid #3498db; padding-left: 15px; margin-bottom: 20px; }}
+        .section h3 {{ color: #2c3e50; margin-top: 25px; margin-bottom: 15px; }}
+        .stats-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }}
+        .stat-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; text-align: center; }}
+        .stat-card h3 {{ margin: 0 0 10px 0; font-size: 2em; }}
+        .stat-card p {{ margin: 0; opacity: 0.9; }}
+        .severity-high {{ color: #e74c3c; font-weight: bold; }}
+        .severity-medium {{ color: #f39c12; font-weight: bold; }}
+        .severity-low {{ color: #27ae60; font-weight: bold; }}
+        .severity-critical {{ color: #8e44ad; font-weight: bold; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+        th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #ddd; }}
+        th {{ background-color: #34495e; color: white; }}
+        tr:hover {{ background-color: #f5f5f5; }}
+        .timeline-item {{ border-left: 3px solid #3498db; padding-left: 20px; margin-bottom: 20px; }}
+        .timeline-item.critical {{ border-left-color: #8e44ad; }}
+        .timeline-item.high {{ border-left-color: #e74c3c; }}
+        .timeline-item.medium {{ border-left-color: #f39c12; }}
+        .timeline-item.low {{ border-left-color: #27ae60; }}
+        .recommendations {{ background-color: #ecf0f1; padding: 20px; border-radius: 10px; }}
+        .recommendations ul {{ margin: 10px 0; }}
+        .recommendations li {{ margin-bottom: 8px; }}
+        .footer {{ text-align: center; margin-top: 50px; padding-top: 20px; border-top: 1px solid #bdc3c7; color: #7f8c8d; }}
     </style>
 </head>
 <body>
