@@ -7,7 +7,7 @@
 ![AI Powered](https://img.shields.io/badge/AI-Powered-orange?style=for-the-badge&logo=openai&logoColor=white)
 ![License](https://img.shields.io/badge/License-Educational-red?style=for-the-badge)
 
-**Advanced cybersecurity honeypot system with AI-powered adaptive responses and comprehensive threat intelligence**
+**A cybersecurity honeypot system with AI-powered adaptive responses and comprehensive threat intelligence**
 
 [🚀 Quick Start](#-quick-start) • [📖 Documentation](#-documentation) • [🛡️ Security](#-security) • [🤝 Contributing](#-contributing)
 
@@ -17,7 +17,7 @@
 
 ## 🌟 Overview
 
-NEXUS is an intelligent honeypot platform that simulates realistic corporate environments to attract, analyze, and learn from cyber attackers. The system uses cutting-edge AI technology to provide dynamic responses and comprehensive forensic analysis, making it one of the most advanced honeypot solutions available.
+nexus is an intelligent honeypot platform that simulates realistic corporate environments to attract, analyze, and learn from cyber attackers. The system uses AI technology to provide dynamic responses and comprehensive forensic analysis, making it one of the most adaptive honeypot solutions available.
 
 ### 🎯 Key Features
 
@@ -125,7 +125,7 @@ NEXUS is an intelligent honeypot platform that simulates realistic corporate env
 ### 1. Clone Repository
 
 ```bash
-git clone https://github.com/your-username/nexus-development.git
+git clone https://github.com/PROFFARO/nexus-development.git
 cd nexus-development
 ```
 
@@ -234,7 +234,7 @@ curl -X POST http://localhost:8080/admin/login -d "username=admin&password=test"
 
 ### LLM Provider Configuration
 
-NEXUS supports multiple AI providers. Configure in `.env` files:
+NEXUS supports multiple AI providers. Configure in `.env` files for each specific services:
 
 <details>
 <summary><strong>OpenAI Configuration</strong></summary>
@@ -336,7 +336,7 @@ Each service has detailed configuration options in their respective `config.ini`
 
 ### Session Data Collection
 
-NEXUS collects comprehensive data for security analysis:
+nexus collects comprehensive data for security analysis:
 
 - **Complete Command History**: Every command with AI analysis
 - **Attack Pattern Detection**: Real-time classification of attack techniques
@@ -536,7 +536,7 @@ We welcome contributions! Here's how to get started:
 
 ```bash
 # Clone and setup development environment
-git clone https://github.com/your-username/nexus-development.git
+git clone https://github.com/PROFFARO/nexus-development.git
 cd nexus-development
 python -m venv dev-env
 source dev-env/bin/activate  # On Windows: dev-env\Scripts\activate
@@ -662,7 +662,7 @@ curl http://localhost:8080/
 
 *Protecting networks through intelligent deception*
 
-[![GitHub Stars](https://img.shields.io/github/stars/your-username/nexus-development?style=social)](https://github.com/your-username/nexus-development)
-[![GitHub Forks](https://img.shields.io/github/forks/your-username/nexus-development?style=social)](https://github.com/your-username/nexus-development)
+[![GitHub Stars](https://img.shields.io/github/stars/PROFFARO/nexus-development?style=social)](https://github.com/your-username/nexus-development)
+[![GitHub Forks](https://img.shields.io/github/forks/PROFFARO/nexus-development?style=social)](https://github.com/your-username/nexus-development)
 
 </div>
