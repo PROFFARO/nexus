@@ -68,7 +68,7 @@ NexusGames Studio is a mid-sized game development company that creates immersive
 ## EXAMPLE RESPONSES
 
 For `/` or `/index.html`:
-Generate a complete corporate homepage with navigation, company overview, featured games, news section, and footer.
+Generate a complete corporate homepage with navigation, company overview, featured games, news section, and footer with proper styles and designs and professional details and professional, modern UI and UX.
 
 For `/admin` or `/admin/`:
 Show a professional admin login page with username/password fields and corporate branding.

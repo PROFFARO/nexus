@@ -560,17 +560,14 @@ Generate realistic HTTP response for NexusGames Studio website."""
             ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
         
         try:
-            # Get AI response with timeout
-            llm_response = await asyncio.wait_for(
-                with_message_history.ainvoke(
-                    {
-                        "messages": [HumanMessage(content=ai_prompt)],
-                        "username": headers.get('User-Agent', 'anonymous'),
-                        "interactive": True
-                    },
-                    config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
-                ),
-                timeout=10.0
+            # Get AI response without timeout
+            llm_response = await with_message_history.ainvoke(
+                {
+                    "messages": [HumanMessage(content=ai_prompt)],
+                    "username": headers.get('User-Agent', 'anonymous'),
+                    "interactive": True
+                },
+                config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
             )
             
             ai_content = llm_response.content.strip() if llm_response else ""
@@ -592,9 +589,7 @@ Generate realistic HTTP response for NexusGames Studio website."""
             else:
                 return self.generate_fallback_response(path, attack_analysis)
                 
-        except asyncio.TimeoutError:
-            logger.warning("AI response timeout, using fallback")
-            return self.generate_fallback_response(path, attack_analysis)
+
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
             return self.generate_fallback_response(path, attack_analysis)
@@ -638,22 +633,9 @@ Generate realistic HTTP response for NexusGames Studio website."""
         return headers
 
     def generate_fallback_response(self, path: str, attack_analysis: Dict) -> tuple:
-        """Generate minimal fallback HTTP response when AI fails"""
-        
-        # Simple fallback responses without static templates
-        if path == '/' or path == '/index.html':
-            content = "<html><head><title>NexusGames Studio</title></head><body><h1>NexusGames Studio</h1><p>Welcome to our game development company.</p></body></html>"
-            status_code = 200
-        elif path.startswith('/admin'):
-            content = "<html><head><title>Admin Login</title></head><body><h1>Administrator Login</h1><form><input type='text' placeholder='Username'><input type='password' placeholder='Password'><button>Login</button></form></body></html>"
-            status_code = 200
-        elif attack_analysis.get('attack_types'):
-            content = "<html><head><title>Access Denied</title></head><body><h1>403 Forbidden</h1><p>Your request has been blocked for security reasons.</p></body></html>"
-            status_code = 403
-        else:
-            content = "<html><head><title>Not Found</title></head><body><h1>404 Not Found</h1><p>The requested page could not be found.</p></body></html>"
-            status_code = 404
-        
+        """Generate error response when AI completely fails"""
+        content = "<html><head><title>Service Unavailable</title></head><body><h1>503 Service Unavailable</h1><p>The service is temporarily unavailable. Please try again later.</p></body></html>"
+        status_code = 503
         headers = self.generate_response_headers(path, content, attack_analysis)
         return content, status_code, headers
 
