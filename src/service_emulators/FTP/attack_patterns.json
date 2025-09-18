@@ -1,0 +1,141 @@
+{
+  "reconnaissance": {
+    "description": "Information gathering and system enumeration via FTP",
+    "patterns": [
+      "LIST.*-la", "LIST.*-al", "NLST.*-la", "NLST.*-al",
+      "LIST.*\\.\\.", "NLST.*\\.\\.", "CWD.*\\.\\.",
+      "PWD", "SYST", "STAT", "HELP", "FEAT",
+      "LIST.*etc", "LIST.*var", "LIST.*usr", "LIST.*home",
+      "CWD.*etc", "CWD.*var", "CWD.*usr", "CWD.*home",
+      "LIST.*passwd", "LIST.*shadow", "LIST.*hosts",
+      "RETR.*passwd", "RETR.*shadow", "RETR.*hosts",
+      "LIST.*config", "LIST.*conf", "RETR.*config", "RETR.*conf"
+    ],
+    "severity": "medium",
+    "indicators": [
+      "system_enumeration", "directory_traversal", "file_discovery",
+      "configuration_access", "sensitive_file_access"
+    ]
+  },
+  "directory_traversal": {
+    "description": "Attempts to access files outside allowed directories",
+    "patterns": [
+      "\\.\\./\\.\\./\\.\\./", "\\.\\.\\\\\\.\\.\\\\\\.\\.",
+      "%2e%2e%2f", "%2e%2e%5c", "..%2f", "..%5c",
+      "CWD.*\\.\\./", "LIST.*\\.\\./", "RETR.*\\.\\./",
+      "STOR.*\\.\\./", "CWD.*\\.\\.\\\\"
+    ],
+    "severity": "high",
+    "indicators": [
+      "path_traversal", "directory_escape", "file_system_bypass",
+      "unauthorized_access", "security_bypass"
+    ]
+  },
+  "ftp_bounce_attack": {
+    "description": "FTP bounce attacks using PORT command",
+    "patterns": [
+      "PORT.*127\\.0\\.0\\.1", "PORT.*localhost", "PORT.*10\\.",
+      "PORT.*192\\.168\\.", "PORT.*172\\.(1[6-9]|2[0-9]|3[01])\\.",
+      "PORT.*0,0,0,0", "PORT.*255,255,255,255"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "ftp_bounce", "port_scanning", "network_abuse",
+      "third_party_connection", "protocol_abuse"
+    ]
+  },
+  "brute_force_authentication": {
+    "description": "Brute force authentication attempts",
+    "patterns": [
+      "USER.*admin", "USER.*root", "USER.*administrator",
+      "USER.*test", "USER.*guest", "USER.*ftp",
+      "PASS.*admin", "PASS.*password", "PASS.*123456",
+      "PASS.*root", "PASS.*test", "PASS.*guest"
+    ],
+    "severity": "high",
+    "indicators": [
+      "brute_force", "credential_attack", "authentication_bypass",
+      "password_guessing", "account_enumeration"
+    ]
+  },
+  "malicious_file_upload": {
+    "description": "Upload of potentially malicious files",
+    "patterns": [
+      "STOR.*\\.exe", "STOR.*\\.bat", "STOR.*\\.cmd",
+      "STOR.*\\.sh", "STOR.*\\.php", "STOR.*\\.jsp",
+      "STOR.*\\.asp", "STOR.*\\.py", "STOR.*\\.pl",
+      "STOR.*backdoor", "STOR.*shell", "STOR.*malware",
+      "STOR.*virus", "STOR.*trojan", "STOR.*rootkit"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "malware_upload", "backdoor_installation", "web_shell",
+      "executable_upload", "suspicious_file"
+    ]
+  },
+  "data_exfiltration": {
+    "description": "Attempts to download sensitive files",
+    "patterns": [
+      "RETR.*passwd", "RETR.*shadow", "RETR.*config",
+      "RETR.*\\.key", "RETR.*\\.pem", "RETR.*\\.p12",
+      "RETR.*database", "RETR.*backup", "RETR.*dump",
+      "RETR.*\\.sql", "RETR.*\\.db", "RETR.*\\.mdb",
+      "RETR.*secret", "RETR.*private", "RETR.*confidential"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "data_theft", "sensitive_file_access", "credential_harvesting",
+      "database_extraction", "configuration_theft"
+    ]
+  },
+  "anonymous_abuse": {
+    "description": "Abuse of anonymous FTP access",
+    "patterns": [
+      "USER.*anonymous", "USER.*ftp", "PASS.*@",
+      "PASS.*anonymous", "PASS.*guest@"
+    ],
+    "severity": "medium",
+    "indicators": [
+      "anonymous_access", "guest_abuse", "unrestricted_access"
+    ]
+  },
+  "protocol_abuse": {
+    "description": "Abuse of FTP protocol features",
+    "patterns": [
+      "SITE.*EXEC", "SITE.*CHMOD", "SITE.*CHGRP",
+      "SITE.*UTIME", "SITE.*IDLE", "SITE.*UMASK",
+      "ABOR", "ALLO.*999999", "REST.*-1"
+    ],
+    "severity": "high",
+    "indicators": [
+      "protocol_abuse", "command_injection", "privilege_escalation",
+      "system_manipulation", "service_abuse"
+    ]
+  },
+  "buffer_overflow": {
+    "description": "Buffer overflow attempts in FTP commands",
+    "patterns": [
+      "USER.*A{100,}", "PASS.*A{100,}", "CWD.*A{100,}",
+      "LIST.*A{100,}", "RETR.*A{100,}", "STOR.*A{100,}",
+      "PORT.*A{100,}", "PASV.*A{100,}"
+    ],
+    "severity": "critical",
+    "indicators": [
+      "buffer_overflow", "memory_corruption", "exploit_attempt",
+      "service_crash", "code_execution"
+    ]
+  },
+  "steganography": {
+    "description": "Potential steganography in file transfers",
+    "patterns": [
+      "STOR.*\\.jpg", "STOR.*\\.png", "STOR.*\\.gif",
+      "STOR.*\\.bmp", "STOR.*\\.wav", "STOR.*\\.mp3",
+      "RETR.*\\.jpg", "RETR.*\\.png", "RETR.*\\.gif"
+    ],
+    "severity": "medium",
+    "indicators": [
+      "steganography", "hidden_data", "covert_channel",
+      "data_hiding", "information_concealment"
+    ]
+  }
+}

@@ -187,11 +187,8 @@ config.conf
 # Session Data and Logs
 sessions/
 *.log
-*.json
 forensic_chain.json
 session_summary.json
-attack_patterns.json
-vulnerability_signatures.json
 
 # Honeypot Specific Files
 downloads/

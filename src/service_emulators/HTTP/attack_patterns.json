@@ -1,0 +1,469 @@
+{
+  "sql_injection": {
+    "patterns": [
+      "union.*select",
+      "or.*1=1",
+      "drop.*table",
+      "insert.*into",
+      "delete.*from",
+      "update.*set",
+      "exec.*xp_",
+      "sp_executesql",
+      "information_schema",
+      "sysobjects",
+      "syscolumns",
+      "@@version",
+      "waitfor.*delay",
+      "benchmark\\(",
+      "sleep\\(",
+      "pg_sleep",
+      "extractvalue\\(",
+      "updatexml\\(",
+      "load_file\\(",
+      "into.*outfile",
+      "into.*dumpfile"
+    ],
+    "severity": "critical",
+    "description": "SQL injection attack patterns targeting database queries",
+    "indicators": [
+      "Database enumeration attempt",
+      "SQL syntax injection",
+      "Union-based injection",
+      "Time-based blind injection",
+      "Error-based injection"
+    ]
+  },
+  "xss": {
+    "patterns": [
+      "<script",
+      "javascript:",
+      "onerror=",
+      "onload=",
+      "onclick=",
+      "onmouseover=",
+      "onfocus=",
+      "onblur=",
+      "alert\\(",
+      "confirm\\(",
+      "prompt\\(",
+      "document\\.cookie",
+      "document\\.write",
+      "innerHTML",
+      "eval\\(",
+      "setTimeout\\(",
+      "setInterval\\(",
+      "String\\.fromCharCode",
+      "unescape\\(",
+      "decodeURIComponent\\("
+    ],
+    "severity": "high",
+    "description": "Cross-site scripting (XSS) attack patterns",
+    "indicators": [
+      "Script injection attempt",
+      "DOM manipulation",
+      "Cookie theft attempt",
+      "Session hijacking",
+      "Phishing attempt"
+    ]
+  },
+  "path_traversal": {
+    "patterns": [
+      "\\.\\./",
+      "\\.\\.\\\\/",
+      "%2e%2e%2f",
+      "%2e%2e%5c",
+      "..%2f",
+      "..%5c",
+      "%252e%252e%252f",
+      "....//",
+      "....\\\\\\\\",
+      "/etc/passwd",
+      "/etc/shadow",
+      "/etc/hosts",
+      "/proc/version",
+      "/proc/self/environ",
+      "c:\\\\windows\\\\system32",
+      "c:\\\\boot\\.ini",
+      "c:\\\\windows\\\\win\\.ini"
+    ],
+    "severity": "high",
+    "description": "Directory traversal and path manipulation attacks",
+    "indicators": [
+      "File system traversal",
+      "Sensitive file access attempt",
+      "Configuration file enumeration",
+      "System file disclosure"
+    ]
+  },
+  "command_injection": {
+    "patterns": [
+      ";.*rm",
+      ";.*cat",
+      ";.*ls",
+      ";.*ps",
+      ";.*id",
+      ";.*whoami",
+      ";.*uname",
+      ";.*netstat",
+      "&&.*rm",
+      "&&.*cat",
+      "&&.*ls",
+      "\\|.*nc",
+      "\\|.*netcat",
+      "\\|.*bash",
+      "\\|.*sh",
+      "`.*rm",
+      "`.*cat",
+      "\\$\\(.*rm",
+      "\\$\\(.*cat",
+      "exec\\(",
+      "system\\(",
+      "shell_exec\\(",
+      "passthru\\(",
+      "popen\\("
+    ],
+    "severity": "critical",
+    "description": "Command injection and code execution attempts",
+    "indicators": [
+      "System command execution",
+      "Shell command injection",
+      "Remote code execution attempt",
+      "System enumeration"
+    ]
+  },
+  "reconnaissance": {
+    "patterns": [
+      "/admin",
+      "/administrator",
+      "/wp-admin",
+      "/wp-login",
+      "/login",
+      "/admin\\.php",
+      "/phpmyadmin",
+      "/cpanel",
+      "/webmail",
+      "/manager",
+      "/console",
+      "/dashboard",
+      "/config",
+      "/configuration",
+      "/settings",
+      "/setup",
+      "/install",
+      "/backup",
+      "/backups",
+      "/db",
+      "/database",
+      "/sql",
+      "/test",
+      "/dev",
+      "/development",
+      "/staging",
+      "/temp",
+      "/tmp",
+      "/logs",
+      "/log",
+      "/debug",
+      "/trace",
+      "/error",
+      "/errors",
+      "/status",
+      "/info",
+      "/phpinfo",
+      "/server-info",
+      "/server-status",
+      "/robots\\.txt",
+      "/sitemap\\.xml",
+      "/crossdomain\\.xml",
+      "/clientaccesspolicy\\.xml",
+      "/\\.git",
+      "/\\.svn",
+      "/\\.env",
+      "/\\.htaccess",
+      "/web\\.config"
+    ],
+    "severity": "medium",
+    "description": "Reconnaissance and information gathering attempts",
+    "indicators": [
+      "Directory enumeration",
+      "Administrative interface discovery",
+      "Configuration file access",
+      "Information disclosure attempt",
+      "Technology fingerprinting"
+    ]
+  },
+  "file_inclusion": {
+    "patterns": [
+      "file://",
+      "php://filter",
+      "php://input",
+      "data://",
+      "expect://",
+      "zip://",
+      "compress\\.zlib://",
+      "compress\\.bzip2://",
+      "phar://",
+      "include.*\\$_GET",
+      "include.*\\$_POST",
+      "require.*\\$_GET",
+      "require.*\\$_POST",
+      "include_once.*\\$_GET",
+      "require_once.*\\$_GET"
+    ],
+    "severity": "high",
+    "description": "Local and remote file inclusion attacks",
+    "indicators": [
+      "File inclusion attempt",
+      "Remote file execution",
+      "Local file disclosure",
+      "PHP wrapper exploitation"
+    ]
+  },
+  "csrf": {
+    "patterns": [
+      "csrf",
+      "xsrf",
+      "cross.*site.*request",
+      "state.*changing.*request",
+      "forged.*request"
+    ],
+    "severity": "medium",
+    "description": "Cross-Site Request Forgery attempts",
+    "indicators": [
+      "CSRF token bypass",
+      "State-changing request",
+      "Unauthorized action attempt"
+    ]
+  },
+  "xxe": {
+    "patterns": [
+      "<!ENTITY",
+      "<!DOCTYPE.*ENTITY",
+      "SYSTEM.*file://",
+      "SYSTEM.*http://",
+      "SYSTEM.*https://",
+      "SYSTEM.*ftp://",
+      "SYSTEM.*gopher://",
+      "SYSTEM.*dict://",
+      "SYSTEM.*ldap://",
+      "SYSTEM.*jar://",
+      "SYSTEM.*netdoc://",
+      "SYSTEM.*mailto://",
+      "SYSTEM.*news://",
+      "SYSTEM.*imap://",
+      "SYSTEM.*pop3://",
+      "SYSTEM.*cid://",
+      "SYSTEM.*mid://",
+      "SYSTEM.*prospero://",
+      "SYSTEM.*telnet://",
+      "SYSTEM.*rlogin://",
+      "SYSTEM.*tn3270://",
+      "SYSTEM.*wais://"
+    ],
+    "severity": "high",
+    "description": "XML External Entity (XXE) injection attacks",
+    "indicators": [
+      "XML entity injection",
+      "External entity reference",
+      "File disclosure via XXE",
+      "SSRF via XXE"
+    ]
+  },
+  "ldap_injection": {
+    "patterns": [
+      "\\*\\)\\(.*=",
+      "\\*\\)\\(&",
+      "\\*\\)\\(\\|",
+      "\\)\\(cn=",
+      "\\)\\(uid=",
+      "\\)\\(mail=",
+      "\\)\\(objectClass=",
+      "\\)\\(memberOf=",
+      "\\)\\(sAMAccountName=",
+      "\\)\\(userPrincipalName="
+    ],
+    "severity": "high",
+    "description": "LDAP injection attack patterns",
+    "indicators": [
+      "LDAP query manipulation",
+      "Directory service enumeration",
+      "Authentication bypass attempt"
+    ]
+  },
+  "nosql_injection": {
+    "patterns": [
+      "\\$ne",
+      "\\$gt",
+      "\\$lt",
+      "\\$gte",
+      "\\$lte",
+      "\\$in",
+      "\\$nin",
+      "\\$regex",
+      "\\$where",
+      "\\$exists",
+      "\\$type",
+      "\\$mod",
+      "\\$all",
+      "\\$size",
+      "\\$elemMatch",
+      "\\$not",
+      "\\$or",
+      "\\$and",
+      "\\$nor"
+    ],
+    "severity": "high",
+    "description": "NoSQL injection attack patterns",
+    "indicators": [
+      "NoSQL query manipulation",
+      "MongoDB injection",
+      "Document database enumeration"
+    ]
+  },
+  "template_injection": {
+    "patterns": [
+      "\\{\\{.*\\}\\}",
+      "\\{%.*%\\}",
+      "\\$\\{.*\\}",
+      "<%.*%>",
+      "\\{\\{.*config.*\\}\\}",
+      "\\{\\{.*request.*\\}\\}",
+      "\\{\\{.*session.*\\}\\}",
+      "\\{\\{.*globals.*\\}\\}",
+      "\\{\\{.*\\.__class__.*\\}\\}",
+      "\\{\\{.*\\.__mro__.*\\}\\}",
+      "\\{\\{.*\\.__subclasses__.*\\}\\}",
+      "\\{\\{.*\\.__globals__.*\\}\\}",
+      "\\{\\{.*\\.__builtins__.*\\}\\}"
+    ],
+    "severity": "high",
+    "description": "Server-side template injection attacks",
+    "indicators": [
+      "Template engine exploitation",
+      "Server-side code execution",
+      "Template syntax injection"
+    ]
+  },
+  "deserialization": {
+    "patterns": [
+      "rO0AB",
+      "aced0005",
+      "java\\.lang\\.Runtime",
+      "java\\.lang\\.ProcessBuilder",
+      "java\\.io\\.ObjectInputStream",
+      "readObject",
+      "writeObject",
+      "readExternal",
+      "writeExternal",
+      "readResolve",
+      "writeReplace",
+      "serialVersionUID",
+      "pickle\\.loads",
+      "pickle\\.load",
+      "cPickle\\.loads",
+      "yaml\\.load",
+      "yaml\\.unsafe_load",
+      "unserialize\\(",
+      "json_decode\\(",
+      "eval\\(",
+      "__reduce__",
+      "__setstate__"
+    ],
+    "severity": "critical",
+    "description": "Insecure deserialization attacks",
+    "indicators": [
+      "Serialized object injection",
+      "Deserialization exploit",
+      "Remote code execution via deserialization"
+    ]
+  },
+  "ssrf": {
+    "patterns": [
+      "http://localhost",
+      "http://127\\.0\\.0\\.1",
+      "http://0\\.0\\.0\\.0",
+      "http://\\[::1\\]",
+      "http://\\[::\\]",
+      "file://",
+      "ftp://",
+      "gopher://",
+      "dict://",
+      "ldap://",
+      "jar://",
+      "netdoc://",
+      "mailto://",
+      "news://",
+      "imap://",
+      "pop3://",
+      "cid://",
+      "mid://",
+      "prospero://",
+      "telnet://",
+      "rlogin://",
+      "tn3270://",
+      "wais://",
+      "http://169\\.254\\.169\\.254",
+      "http://metadata\\.google\\.internal",
+      "http://169\\.254\\.169\\.254/latest/meta-data",
+      "http://metadata/computeMetadata"
+    ],
+    "severity": "high",
+    "description": "Server-Side Request Forgery (SSRF) attacks",
+    "indicators": [
+      "Internal network access attempt",
+      "Metadata service access",
+      "Port scanning via SSRF",
+      "Cloud metadata exploitation"
+    ]
+  },
+  "crlf_injection": {
+    "patterns": [
+      "%0d%0a",
+      "%0a%0d",
+      "\\r\\n",
+      "\\n\\r",
+      "%0d",
+      "%0a",
+      "\\r",
+      "\\n",
+      "%E5%98%8A%E5%98%8D",
+      "%E5%98%8D%E5%98%8A",
+      "\\u000d\\u000a",
+      "\\u000a\\u000d"
+    ],
+    "severity": "medium",
+    "description": "CRLF injection and HTTP response splitting",
+    "indicators": [
+      "HTTP header injection",
+      "Response splitting attempt",
+      "Session fixation",
+      "Cache poisoning"
+    ]
+  },
+  "log_injection": {
+    "patterns": [
+      "\\x00",
+      "%00",
+      "\\n",
+      "\\r",
+      "%0a",
+      "%0d",
+      "\\t",
+      "%09",
+      "\\x1b\\[",
+      "\\033\\[",
+      "\\e\\[",
+      "\\x1b\\]",
+      "\\033\\]",
+      "\\e\\]"
+    ],
+    "severity": "low",
+    "description": "Log injection and log forging attempts",
+    "indicators": [
+      "Log pollution",
+      "Log forging attempt",
+      "ANSI escape sequence injection",
+      "Null byte injection"
+    ]
+  }
+}
