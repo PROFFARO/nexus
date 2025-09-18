@@ -25,8 +25,8 @@ class NexusCLI:
             },
             'http': {
                 'path': self.base_dir / 'service_emulators' / 'HTTP' / 'http_server.py',
-                'implemented': False,
-                'description': 'HTTP/Web honeypot (not implemented)'
+                'implemented': True,
+                'description': 'HTTP/Web honeypot with AI-powered responses'
             },
             'mysql': {
                 'path': self.base_dir / 'service_emulators' / 'MySQL' / 'mysql_server.py',
@@ -94,7 +94,9 @@ Examples:
         # FTP service parser
         ftp_parser = subparsers.add_parser('ftp', help='Start FTP honeypot')
         self._add_ftp_arguments(ftp_parser)
-        http_parser = subparsers.add_parser('http', help='Start HTTP honeypot (not implemented)')
+        # HTTP service parser
+        http_parser = subparsers.add_parser('http', help='Start HTTP honeypot')
+        self._add_http_arguments(http_parser)
         mysql_parser = subparsers.add_parser('mysql', help='Start MySQL honeypot (not implemented)')
         smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot (not implemented)')
         
@@ -107,6 +109,44 @@ Examples:
         parser.add_argument('-P', '--port', type=int, help='FTP port (default: 2121)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
+        
+        # LLM Configuration
+        parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
+                          help='LLM provider')
+        parser.add_argument('--model-name', help='LLM model name')
+        parser.add_argument('--temperature', type=float, help='LLM temperature (0.0-2.0)')
+        parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
+        parser.add_argument('--base-url', help='Base URL for Ollama/custom providers')
+        
+        # Azure OpenAI specific
+        parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
+        parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint')
+        parser.add_argument('--azure-api-version', help='Azure OpenAI API version')
+        
+        # AWS specific
+        parser.add_argument('--aws-region', help='AWS region')
+        parser.add_argument('--aws-profile', help='AWS credentials profile')
+        
+        # User accounts
+        parser.add_argument('-u', '--user-account', action='append',
+                          help='User account (username=password). Can be repeated')
+        
+        # Prompts
+        parser.add_argument('-p', '--prompt', help='System prompt text')
+        parser.add_argument('-f', '--prompt-file', help='System prompt file')
+
+    def _add_http_arguments(self, parser):
+        """Add HTTP-specific arguments"""
+        # Configuration
+        parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-P', '--port', type=int, help='HTTP port (default: 8080)')
+        parser.add_argument('-L', '--log-file', help='Log file path')
+        parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
+        
+        # SSL/HTTPS Configuration
+        parser.add_argument('--ssl', action='store_true', help='Enable SSL/HTTPS')
+        parser.add_argument('--ssl-cert', help='SSL certificate file')
+        parser.add_argument('--ssl-key', help='SSL private key file')
         
         # LLM Configuration
         parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
@@ -310,6 +350,75 @@ Examples:
         
         return 0
 
+    def run_http_service(self, args):
+        """Run HTTP honeypot with provided arguments"""
+        if not self.services['http']['implemented']:
+            print("Error: HTTP service not implemented")
+            return 1
+            
+        http_script = self.services['http']['path']
+        if not http_script.exists():
+            print(f"Error: HTTP script not found at {http_script}")
+            return 1
+        
+        # Build command arguments
+        cmd = [sys.executable, str(http_script)]
+        
+        # Add arguments
+        if args.config:
+            cmd.extend(['-c', args.config])
+        if args.port:
+            cmd.extend(['-P', str(args.port)])
+        if args.log_file:
+            cmd.extend(['-L', args.log_file])
+        if args.sensor_name:
+            cmd.extend(['-S', args.sensor_name])
+        if args.llm_provider:
+            cmd.extend(['-l', args.llm_provider])
+        if args.model_name:
+            cmd.extend(['-m', args.model_name])
+        if args.temperature is not None:
+            cmd.extend(['-r', str(args.temperature)])
+        if args.max_tokens:
+            cmd.extend(['-t', str(args.max_tokens)])
+        if args.prompt:
+            cmd.extend(['-p', args.prompt])
+        if args.prompt_file:
+            cmd.extend(['-f', args.prompt_file])
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        # Set environment variables for additional configs
+        env = os.environ.copy()
+        if args.base_url:
+            env['OLLAMA_BASE_URL'] = args.base_url
+        if args.azure_deployment:
+            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
+        if args.azure_endpoint:
+            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
+        if args.azure_api_version:
+            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
+        if args.aws_region:
+            env['AWS_DEFAULT_REGION'] = args.aws_region
+        if args.aws_profile:
+            env['AWS_PROFILE'] = args.aws_profile
+        
+        # Change to HTTP directory
+        http_dir = self.services['http']['path'].parent
+        
+        try:
+            print(f"Starting HTTP honeypot...")
+            print(f"Command: {' '.join(cmd)}")
+            subprocess.run(cmd, cwd=http_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nHTTP honeypot stopped")
+        except Exception as e:
+            print(f"Error running HTTP honeypot: {e}")
+            return 1
+        
+        return 0
+
     def generate_report(self, args):
         """Generate security report for specific service"""
         service_info = self.services.get(args.service)
@@ -420,14 +529,45 @@ print("Visualizations: {args.output}/visualizations/")
         return 0
     
     def _generate_http_report(self, args):
-        """Generate HTTP-specific security report (placeholder)"""
-        print("HTTP report generation not implemented")
-        print("HTTP honeypot data structure:")
-        print("  - HTTP request logs")
-        print("  - Web application attacks")
-        print("  - SQL injection attempts")
-        print("  - XSS attack patterns")
-        return 1
+        """Generate HTTP-specific security report"""
+        http_dir = self.services['http']['path'].parent
+        sessions_dir = args.sessions_dir or str(http_dir / 'sessions')
+        
+        # Build command for HTTP report generator
+        cmd = [sys.executable, '-c', f'''
+import sys
+sys.path.append("{http_dir}")
+from report_generator import HTTPHoneypotReportGenerator
+
+generator = HTTPHoneypotReportGenerator(sessions_dir="{sessions_dir}")
+report_files = generator.generate_comprehensive_report(output_dir="{args.output}")
+
+if "error" in report_files:
+    print(f"Error: {{report_files['error']}}")
+    sys.exit(1)
+
+print("HTTP Security Report Generated Successfully!")
+if "{args.format}" in ["json", "both"]:
+    print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+if "{args.format}" in ["html", "both"]:
+    print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+print("Visualizations: {args.output}/visualizations/")
+''']
+        
+        try:
+            print(f"Generating HTTP security report...")
+            print(f"Sessions directory: {sessions_dir}")
+            print(f"Output directory: {args.output}")
+            print(f"Format: {args.format}")
+            subprocess.run(cmd, cwd=http_dir, check=True)
+        except subprocess.CalledProcessError as e:
+            print(f"Error generating HTTP report: {e}")
+            return 1
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return 1
+        
+        return 0
     
     def _generate_mysql_report(self, args):
         """Generate MySQL-specific security report (placeholder)"""
@@ -535,7 +675,9 @@ print("Visualizations: {args.output}/visualizations/")
             return self.run_ssh_service(args)
         elif args.command == 'ftp':
             return self.run_ftp_service(args)
-        elif args.command in ['http', 'mysql', 'smb']:
+        elif args.command == 'http':
+            return self.run_http_service(args)
+        elif args.command in ['mysql', 'smb']:
             return self.run_placeholder_service(args.command)
         else:
             print(f"Unknown command: {args.command}")

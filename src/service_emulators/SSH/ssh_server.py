@@ -1624,6 +1624,8 @@ try:
     loop.run_until_complete(start_server())
     loop.run_forever()
 
+except KeyboardInterrupt:
+    print("\nSSH honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()

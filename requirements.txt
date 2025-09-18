@@ -4,6 +4,9 @@
 asyncssh>=2.13.0
 asyncio-mqtt>=0.11.1
 
+# FTP Server Support
+pyftpdlib>=1.5.7
+
 # AI/ML and LLM Integration
 langchain>=0.1.0
 langchain-openai>=0.0.5
@@ -90,9 +93,12 @@ black>=23.7.0
 flake8>=6.0.0
 mypy>=1.5.0
 
+# HTTP Server Support
+aiohttp>=3.8.0
+aiohttp-cors>=0.7.0
+
 # Utilities
 requests>=2.31.0
-aiohttp>=3.8.0
 click>=8.1.0
 rich>=13.5.0
 tqdm>=4.65.0

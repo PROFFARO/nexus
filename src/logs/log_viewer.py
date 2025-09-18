@@ -125,6 +125,53 @@ class LogViewer:
         
         return conversations
     
+    def parse_http_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
+                       filter_type: str = 'all') -> Dict[str, Any]:
+        """Parse HTTP log file and extract conversations"""
+        conversations = {}
+        
+        if not os.path.exists(log_file):
+            raise FileNotFoundError(f"Log file not found: {log_file}")
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    task_name = log_entry.get('task_name', 'unknown')
+                    message = log_entry.get('message', '')
+                    
+                    if session_id and session_id not in task_name:
+                        continue
+                    
+                    if task_name not in conversations:
+                        conversations[task_name] = {
+                            'session_id': task_name,
+                            'src_ip': log_entry.get('src_ip', 'unknown'),
+                            'entries': []
+                        }
+                    
+                    entry = {
+                        'timestamp': log_entry.get('timestamp', ''),
+                        'message': message,
+                        'level': log_entry.get('level', 'INFO'),
+                        'raw': log_entry
+                    }
+                    
+                    # Apply filters
+                    if filter_type == 'commands' and 'HTTP request' not in message:
+                        continue
+                    elif filter_type == 'responses' and 'HTTP response' not in message:
+                        continue
+                    elif filter_type == 'attacks' and 'attack' not in message.lower():
+                        continue
+                    
+                    conversations[task_name]['entries'].append(entry)
+                    
+                except (json.JSONDecodeError, Exception):
+                    continue
+        
+        return conversations
+    
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False) -> str:
         """Format conversations for display"""
@@ -133,7 +180,7 @@ class LogViewer:
         
         output = []
         output.append("=" * 80)
-        service_name = "SSH" if self.service == 'ssh' else "FTP"
+        service_name = {"ssh": "SSH", "ftp": "FTP", "http": "HTTP"}.get(self.service, self.service.upper())
         output.append(f"NEXUS {service_name} HONEYPOT - SESSION CONVERSATIONS")
         output.append("=" * 80)
         
@@ -148,14 +195,14 @@ class LogViewer:
                     timestamp = entry['timestamp'][:19] if entry['timestamp'] else 'Unknown'
                     message = entry['message']
                     
-                    if 'User input' in message or 'FTP command' in message:
+                    if 'User input' in message or 'FTP command' in message or 'HTTP request' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 👤 USER COMMAND:")
                             output.append(f"   {entry['decoded_details']}")
                         else:
                             output.append(f"\n[{timestamp}] 👤 USER INPUT: {message}")
                     
-                    elif 'LLM response' in message or 'FTP response' in message:
+                    elif 'LLM response' in message or 'FTP response' in message or 'HTTP response' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
                             output.append(f"   {entry['decoded_details']}")
@@ -173,8 +220,8 @@ class LogViewer:
                         emoji = {'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🚨'}.get(entry['level'], 'ℹ️')
                         output.append(f"\n[{timestamp}] {emoji} {entry['level']}: {message}")
             else:
-                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message']]
-                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'FTP response' in e['message']]
+                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message'] or 'HTTP request' in e['message']]
+                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'FTP response' in e['message'] or 'HTTP response' in e['message']]
                 attacks = [e for e in conv['entries'] if 'attack' in e['message'].lower()]
                 
                 output.append(f"   Commands: {len(commands)}")
@@ -209,7 +256,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.service not in ['ssh', 'ftp']:
+    if args.service not in ['ssh', 'ftp', 'http']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
@@ -224,6 +271,9 @@ def main():
         elif args.service == 'ftp':
             new_log_path = base_dir / 'logs' / 'ftp_log.log'
             old_log_path = base_dir / 'service_emulators' / 'FTP' / 'ftp_log.log'
+        elif args.service == 'http':
+            new_log_path = base_dir / 'logs' / 'http_log.log'
+            old_log_path = base_dir / 'service_emulators' / 'HTTP' / 'http_log.log'
         
         if new_log_path and new_log_path.exists():
             args.log_file = str(new_log_path)
@@ -241,6 +291,10 @@ def main():
             )
         elif args.service == 'ftp':
             conversations = viewer.parse_ftp_logs(
+                args.log_file, args.session_id, args.decode, args.filter
+            )
+        elif args.service == 'http':
+            conversations = viewer.parse_http_logs(
                 args.log_file, args.session_id, args.decode, args.filter
             )
         

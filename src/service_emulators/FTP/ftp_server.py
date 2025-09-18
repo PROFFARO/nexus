@@ -1104,13 +1104,17 @@ async def start_server():
     """Start the FTP server"""
     server_instance = MyFTPServer()
     
+    port = config['ftp'].getint('port', 2121)
+    
     server = await asyncio.start_server(
         server_instance.handle_client,
-        host='0.0.0.0',
-        port=config['ftp'].getint('port', 2121)
+        host='127.0.0.1',
+        port=port,
+        reuse_address=True
     )
     
-    logger.info(f"FTP honeypot started on port {config['ftp'].getint('port', 2121)}")
+    logger.info(f"FTP honeypot started on 127.0.0.1:{port}")
+    print(f"FTP honeypot listening on 127.0.0.1:{port}")
     
     async with server:
         await server.serve_forever()
@@ -1328,7 +1332,7 @@ try:
     )
 
     llm_chain = (
-        RunnablePassthrough.assign(messages=itemgetter("messages") | llm_trimmer)
+        RunnablePassthrough.assign(messages=(itemgetter("messages") | llm_trimmer))
         | llm_prompt
         | llm
     )
@@ -1347,6 +1351,8 @@ try:
     asyncio.set_event_loop(loop)
     loop.run_until_complete(start_server())
 
+except KeyboardInterrupt:
+    print("\nFTP honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()
