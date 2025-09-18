@@ -30,10 +30,10 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 import socket
 import struct
+import aiohttp
 from aiohttp import web, ClientSession
 from aiohttp.web_request import Request
 from aiohttp.web_response import Response
-import aiohttp
 from urllib.parse import urlparse, parse_qs, unquote
 
 
@@ -354,6 +354,7 @@ class HTTPHoneypot:
     
     def __init__(self):
         self.sessions = {}
+        self.active_sessions = {}
         
         # Create session directory
         session_id = f"http_session_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
@@ -409,14 +410,18 @@ class HTTPHoneypot:
         except Exception:
             body_text = ""
         
-        # Create session data
-        session_data = {
-            'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            'requests': [],
-            'attack_analysis': [],
-            'vulnerabilities': [],
-            'files_uploaded': []
-        }
+        # Create or get session data
+        session_key = f"{src_ip}:{src_port}"
+        if session_key not in self.active_sessions:
+            self.active_sessions[session_key] = {
+                'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'requests': [],
+                'attack_analysis': [],
+                'vulnerabilities': [],
+                'files_uploaded': [],
+                'client_info': {'ip': src_ip, 'port': src_port}
+            }
+        session_data = self.active_sessions[session_key]
         
         # Log request
         request_info = {
@@ -479,7 +484,7 @@ class HTTPHoneypot:
                 logger.error(f"Vulnerability logging failed: {e}")
         
         # Handle file uploads
-        if method == 'POST' and request.content_type and 'multipart' in request.content_type:
+        if method == 'POST' and request.content_type and 'multipart' in request.content_type and self.file_handler:
             try:
                 reader = await request.multipart()
                 async for part in reader:
@@ -494,6 +499,11 @@ class HTTPHoneypot:
             except Exception as e:
                 logger.error(f"File upload handling failed: {e}")
         
+        # Generate AI response
+        response_content, status_code, response_headers = await self.generate_ai_response(
+            method, path, headers, body_text, attack_analysis
+        )
+        
         # Store request in session data
         session_data['requests'].append({
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -502,13 +512,11 @@ class HTTPHoneypot:
             'headers': headers,
             'body': body_text[:1000],  # Limit body size in logs
             'attack_analysis': attack_analysis,
-            'vulnerabilities': vulnerabilities
+            'vulnerabilities': vulnerabilities,
+            'response_content': response_content[:2000],  # Store AI response
+            'response_status': status_code,
+            'response_headers': response_headers
         })
-        
-        # Generate AI response
-        response_content, status_code, response_headers = await self.generate_ai_response(
-            method, path, headers, body_text, attack_analysis
-        )
         
         # Log response
         logger.info("HTTP response", extra={
@@ -522,6 +530,9 @@ class HTTPHoneypot:
         session_file = self.session_dir / f"session_{uuid.uuid4().hex[:8]}.json"
         with open(session_file, 'w') as f:
             json.dump(session_data, f, indent=2)
+            
+        # Generate AI session summary like SSH/FTP
+        await self.generate_session_summary(session_data, session_file)
             
         if self.forensic_logger:
             try:
@@ -549,14 +560,17 @@ Generate realistic HTTP response for NexusGames Studio website."""
             ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
         
         try:
-            # Get AI response
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=ai_prompt)],
-                    "username": headers.get('User-Agent', 'anonymous'),
-                    "interactive": True
-                },
-                config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
+            # Get AI response with timeout
+            llm_response = await asyncio.wait_for(
+                with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=ai_prompt)],
+                        "username": headers.get('User-Agent', 'anonymous'),
+                        "interactive": True
+                    },
+                    config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
+                ),
+                timeout=10.0
             )
             
             ai_content = llm_response.content.strip() if llm_response else ""
@@ -578,6 +592,9 @@ Generate realistic HTTP response for NexusGames Studio website."""
             else:
                 return self.generate_fallback_response(path, attack_analysis)
                 
+        except asyncio.TimeoutError:
+            logger.warning("AI response timeout, using fallback")
+            return self.generate_fallback_response(path, attack_analysis)
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
             return self.generate_fallback_response(path, attack_analysis)
@@ -586,7 +603,7 @@ Generate realistic HTTP response for NexusGames Studio website."""
         """Generate appropriate HTTP response headers"""
         headers = {
             'Server': 'Apache/2.4.41 (Ubuntu)',
-            'Date': datetime.datetime.utcnow().strftime('%a, %d %b %Y %H:%M:%S GMT'),
+            'Date': datetime.datetime.now(datetime.UTC).strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'Connection': 'close'
         }
         
@@ -639,6 +656,47 @@ Generate realistic HTTP response for NexusGames Studio website."""
         
         headers = self.generate_response_headers(path, content, attack_analysis)
         return content, status_code, headers
+
+    async def generate_session_summary(self, session_data: Dict, session_file: Path):
+        """Generate AI-powered session summary like SSH/FTP services"""
+        try:
+            prompt = f'''Analyze this HTTP session for malicious activity:
+- Total requests: {len(session_data.get('requests', []))}
+- Paths accessed: {[req['path'] for req in session_data.get('requests', [])]}
+- Methods used: {list(set(req['method'] for req in session_data.get('requests', [])))}
+- User agents: {list(set(req['headers'].get('User-Agent', 'Unknown') for req in session_data.get('requests', [])))}
+- Attack patterns: {[analysis['attack_types'] for analysis in session_data.get('attack_analysis', []) if analysis.get('attack_types')]}
+- Vulnerabilities: {[vuln['vulnerability_id'] for vuln in session_data.get('vulnerabilities', [])]}
+- Files uploaded: {len(session_data.get('files_uploaded', []))}
+
+Provide analysis covering:
+1. Attack stage identification
+2. Primary objectives
+3. Threat level assessment
+
+End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
+
+            llm_response = await with_message_history.ainvoke(
+                {
+                    "messages": [HumanMessage(content=prompt)],
+                    "username": "http_analyzer",
+                    "interactive": True
+                },
+                config={"configurable": {"session_id": f"http-summary-{uuid.uuid4().hex[:8]}"}}
+            )
+            
+            judgement = "UNKNOWN"
+            if "Judgement: BENIGN" in llm_response.content:
+                judgement = "BENIGN"
+            elif "Judgement: SUSPICIOUS" in llm_response.content:
+                judgement = "SUSPICIOUS"
+            elif "Judgement: MALICIOUS" in llm_response.content:
+                judgement = "MALICIOUS"
+
+            logger.info("HTTP session summary", extra={"details": llm_response.content, "judgement": judgement, "session_file": str(session_file)})
+            
+        except Exception as e:
+            logger.error(f"Session summary generation failed: {e}")
 
 async def create_app():
     """Create aiohttp application"""

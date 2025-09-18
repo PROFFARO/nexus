@@ -452,10 +452,8 @@
       "%09",
       "\\x1b\\[",
       "\\033\\[",
-      "\\e\\[",
       "\\x1b\\]",
-      "\\033\\]",
-      "\\e\\]"
+      "\\033\\]"
     ],
     "severity": "low",
     "description": "Log injection and log forging attempts",
