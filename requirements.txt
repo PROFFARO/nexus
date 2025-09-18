@@ -104,3 +104,5 @@ rich>=13.5.0
 tqdm>=4.65.0
 python-dateutil>=2.8.0
 pytz>=2023.3
+textual>=0.45.0
+rich>=13.0.0
