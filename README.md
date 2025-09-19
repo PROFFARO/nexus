@@ -624,13 +624,13 @@ nexus-development/
 - [x] Comprehensive reporting system
 - [x] Forensic chain of custody
 
-### Phase 2: Advanced Features 🚧
+### Phase 2: Planned Features 🚧
 - [ ] Real-time dashboard and visualization
 - [ ] Machine learning-based threat prediction
 - [ ] Docker containerization
-
-### Phase 3: Enterprise Features 📋
 - [ ] SMB file share honeypot
+
+### Phase 3: Advanced Features 📋
 - [ ] Multi-honeypot correlation analysis
 - [ ] Automated response orchestration
 - [ ] Threat intelligence feeds integration
