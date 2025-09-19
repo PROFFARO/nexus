@@ -30,18 +30,16 @@
 | **📊 Comprehensive Reporting** | Interactive dashboards, detailed security reports with visualizations | ✅ Production |
 | **🔐 Forensic Chain** | Legal-grade evidence tracking with cryptographic integrity verification | ✅ Production |
 | **🌐 Multi-Protocol Support** | SSH, FTP, HTTP/HTTPS, MySQL with SMB planned | ✅ 4/5 Services |
-| **⚡ Enterprise Deployment** | CLI interface, Docker support, SIEM integration ready | ✅ Production |
-| **🛡️ Advanced Security** | Zero-trust architecture, encrypted communications, audit trails | ✅ Production |
+| **⚡ Enterprise Deployment** | CLI interface, Docker support | ✅ Production |
 | **📈 Scalability** | Horizontal scaling, load balancing, distributed deployment | 🚧 In Progress |
 
 ### 🏆 What Makes NEXUS Unique
 
 - **First AI-Native Honeypot**: Built from ground up with AI integration, not retrofitted
-- **Enterprise-Grade Forensics**: Complete chain of custody with legal admissibility
-- **Multi-LLM Architecture**: Vendor-agnostic AI with failover and load balancing
-- **Corporate Environment Simulation**: Realistic NexusGames Studio environment with authentic data
-- **Zero False Positives**: AI-powered attack classification with 99.9% accuracy
-- **Real-time Threat Intelligence**: Live attack pattern updates and IOC generation
+- **Enterprise-Grade Forensics**: Complete Forensic chain of attack analysis with proper CVE attacks descriptions.
+- **Multi-LLM Architecture**: Vendor-agnostic AI and full support of multiple parameter tweaking.
+- **Corporate Environment Simulation**: Realistic NexusGames Studio environment with authentic data plus support of changing of enviroment.
+- **Real-time Threat Intelligence**: Live attack pattern updates and log generation.
 
 ---
 
@@ -140,7 +138,7 @@
 **Location**: `src/service_emulators/MySQL/`  
 **Default Port**: 3306 (configurable)  
 **AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**Client Support**: Standard MySQL clients, command-line tools, GUI applications
+**Client Support**: Standard MySQL clients, command-line tools, WorkBench applications
 
 </details>
 
@@ -157,7 +155,7 @@
 | Requirement | Version | Purpose | Installation |
 |-------------|---------|---------|-------------|
 | **Python** | 3.8+ (3.11+ recommended) | Core runtime | [Download Python](https://python.org/downloads/) |
-| **Git** | Latest | Repository cloning | [Download Git](https://git-scm.com/downloads) |
+| **Git** | Latest | Repository cloning and contribution | [Download Git](https://git-scm.com/downloads) |
 | **LLM API Key** | N/A | AI responses | Choose from [supported providers](#llm-provider-configuration) |
 | **MySQL Client** | 8.0+ (optional) | Testing MySQL honeypot | `apt install mysql-client` or [MySQL Downloads](https://dev.mysql.com/downloads/) |
 | **Docker** | 20.0+ (optional) | Containerized deployment | [Docker Installation](https://docs.docker.com/get-docker/) |
@@ -166,11 +164,11 @@
 
 | Provider | Models | Cost | Setup Difficulty | Recommended Use |
 |----------|--------|------|------------------|----------------|
-| **OpenAI** | GPT-4o, GPT-4o-mini | $$$ | Easy | Production, high-quality responses |
-| **Google Gemini** | Gemini-2.5-flash-lite | $$ | Easy | Cost-effective, fast responses |
-| **Ollama** | Llama3.2, CodeLlama | Free | Medium | Local deployment, privacy |
-| **Azure OpenAI** | GPT-4o, GPT-3.5 | $$$ | Medium | Enterprise, compliance |
-| **AWS Bedrock** | Claude-3.5-Sonnet | $$$ | Hard | AWS ecosystem integration |
+| **OpenAI** | GPT-4o, GPT-4o-mini, ... | $$$ | Easy | Production, high-quality responses |
+| **Google Gemini** | Gemini-2.5-flash-lite, ... | $$ | Easy | Cost-effective, fast responses |
+| **Ollama** | Llama3.2, CodeLlama, ... | Free | Medium | Local deployment, privacy |
+| **Azure OpenAI** | GPT-4o, GPT-3.5, ... | $$$ | Medium | Enterprise, compliance |
+| **AWS Bedrock** | Claude-3.5-Sonnet, ... | $$$ | Hard | AWS ecosystem integration |
 
 ### 1. Clone Repository
 
@@ -213,7 +211,7 @@ cp src/service_emulators/MySQL/.env.example src/service_emulators/MySQL/.env
 
 ```bash
 # 1. Start SSH honeypot (most popular)
-python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai
+python src/cli/nexus_cli.py ssh --port 8022 --llm-provider <model_name>
 
 # 2. In another terminal, test it
 ssh admin@localhost -p 8022
@@ -281,7 +279,7 @@ python src/cli/nexus_cli.py logs mysql --conversation --save mysql_session.txt
 
 # 🎯 Advanced Filtering
 python src/cli/nexus_cli.py logs ssh --filter attacks --severity critical --last 24h
-python src/cli/nexus_cli.py report ssh --severity high --period 7d --export-iocs
+python src/cli/nexus_cli.py report ssh --severity high --period 7d
 ```
 
 ### Direct Service Execution
@@ -472,9 +470,9 @@ Generate comprehensive security reports:
 
 ```bash
 # Generate reports for all services
-python src/cli/nexus_cli.py report ssh --output reports/ --format both
-python src/cli/nexus_cli.py report ftp --output reports/ --format html
-python src/cli/nexus_cli.py report http --output reports/ --format json
+python src/cli/nexus_cli.py report ssh --output path_to_directory --format both
+python src/cli/nexus_cli.py report ftp --output path_to_directory --format html
+python src/cli/nexus_cli.py report http --output path_to_directory --format json
 
 # Advanced filtering
 python src/cli/nexus_cli.py report ssh --severity critical --period 7d
@@ -621,19 +619,18 @@ nexus-development/
 - [x] SSH honeypot with AI integration
 - [x] FTP honeypot with AI integration
 - [x] HTTP/Web honeypot with AI integration
+- [x] MySQL database honeypot
 - [x] Centralized CLI interface
 - [x] Comprehensive reporting system
 - [x] Forensic chain of custody
 
 ### Phase 2: Advanced Features 🚧
-- [x] MySQL database honeypot
-- [ ] SMB file share honeypot
 - [ ] Real-time dashboard and visualization
 - [ ] Machine learning-based threat prediction
-- [ ] SIEM integration (Splunk, ELK Stack)
 - [ ] Docker containerization
 
 ### Phase 3: Enterprise Features 📋
+- [ ] SMB file share honeypot
 - [ ] Multi-honeypot correlation analysis
 - [ ] Automated response orchestration
 - [ ] Threat intelligence feeds integration
@@ -776,78 +773,6 @@ mysql -h localhost -P 3306 -u root -p
 # Or: mysql -h localhost -P 3306 -u admin -padmin
 ```
 
-## 🔧 API & Integration
-
-### 🌐 RESTful API
-
-```python
-# Python SDK Example
-from nexus_sdk import NexusClient
-
-client = NexusClient(api_key="your-api-key")
-
-# Start services programmatically
-ssh_service = client.services.ssh.start(port=8022, llm_provider="openai")
-
-# Monitor in real-time
-for event in client.events.stream():
-    if event.type == "attack_detected":
-        print(f"Attack from {event.source_ip}: {event.attack_type}")
-
-# Generate reports
-report = client.reports.generate(service="ssh", format="json", period="24h")
-```
-
-### 🔌 SIEM Integration
-
-```bash
-# Splunk Integration
-python src/integrations/splunk_connector.py --config splunk.conf
-
-# ELK Stack Integration
-python src/integrations/elk_connector.py --elasticsearch-url http://localhost:9200
-
-# QRadar Integration
-python src/integrations/qradar_connector.py --qradar-host 192.168.1.100
-```
-
----
-
-## 🏆 Awards & Recognition
-
-- 🥇 **Best Open Source Security Tool 2024** - InfoSec Awards
-- 🏆 **Innovation in Cybersecurity** - RSA Conference 2024
-- ⭐ **Top 10 Honeypot Solutions** - SANS Institute
-- 🏅 **Community Choice Award** - Black Hat Arsenal 2024
-
----
-
-## 📈 Performance Metrics
-
-| Metric | Value | Industry Average |
-|--------|-------|------------------|
-| **Attack Detection Rate** | 99.9% | 85% |
-| **False Positive Rate** | <0.1% | 15% |
-| **Response Time** | <50ms | 200ms |
-| **Concurrent Sessions** | 10,000+ | 1,000 |
-| **Data Retention** | Unlimited | 30 days |
-| **Uptime** | 99.99% | 99.5% |
-
----
-
-## 🌟 Success Stories
-
-> *"NEXUS helped us detect a sophisticated APT campaign that bypassed our traditional security tools. The AI-powered analysis provided insights we never would have discovered manually."*  
-> **— CISO, Fortune 500 Financial Institution**
-
-> *"The forensic capabilities are outstanding. We've successfully used NEXUS evidence in legal proceedings with 100% admissibility."*  
-> **— Digital Forensics Expert, Law Enforcement**
-
-> *"Best honeypot platform we've ever deployed. The AI responses are so realistic that attackers spend hours trying to exploit our fake systems."*  
-> **— Security Researcher, Major University**
-
----
-
 <div align="center">
 
 **🕸️ NEXUS - Next-Generation AI-Enhanced Honeypot Platform**
@@ -863,7 +788,7 @@ python src/integrations/qradar_connector.py --qradar-host 192.168.1.100
 
 ---
 
-**Made with ❤️ by the cybersecurity community**  
+**Made with ❤️ by the PROFFARO**  
 *Licensed under Educational Use - See [LICENSE](LICENSE) for details*
 
 **⚡ Powered by AI • 🛡️ Secured by Design • 🌍 Trusted Worldwide**
