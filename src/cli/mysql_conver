@@ -1,0 +1,161 @@
+================================================================================
+NEXUS MySQL HONEYPOT - SESSION CONVERSATIONS
+================================================================================
+
+🖥️ SESSION: Task-1
+🌐 SOURCE IP: -
+📊 TOTAL ENTRIES: 3
+------------------------------------------------------------
+
+🖥️ SESSION: Task-7
+🌐 SOURCE IP: 127.0.0.1
+📊 TOTAL ENTRIES: 36
+------------------------------------------------------------
+
+[2025-09-19T23:17:27] 👤 SQL QUERY:
+   select @@version_comment limit 1
+
+[2025-09-19T23:17:27] ⚠️ ATTACK: MySQL attack pattern detected
+   Types: ['sql_injection', 'reconnaissance']
+   Severity: critical
+
+[2025-09-19T23:17:27] 🚨 CRITICAL: MySQL vulnerability exploitation attempt
+   Vulnerability: MYSQL_INFORMATION_DISCLOSURE
+   CVSS Score: 6.5
+
+[2025-09-19T23:17:33] 🤖 AI RESPONSE:
+   [
+     "MySQL server version: 8.0.32"
+   ]
+
+[2025-09-19T23:17:39] 👤 SQL QUERY:
+   AHOW DATABASES
+
+[2025-09-19T23:17:40] 🤖 AI RESPONSE:
+   [
+     "information_schema",
+     "mysql",
+     "performance_schema",
+     "nexusgames_studio"
+   ]
+
+[2025-09-19T23:17:45] 👤 SQL QUERY:
+   SHOW DATABASES
+
+[2025-09-19T23:17:45] ⚠️ ATTACK: MySQL attack pattern detected
+   Types: ['reconnaissance']
+   Severity: medium
+
+[2025-09-19T23:17:45] 🚨 CRITICAL: MySQL vulnerability exploitation attempt
+   Vulnerability: MYSQL_INFORMATION_DISCLOSURE
+   CVSS Score: 6.5
+
+[2025-09-19T23:17:46] 🤖 AI RESPONSE:
+   [
+     "information_schema",
+     "mysql",
+     "performance_schema",
+     "nexusgames_studio"
+   ]
+
+[2025-09-19T23:18:05] 👤 SQL QUERY:
+   SELECT DATABASE()
+
+[2025-09-19T23:18:05] ⚠️ ATTACK: MySQL attack pattern detected
+   Types: ['sql_injection', 'reconnaissance']
+   Severity: critical
+
+[2025-09-19T23:18:06] 🤖 AI RESPONSE:
+   [
+     "nexusgames_studio"
+   ]
+
+[2025-09-19T23:18:10] 👤 SQL QUERY:
+   SHOW TABLES
+
+[2025-09-19T23:18:10] ⚠️ ATTACK: MySQL attack pattern detected
+   Types: ['reconnaissance']
+   Severity: medium
+
+[2025-09-19T23:18:10] 🚨 CRITICAL: MySQL vulnerability exploitation attempt
+   Vulnerability: MYSQL_INFORMATION_DISCLOSURE
+   CVSS Score: 6.5
+
+[2025-09-19T23:18:12] 🤖 AI RESPONSE:
+   [
+     "accounts",
+     "achievements",
+     "characters",
+     "game_data",
+     "high_scores",
+     "items",
+     "leaderboards",
+     "players",
+     "teams",
+     "users"
+   ]
+
+[2025-09-19T23:18:21] 👤 SQL QUERY:
+   DESC teams
+
+[2025-09-19T23:18:21] ⚠️ ATTACK: MySQL attack pattern detected
+   Types: ['reconnaissance']
+   Severity: medium
+
+[2025-09-19T23:18:29] 🤖 AI RESPONSE:
+   [
+     {
+       "Field": "id",
+       "Type": "int(11) unsigned",
+       "Null": false,
+       "Key": "PRIMARY",
+       "Default": null,
+       "Extra": ""
+     },
+     {
+       "Field": "name",
+       "Type": "varchar(255)",
+       "Null": false,
+       "Key": null,
+       "Default": "",
+       "Extra": "CHARACTER SET utf8 COLLATE utf8_unicode_ci"
+     },
+     {
+       "Field": "description",
+       "Type": "text",
+       "Null": true,
+       "Key": null,
+       "Default": null,
+       "Extra": ""
+     },
+     {
+       "Field": "created_at",
+       "Type": "timestamp(6)",
+       "Null": false,
+       "Key": null,
+       "Default": null,
+       "Extra": "DEFAULT CURRENT_TIMESTAMP(6)"
+     },
+     {
+       "Field": "updated_at",
+       "Type": "timestamp(6)",
+       "Null": false,
+       "Key": null,
+       "Default": null,
+       "Extra": "DEFAULT CURRENT_TIMESTAMP(6)"
+     }
+   ]
+
+[2025-09-19T23:22:17] 👤 SQL QUERY:
+   create table student(id int(20), name varchar(255))
+
+[2025-09-19T23:22:17] 🤖 AI RESPONSE:
+   [
+   ]
+
+🖥️ SESSION: Task-6
+🌐 SOURCE IP: -
+📊 TOTAL ENTRIES: 1
+------------------------------------------------------------
+
+================================================================================
