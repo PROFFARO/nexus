@@ -104,9 +104,30 @@ nexus is an intelligent honeypot platform that simulates realistic corporate env
 
 </details>
 
-### 🚧 MySQL Database Honeypot - **PLANNED**
-**Status**: Directory structure created, implementation pending  
-**Location**: `src/service_emulators/MySQL/`
+### ✅ MySQL Database Honeypot - **FULLY OPERATIONAL**
+<details>
+<summary><strong>Click to expand MySQL details</strong></summary>
+
+**Status**: Production-ready with full AI integration and MySQL protocol implementation
+
+**Features**:
+- 🤖 AI-powered adaptive MySQL responses using multiple LLM providers
+- 🔍 Real-time SQL injection and attack pattern recognition
+- 🛡️ Advanced vulnerability exploitation detection and logging
+- 📝 Forensic chain of custody logging with complete session recording
+- 📊 MySQL protocol compliance with proper handshake and authentication
+- 💻 Support for standard MySQL clients (mysql, phpMyAdmin, Workbench)
+- 🗄️ Dynamic database and table simulation based on attack context
+- 🔐 Multi-user authentication with configurable accounts
+- 📈 Comprehensive SQL query analysis and threat scoring
+- 🎭 Corporate database environment simulation (NexusGames Studio)
+
+**Location**: `src/service_emulators/MySQL/`  
+**Default Port**: 3306 (configurable)  
+**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
+**Client Support**: Standard MySQL clients, command-line tools, GUI applications
+
+</details>
 
 ### 🚧 SMB File Share Honeypot - **PLANNED**
 **Status**: Directory structure created, implementation pending  
@@ -148,6 +169,7 @@ pip install -r requirements.txt
 cp src/service_emulators/SSH/.env.example src/service_emulators/SSH/.env
 cp src/service_emulators/FTP/.env.example src/service_emulators/FTP/.env
 cp src/service_emulators/HTTP/.env.example src/service_emulators/HTTP/.env
+cp src/service_emulators/MySQL/.env.example src/service_emulators/MySQL/.env
 
 # Edit .env files with your API keys
 # Example for OpenAI:
@@ -175,15 +197,20 @@ python src/cli/nexus_cli.py ftp --port 2121 --llm-provider gemini
 # Start HTTP honeypot
 python src/cli/nexus_cli.py http --port 8080 --llm-provider ollama
 
+# Start MySQL honeypot
+python src/cli/nexus_cli.py mysql --port 3306 --llm-provider openai
+
 # Generate security reports
 python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
 python src/cli/nexus_cli.py report http --output reports/ --format json
+python src/cli/nexus_cli.py report mysql --output reports/ --format both
 
 # View session logs with conversation format
 python src/cli/nexus_cli.py logs ssh --conversation --decode
 python src/cli/nexus_cli.py logs ftp --conversation --save ftp_session.txt
 python src/cli/nexus_cli.py logs http --filter attacks --format json
+python src/cli/nexus_cli.py logs mysql --conversation --save mysql_session.txt
 ```
 
 ### Direct Service Execution
@@ -224,6 +251,20 @@ python http_server.py --port 8080 --llm-provider ollama --model-name llama3.2
 # Test with curl or browser
 curl http://localhost:8080/
 curl -X POST http://localhost:8080/admin/login -d "username=admin&password=test"
+```
+
+</details>
+
+<details>
+<summary><strong>MySQL Honeypot</strong></summary>
+
+```bash
+cd src/service_emulators/MySQL
+python mysql_server.py --port 3306 --llm-provider openai --model-name gpt-4o-mini
+
+# Test with MySQL client
+mysql -h localhost -P 3306 -u root -p
+# Or: mysql -h localhost -P 3306 -u admin -padmin
 ```
 
 </details>
@@ -329,6 +370,7 @@ Each service has detailed configuration options in their respective `config.ini`
 - **SSH**: `src/service_emulators/SSH/config.ini`
 - **FTP**: `src/service_emulators/FTP/config.ini`
 - **HTTP**: `src/service_emulators/HTTP/config.ini`
+- **MySQL**: `src/service_emulators/MySQL/config.ini`
 
 ---
 
@@ -400,6 +442,7 @@ Switch between providers easily:
 python src/cli/nexus_cli.py ssh --llm-provider openai --model-name gpt-4o
 python src/cli/nexus_cli.py ftp --llm-provider gemini --model-name gemini-2.5-flash-lite
 python src/cli/nexus_cli.py http --llm-provider ollama --model-name llama3.2
+python src/cli/nexus_cli.py mysql --llm-provider openai --model-name gpt-4o-mini
 ```
 
 ### Custom User Accounts
@@ -410,6 +453,7 @@ Add honeypot accounts to attract attackers:
 # Add multiple user accounts
 python src/cli/nexus_cli.py ssh -u admin=admin123 -u root=password -u guest=guest
 python src/cli/nexus_cli.py ftp -u webmaster=nexus2024 -u developer=devpass
+python src/cli/nexus_cli.py mysql -u root=* -u admin=admin -u developer=dev123
 ```
 
 ### Log Analysis
@@ -511,7 +555,7 @@ nexus-development/
 - [x] Forensic chain of custody
 
 ### Phase 2: Advanced Features 🚧
-- [ ] MySQL database honeypot
+- [x] MySQL database honeypot
 - [ ] SMB file share honeypot
 - [ ] Real-time dashboard and visualization
 - [ ] Machine learning-based threat prediction
@@ -607,11 +651,13 @@ python -c "import openai; print('OpenAI API key valid')"
 netstat -an | grep :8022  # SSH
 netstat -an | grep :2121  # FTP
 netstat -an | grep :8080  # HTTP
+netstat -an | grep :3306  # MySQL
 
 # Use different ports
 python src/cli/nexus_cli.py ssh --port 2222
 python src/cli/nexus_cli.py ftp --port 2122
 python src/cli/nexus_cli.py http --port 8081
+python src/cli/nexus_cli.py mysql --port 3307
 ```
 
 </details>
@@ -624,6 +670,7 @@ python src/cli/nexus_cli.py http --port 8081
 ls -la src/service_emulators/SSH/
 ls -la src/service_emulators/FTP/
 ls -la src/service_emulators/HTTP/
+ls -la src/service_emulators/MySQL/
 
 # Fix permissions if needed
 chmod +x src/cli/nexus_cli.py
@@ -652,6 +699,10 @@ telnet localhost 2121
 # Test HTTP honeypot
 curl http://localhost:8080/
 # Or open in browser: http://localhost:8080
+
+# Test MySQL honeypot
+mysql -h localhost -P 3306 -u root -p
+# Or: mysql -h localhost -P 3306 -u admin -padmin
 ```
 
 ---

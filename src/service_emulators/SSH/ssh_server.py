@@ -28,7 +28,7 @@ from langchain_core.messages import HumanMessage, SystemMessage, trim_messages
 from langchain_core.chat_history import BaseChatMessageHistory, InMemoryChatMessageHistory
 from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-from langchain_core.runnables import RunnablePassthrough
+from langchain_core.runnables import RunnablePassthrough, RunnableConfig
 from asyncssh.misc import ConnectionLost
 import socket
 
@@ -85,6 +85,10 @@ class AttackAnalyzer:
             'pattern_matches': []
         }
         
+        # Check if attack pattern recognition is enabled
+        if not config['ai_features'].getboolean('attack_pattern_recognition', True):
+            return analysis
+        
         # Check attack patterns from JSON
         for attack_type, attack_data in self.attack_patterns.items():
             patterns = attack_data.get('patterns', [])
@@ -124,16 +128,51 @@ class AttackAnalyzer:
         for vuln in analysis['vulnerabilities']:
             if severity_scores.get(vuln['severity'], 1) > severity_scores[max_severity]:
                 max_severity = vuln['severity']
-                
+        
+        # Apply sensitivity level adjustment
+        sensitivity = config['attack_detection'].get('sensitivity_level', 'medium').lower()
+        if sensitivity == 'high' and max_severity == 'low':
+            max_severity = 'medium'
+        elif sensitivity == 'low' and max_severity == 'medium':
+            max_severity = 'low'
+        
         analysis['severity'] = max_severity
+        
+        # Calculate threat score if enabled
+        if config['attack_detection'].getboolean('threat_scoring', True):
+            threat_score = self._calculate_threat_score(analysis)
+            analysis['threat_score'] = threat_score
+            
+            # Check alert threshold
+            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+            analysis['alert_triggered'] = threat_score >= alert_threshold
+        
         return analysis
+    
+    def _calculate_threat_score(self, analysis: Dict[str, Any]) -> int:
+        """Calculate threat score based on analysis"""
+        score = 0
+        severity_scores = {'low': 10, 'medium': 30, 'high': 60, 'critical': 90}
+        
+        # Base score from severity
+        score += severity_scores.get(analysis['severity'], 0)
+        
+        # Add points for multiple attack types
+        score += len(analysis['attack_types']) * 5
+        
+        # Add points for vulnerabilities
+        score += len(analysis['vulnerabilities']) * 15
+        
+        return min(score, 100)  # Cap at 100
 
 class FileUploadHandler:
     """Handle file uploads and downloads with forensic logging"""
     
     def __init__(self, session_dir: str):
         self.session_dir = Path(session_dir)
-        self.downloads_dir = self.session_dir / "downloads"
+        # Use configured downloads directory or default
+        downloads_dirname = config['features'].get('downloads_dir', 'downloads')
+        self.downloads_dir = self.session_dir / downloads_dirname
         self.uploads_dir = self.session_dir / "uploads"
         self.downloads_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
@@ -146,6 +185,10 @@ class FileUploadHandler:
             'type': 'download',
             'status': 'attempted'
         }
+        
+        # Check if file monitoring is enabled
+        if not config['forensics'].getboolean('file_monitoring', True):
+            return download_info
         
         # Extract URL from command
         url_match = re.search(r'(https?://[^\s]+)', command)
@@ -164,16 +207,30 @@ class FileUploadHandler:
             if content is None:
                 content = self._generate_fake_malware_content(filename, url)
             
-            with open(file_path, 'wb') as f:
-                f.write(content)
-                
+            # Save download if enabled
+            if config['forensics'].getboolean('save_downloads', True):
+                with open(file_path, 'wb') as f:
+                    f.write(content)
+            
             download_info.update(
                 filename=filename,
-                file_path=str(file_path),
                 file_size=str(len(content)),
-                file_hash=hashlib.sha256(content).hexdigest(),
                 status='completed'
             )
+            
+            # Only add file_path if downloads are being saved
+            if config['forensics'].getboolean('save_downloads', True):
+                download_info['file_path'] = str(file_path)
+            
+            # Add file hash analysis if enabled
+            if config['forensics'].getboolean('file_hash_analysis', True):
+                download_info['file_hash'] = hashlib.sha256(content).hexdigest()
+                download_info['md5_hash'] = hashlib.md5(content).hexdigest()
+            
+            # Add malware detection if enabled
+            if config['forensics'].getboolean('malware_detection', True):
+                download_info['malware_detected'] = str(self._detect_malware(filename, content))
+                download_info['file_type'] = self._identify_file_type(filename, content)
             
         return download_info
         
@@ -244,6 +301,39 @@ echo "System compromised"
 """.encode()
             
         return content
+    
+    def _detect_malware(self, filename: str, content: bytes) -> bool:
+        """Simple malware detection based on patterns"""
+        malware_patterns = [b'xmrig', b'miner', b'backdoor', b'payload', b'exploit']
+        filename_lower = filename.lower()
+        
+        # Check filename patterns
+        if any(pattern in filename_lower for pattern in ['xmrig', 'miner', 'backdoor', 'payload', 'exploit']):
+            return True
+        
+        # Check content patterns
+        for pattern in malware_patterns:
+            if pattern in content.lower():
+                return True
+        
+        return False
+    
+    def _identify_file_type(self, filename: str, content: bytes) -> str:
+        """Identify file type based on extension and content"""
+        filename_lower = filename.lower()
+        
+        if filename_lower.endswith(('.sh', '.bash')):
+            return 'shell_script'
+        elif filename_lower.endswith(('.py', '.python')):
+            return 'python_script'
+        elif filename_lower.endswith('.exe'):
+            return 'windows_executable'
+        elif b'#!/bin/bash' in content[:100]:
+            return 'shell_script'
+        elif b'#!/usr/bin/env python' in content[:100]:
+            return 'python_script'
+        else:
+            return 'unknown'
         
     def handle_upload(self, filename: str, content: bytes) -> Dict[str, Any]:
         """Handle file uploads via SCP, SFTP, etc."""
@@ -251,17 +341,31 @@ echo "System compromised"
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'filename': filename,
             'type': 'upload',
-            'file_size': len(content),
-            'file_hash': hashlib.sha256(content).hexdigest()
+            'file_size': len(content)
         }
         
-        file_path = self.uploads_dir / filename
-        with open(file_path, 'wb') as f:
-            f.write(content)
-            
-        upload_info['file_path'] = str(file_path)
-        upload_info['status'] = 'completed'
+        # Check if file monitoring is enabled
+        if not config['forensics'].getboolean('file_monitoring', True):
+            return upload_info
         
+        # Save upload if enabled
+        if config['forensics'].getboolean('save_uploads', True):
+            file_path = self.uploads_dir / filename
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            upload_info['file_path'] = str(file_path)
+        
+        # Add file hash analysis if enabled
+        if config['forensics'].getboolean('file_hash_analysis', True):
+            upload_info['file_hash'] = hashlib.sha256(content).hexdigest()
+            upload_info['md5_hash'] = hashlib.md5(content).hexdigest()
+        
+        # Add malware detection if enabled
+        if config['forensics'].getboolean('malware_detection', True):
+            upload_info['malware_detected'] = str(self._detect_malware(filename, content))
+            upload_info['file_type'] = self._identify_file_type(filename, content)
+            
+        upload_info['status'] = 'completed'
         return upload_info
 
 class VulnerabilityLogger:
@@ -288,6 +392,10 @@ class VulnerabilityLogger:
     def analyze_for_vulnerabilities(self, command: str, headers: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Analyze command/input for vulnerability exploitation attempts using JSON data"""
         vulnerabilities = []
+        
+        # Check if vulnerability detection is enabled
+        if not config['ai_features'].getboolean('vulnerability_detection', True):
+            return vulnerabilities
         
         for vuln_id, vuln_data in self.vulnerability_signatures.items():
             patterns = vuln_data.get('patterns', [])
@@ -323,6 +431,10 @@ class ForensicChainLogger:
         
     def log_event(self, event_type: str, data: Dict[str, Any]):
         """Log forensic event"""
+        # Check if chain of custody is enabled
+        if not config['forensics'].getboolean('chain_of_custody', True):
+            return
+            
         event = {
             'event_id': str(uuid.uuid4()),
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -398,6 +510,65 @@ class MySSHServer(asyncssh.SSHServer):
             'attack_analysis': [],
             'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+        # Initialize seed filesystem if configured
+        self.seed_fs = self._load_seed_filesystem()
+        self.seed_first_reply = config['honeypot'].getboolean('seed_first_reply', False)
+        # Initialize session recording if enabled
+        self.session_recording = config['features'].getboolean('session_recording', True)
+        self.save_replay = config['features'].getboolean('save_replay', True)
+        self.session_transcript = [] if self.session_recording else None
+        
+    def _load_seed_filesystem(self) -> Dict[str, Any]:
+        """Load seed filesystem from configured directory"""
+        seed_dir = config['honeypot'].get('seed_fs_dir', '')
+        if not seed_dir or not os.path.exists(seed_dir):
+            return {}
+        
+        try:
+            seed_fs = {}
+            for root, dirs, files in os.walk(seed_dir):
+                rel_path = os.path.relpath(root, seed_dir)
+                if rel_path == '.':
+                    rel_path = '/home/guest'
+                else:
+                    rel_path = f'/home/guest/{rel_path.replace(os.sep, "/")}'
+                
+                seed_fs[rel_path] = {
+                    'dirs': dirs[:],
+                    'files': files[:]
+                }
+            return seed_fs
+        except Exception as e:
+            logger.error(f"Failed to load seed filesystem: {e}")
+            return {}
+    
+    def _analyze_geolocation(self, ip: str) -> Dict[str, str]:
+        """Basic geolocation analysis (placeholder implementation)"""
+        # This is a simplified implementation - in production, use a real geolocation service
+        if ip.startswith('192.168.') or ip.startswith('10.') or ip.startswith('172.'):
+            return {'country': 'Local', 'region': 'Private Network', 'city': 'Internal'}
+        elif ip.startswith('127.'):
+            return {'country': 'Local', 'region': 'Localhost', 'city': 'Local'}
+        else:
+            # Placeholder for external IPs - would use real geolocation API
+            return {'country': 'Unknown', 'region': 'Unknown', 'city': 'Unknown'}
+    
+    def _check_ip_reputation(self, ip: str) -> Dict[str, Any]:
+        """Basic IP reputation check (placeholder implementation)"""
+        # This is a simplified implementation - in production, use real threat intelligence feeds
+        known_bad_ranges = ['192.0.2.', '198.51.100.', '203.0.113.']  # RFC 5737 test ranges
+        
+        reputation = {
+            'is_malicious': any(ip.startswith(bad_range) for bad_range in known_bad_ranges),
+            'threat_score': 0,
+            'categories': []
+        }
+        
+        if reputation['is_malicious']:
+            reputation['threat_score'] = 85
+            reputation['categories'] = ['test_range', 'suspicious']
+        
+        return reputation
 
     def format_command_output(self, command: str, output: str) -> str:
         """Format command output to look like real Unix shell output"""
@@ -455,31 +626,36 @@ class MySSHServer(asyncssh.SSHServer):
         # Check if -l flag is used for long format
         if '-l' in command:
             return output
-            
-        # Split output and handle concatenated filenames
-        items = []
-        words = output.split()
         
-        for word in words:
-            # Check if word contains multiple filenames concatenated together
-            # Look for patterns like "file1.txtfile2.txt" or "dir1/dir2/"
-            if len(word) > 20 and ('.' in word or '/' in word):
-                # Try to split on common file extensions and directory patterns
-                parts = re.split(r'(\.[a-zA-Z0-9]{2,4}(?=[A-Z]|[a-z][A-Z])|/(?=[A-Z]|[a-z]))', word)
-                current = ""
-                for part in parts:
-                    if part:
-                        current += part
-                        # If this looks like a complete filename, add it
-                        if (part.endswith('/') or 
-                            re.match(r'\.[a-zA-Z0-9]{2,4}$', part) or
-                            (len(current) > 3 and not part.startswith('.'))):
-                            items.append(current)
-                            current = ""
-                if current:  # Add any remaining part
-                    items.append(current)
-            else:
-                items.append(word)
+        # Use seed filesystem if available
+        if self.seed_fs and self.current_directory in self.seed_fs:
+            seed_data = self.seed_fs[self.current_directory]
+            items = seed_data['dirs'] + seed_data['files']
+        else:
+            # Split output and handle concatenated filenames
+            items = []
+            words = output.split()
+            
+            for word in words:
+                # Check if word contains multiple filenames concatenated together
+                # Look for patterns like "file1.txtfile2.txt" or "dir1/dir2/"
+                if len(word) > 20 and ('.' in word or '/' in word):
+                    # Try to split on common file extensions and directory patterns
+                    parts = re.split(r'(\.[a-zA-Z0-9]{2,4}(?=[A-Z]|[a-z][A-Z])|/(?=[A-Z]|[a-z]))', word)
+                    current = ""
+                    for part in parts:
+                        if part:
+                            current += part
+                            # If this looks like a complete filename, add it
+                            if (part.endswith('/') or 
+                                re.match(r'\.[a-zA-Z0-9]{2,4}$', part) or
+                                (len(current) > 3 and not part.startswith('.'))):
+                                items.append(current)
+                                current = ""
+                    if current:  # Add any remaining part
+                        items.append(current)
+                else:
+                    items.append(word)
         
         if not items:
             return ""
@@ -708,9 +884,9 @@ class MySSHServer(asyncssh.SSHServer):
         # Initialize integrated components with error handling
         try:
             self.attack_analyzer = AttackAnalyzer()
-            self.file_handler = FileUploadHandler(str(self.session_dir))
+            self.file_handler = FileUploadHandler(str(self.session_dir)) if config['forensics'].getboolean('file_monitoring', True) else None
             self.vuln_logger = VulnerabilityLogger()
-            self.forensic_logger = ForensicChainLogger(str(self.session_dir))
+            self.forensic_logger = ForensicChainLogger(str(self.session_dir)) if config['forensics'].getboolean('chain_of_custody', True) else None
             
             # Cross-reference components for unified threat intelligence
             self._integrate_threat_intelligence()
@@ -736,6 +912,23 @@ class MySSHServer(asyncssh.SSHServer):
         if self.attack_analyzer:
             connection_info["threat_signatures_loaded"] = len(getattr(self.attack_analyzer, 'vulnerability_signatures', {}))
             connection_info["attack_patterns_loaded"] = len(getattr(self.attack_analyzer, 'attack_patterns', {}))
+        
+        # Add geolocation analysis if enabled
+        if config['attack_detection'].getboolean('geolocation_analysis', True):
+            connection_info['geolocation'] = self._analyze_geolocation(src_ip)
+        
+        # Add reputation filtering if enabled
+        if config['attack_detection'].getboolean('reputation_filtering', True):
+            connection_info['reputation'] = self._check_ip_reputation(src_ip)
+        
+        # Add AI features status
+        connection_info["ai_features_enabled"] = {
+            "dynamic_responses": config['ai_features'].getboolean('dynamic_responses', True),
+            "attack_pattern_recognition": config['ai_features'].getboolean('attack_pattern_recognition', True),
+            "vulnerability_detection": config['ai_features'].getboolean('vulnerability_detection', True),
+            "adaptive_banners": config['ai_features'].getboolean('adaptive_banners', True),
+            "deception_techniques": config['ai_features'].getboolean('deception_techniques', True)
+        }
 
         logger.info("SSH connection received", extra=connection_info)
         
@@ -785,11 +978,25 @@ class MySSHServer(asyncssh.SSHServer):
                 session_file = self.session_dir / "session_summary.json"
                 with open(session_file, 'w') as f:
                     json.dump(self.session_data, f, indent=2)
+                
+                # Save replay data if enabled
+                if self.save_replay and hasattr(self, 'session_transcript') and self.session_transcript:
+                    replay_file = self.session_dir / "session_replay.json"
+                    with open(replay_file, 'w') as f:
+                        json.dump({
+                            'session_id': getattr(self, 'session_id', 'unknown'),
+                            'start_time': self.session_data['start_time'],
+                            'end_time': self.session_data['end_time'],
+                            'transcript': self.session_transcript
+                        }, f, indent=2)
                     
                 # Add session summary as evidence
                 if hasattr(self, 'forensic_logger') and self.forensic_logger:
                     try:
                         self.forensic_logger.add_evidence("session_summary", str(session_file), "Complete session activity summary")
+                        if self.save_replay and hasattr(self, 'session_transcript') and self.session_transcript:
+                            replay_file = self.session_dir / "session_replay.json"
+                            self.forensic_logger.add_evidence("session_replay", str(replay_file), "Complete session transcript for replay")
                         self.forensic_logger.log_event("connection_closed", {"reason": str(exc) if exc else "normal_closure"})
                     except Exception as e:
                         logger.error(f"Final forensic logging failed: {e}")
@@ -828,7 +1035,7 @@ class MySSHServer(asyncssh.SSHServer):
             logger.info("Authentication failed", extra={"username": username, "password": password})
             return False
 
-async def session_summary(process: asyncssh.SSHServerProcess, llm_config: dict, session: RunnableWithMessageHistory, server: MySSHServer):
+async def session_summary(process: asyncssh.SSHServerProcess, llm_config: Dict, session: RunnableWithMessageHistory, server: MySSHServer):
     # Check if the summary has already been generated
     if server.summary_generated:
         return
@@ -940,6 +1147,7 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
     server._process = process
     server._llm_config = llm_config
     server._session = with_message_history
+    server.session_id = task_uuid
 
     try:
         if process.command:
@@ -958,28 +1166,37 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
             banner = config['ssh'].get('banner', '')
             motd = config['ssh'].get('motd', '').replace('\\n', '\n')
             
+            # Apply adaptive banners if enabled
+            if config['ai_features'].getboolean('adaptive_banners', True) and banner:
+                # Modify banner based on source IP or attack patterns
+                src_ip = getattr(thread_local, 'src_ip', 'unknown')
+                if src_ip != 'unknown' and not src_ip.startswith('192.168.'):
+                    banner += f"\nLast failed login: {datetime.datetime.now().strftime('%a %b %d %H:%M:%S %Y')} from {src_ip}"
+            
             if banner:
                 process.stdout.write(f"{banner}\n")
             
             if motd:
                 process.stdout.write(f"{motd}\n")
             
-            try:
-                llm_response = await with_message_history.ainvoke(
-                    {
-                        "messages": [HumanMessage(content="login")],
-                        "username": process.get_extra_info('username'),
-                        "interactive": True
-                    },
-                        config=llm_config
-                )
-                
-                formatted_content = server.format_command_output("login", llm_response.content)
-                if formatted_content.strip():
-                    process.stdout.write(f"{formatted_content}\n")
-                logger.info("LLM response", extra={"details": b64encode(formatted_content.encode('utf-8')).decode('utf-8'), "interactive": True})
-            except Exception as e:
-                logger.error(f"Initial LLM request failed: {e}")
+            # Handle seed first reply
+            if server.seed_first_reply:
+                try:
+                    llm_response = await with_message_history.ainvoke(
+                        {
+                            "messages": [HumanMessage(content="login")],
+                            "username": process.get_extra_info('username'),
+                            "interactive": True
+                        },
+                            config=llm_config
+                    )
+                    
+                    formatted_content = server.format_command_output("login", llm_response.content)
+                    if formatted_content.strip():
+                        process.stdout.write(f"{formatted_content}\n")
+                    logger.info("LLM response", extra={"details": b64encode(formatted_content.encode('utf-8')).decode('utf-8'), "interactive": True})
+                except Exception as e:
+                    logger.error(f"Initial LLM request failed: {e}")
             
             process.stdout.write(get_prompt(server))
 
@@ -1041,6 +1258,24 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
 async def process_command(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool = True) -> str:
     """Process a command with comprehensive analysis and logging"""
     
+    # Check for blocked outbound commands
+    if config['features'].getboolean('block_outbound', True):
+        blocked_patterns = [r'ssh\s+\d+\.\d+\.\d+\.\d+', r'nmap\s+', r'ping\s+\d+\.\d+\.\d+\.\d+', r'telnet\s+\d+\.\d+\.\d+\.\d+']
+        for pattern in blocked_patterns:
+            if re.search(pattern, command, re.IGNORECASE):
+                process.stdout.write("Connection blocked by security policy\n")
+                process.stdout.write(get_prompt(server))
+                return "blocked"
+    
+    # Record session transcript if enabled
+    if server.session_recording and server.session_transcript is not None:
+        server.session_transcript.append({
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'type': 'input',
+            'content': command,
+            'interactive': interactive
+        })
+    
     # Log user input
     logger.info("User input", extra={
         "details": b64encode(command.encode('utf-8')).decode('utf-8'), 
@@ -1060,16 +1295,16 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     }
     vulnerabilities = []
     
-    # Analyze command for attacks if analyzer is available
-    if server.attack_analyzer:
+    # Analyze command for attacks if analyzer is available and real-time analysis enabled
+    if server.attack_analyzer and config['ai_features'].getboolean('real_time_analysis', True):
         try:
             attack_analysis = server.attack_analyzer.analyze_command(command)
             server.session_data['attack_analysis'].append(attack_analysis)
         except Exception as e:
             logger.error(f"Attack analysis failed: {e}")
     
-    # Check for vulnerabilities if logger is available
-    if server.vuln_logger:
+    # Check for vulnerabilities if logger is available and vulnerability detection enabled
+    if server.vuln_logger and config['ai_features'].getboolean('vulnerability_detection', True):
         try:
             vulnerabilities = server.vuln_logger.analyze_for_vulnerabilities(command)
             server.session_data['vulnerabilities'].extend(vulnerabilities)
@@ -1088,12 +1323,23 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     
     # Log attack analysis if threats detected
     if attack_analysis.get('attack_types'):
-        logger.warning("Attack pattern detected", extra={
+        log_extra = {
             "attack_types": attack_analysis['attack_types'],
             "severity": attack_analysis['severity'],
             "indicators": attack_analysis.get('indicators', []),
             "command": command
-        })
+        }
+        
+        # Add threat score if available
+        if 'threat_score' in attack_analysis:
+            log_extra['threat_score'] = attack_analysis['threat_score']
+            
+        # Check if alert should be triggered
+        if attack_analysis.get('alert_triggered', False):
+            logger.critical("High-threat attack detected", extra=log_extra)
+        else:
+            logger.warning("Attack pattern detected", extra=log_extra)
+            
         if server.forensic_logger:
             try:
                 server.forensic_logger.log_event("attack_detected", attack_analysis)
@@ -1106,7 +1352,15 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
             enhanced_vuln = dict(vuln)
             enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
             enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
-            logger.critical("Vulnerability exploitation attempt", extra=enhanced_vuln)
+            enhanced_vuln['threat_score'] = attack_analysis.get('threat_score', 0)
+            
+            # Check alert threshold for vulnerabilities
+            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+            if enhanced_vuln['threat_score'] >= alert_threshold:
+                logger.critical("Critical vulnerability exploitation attempt", extra=enhanced_vuln)
+            else:
+                logger.critical("Vulnerability exploitation attempt", extra=enhanced_vuln)
+                
             if server.forensic_logger:
                 server.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
         except Exception as e:
@@ -1152,8 +1406,18 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
     else:
         # Get LLM response with enhanced context and rate limiting protection
         enhanced_command = command
-        if attack_analysis.get('attack_types'):
+        
+        # Apply dynamic responses if enabled
+        if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
             enhanced_command += f" [HONEYPOT_CONTEXT: Detected {', '.join(attack_analysis['attack_types'])} behavior]"
+        
+        # Apply deception techniques if enabled
+        if config['ai_features'].getboolean('deception_techniques', True):
+            # Add deception context for more realistic responses
+            if 'reconnaissance' in attack_analysis.get('attack_types', []):
+                enhanced_command += " [DECEPTION: Show realistic but controlled system information]"
+            elif 'privilege_escalation' in attack_analysis.get('attack_types', []):
+                enhanced_command += " [DECEPTION: Simulate security resistance while logging attempts]"
         
         try:
             llm_response = await with_message_history.ainvoke(
@@ -1189,6 +1453,15 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         handle_file_creation(command, server)
     
     if response_content != "XXX-END-OF-SESSION-XXX":
+        # Record response in session transcript if enabled
+        if server.session_recording and server.session_transcript is not None:
+            server.session_transcript.append({
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'type': 'output',
+                'content': response_content,
+                'interactive': interactive
+            })
+        
         if response_content and response_content.strip():
             process.stdout.write(f"{response_content}\n")
         process.stdout.write(get_prompt(server))
@@ -1559,14 +1832,29 @@ try:
     # Get the sensor name from the config or use the system's hostname
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
 
-    # Set up the honeypot logger
+    # Set up the honeypot logger with configurable log level
     logger = logging.getLogger(__name__)  
-    logger.setLevel(logging.INFO)  
+    log_level = config['logging'].get('log_level', 'INFO').upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ssh_log.log"))
     logger.addHandler(log_file_handler)
 
-    log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    # Configure structured logging
+    if config['logging'].getboolean('structured_logging', True):
+        log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    else:
+        log_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Add console handler for real-time streaming if enabled
+    if config['logging'].getboolean('real_time_streaming', True):
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        if config['logging'].getboolean('structured_logging', True):
+            console_handler.setFormatter(JSONFormatter(sensor_name))
+        else:
+            console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(console_handler)
 
     f = ContextFilter()
     logger.addFilter(f)

@@ -172,6 +172,67 @@ class LogViewer:
         
         return conversations
     
+    def parse_mysql_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
+                        filter_type: str = 'all') -> Dict[str, Any]:
+        """Parse MySQL log file and extract conversations"""
+        conversations = {}
+        
+        if not os.path.exists(log_file):
+            raise FileNotFoundError(f"Log file not found: {log_file}")
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    task_name = log_entry.get('task_name', 'unknown')
+                    message = log_entry.get('message', '')
+                    
+                    if session_id and session_id not in task_name:
+                        continue
+                    
+                    if task_name not in conversations:
+                        # Try to get client IP from connection info in log entries
+                        client_ip = log_entry.get('client_ip', log_entry.get('src_ip', 'unknown'))
+                        conversations[task_name] = {
+                            'session_id': task_name,
+                            'src_ip': client_ip,
+                            'entries': []
+                        }
+                    else:
+                        # Update IP if we find it in subsequent entries
+                        if 'client_ip' in log_entry and log_entry['client_ip'] != 'unknown':
+                            conversations[task_name]['src_ip'] = log_entry['client_ip']
+                    
+                    entry = {
+                        'timestamp': log_entry.get('timestamp', ''),
+                        'message': message,
+                        'level': log_entry.get('level', 'INFO'),
+                        'raw': log_entry
+                    }
+                    
+                    # Decode base64 details
+                    if decode and 'details' in log_entry:
+                        try:
+                            decoded = b64decode(log_entry['details']).decode('utf-8')
+                            entry['decoded_details'] = decoded
+                        except:
+                            entry['decoded_details'] = 'Failed to decode'
+                    
+                    # Apply filters
+                    if filter_type == 'commands' and 'MySQL query received' not in message:
+                        continue
+                    elif filter_type == 'responses' and ('LLM raw response' not in message and 'MySQL response' not in message):
+                        continue
+                    elif filter_type == 'attacks' and 'attack' not in message.lower():
+                        continue
+                    
+                    conversations[task_name]['entries'].append(entry)
+                    
+                except (json.JSONDecodeError, Exception):
+                    continue
+        
+        return conversations
+    
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False) -> str:
         """Format conversations for display"""
@@ -180,7 +241,7 @@ class LogViewer:
         
         output = []
         output.append("=" * 80)
-        service_name = {"ssh": "SSH", "ftp": "FTP", "http": "HTTP"}.get(self.service, self.service.upper())
+        service_name = {"ssh": "SSH", "ftp": "FTP", "http": "HTTP", "mysql": "MySQL"}.get(self.service, self.service.upper())
         output.append(f"NEXUS {service_name} HONEYPOT - SESSION CONVERSATIONS")
         output.append("=" * 80)
         
@@ -195,17 +256,51 @@ class LogViewer:
                     timestamp = entry['timestamp'][:19] if entry['timestamp'] else 'Unknown'
                     message = entry['message']
                     
-                    if 'User input' in message or 'FTP command' in message or 'HTTP request' in message:
+                    if 'User input' in message or 'FTP command' in message or 'HTTP request' in message or 'MySQL query received' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 👤 USER COMMAND:")
                             output.append(f"   {entry['decoded_details']}")
+                        elif 'query' in entry['raw'] and entry['raw']['query']:
+                            output.append(f"\n[{timestamp}] 👤 SQL QUERY:")
+                            output.append(f"   {entry['raw']['query']}")
+                        elif 'command' in entry['raw'] and entry['raw']['command']:
+                            output.append(f"\n[{timestamp}] 👤 COMMAND:")
+                            output.append(f"   {entry['raw']['command']}")
                         else:
                             output.append(f"\n[{timestamp}] 👤 USER INPUT: {message}")
                     
-                    elif 'LLM response' in message or 'FTP response' in message or 'HTTP response' in message:
+                    elif 'LLM response' in message or 'LLM raw response' in message or 'FTP response' in message or 'HTTP response' in message or 'MySQL response' in message:
                         if 'decoded_details' in entry:
                             output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
                             output.append(f"   {entry['decoded_details']}")
+                        elif 'LLM raw response' in message and 'llm_response' in entry['raw']:
+                            # Extract actual LLM response from log data
+                            llm_response = entry['raw']['llm_response']
+                            # Clean up markdown formatting
+                            if llm_response.startswith('```'):
+                                lines = llm_response.split('\n')
+                                # Remove first and last lines if they contain ```
+                                if lines[0].strip().startswith('```'):
+                                    lines = lines[1:]
+                                if lines and lines[-1].strip() == '```':
+                                    lines = lines[:-1]
+                                llm_response = '\n'.join(lines)
+                            
+                            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
+                            # Format multi-line responses properly
+                            for line in llm_response.split('\n'):
+                                output.append(f"   {line}")
+                        elif 'LLM raw response' in message:
+                            # Fallback: Extract complete LLM response from message
+                            response_start = message.find("': ") + 3
+                            if response_start > 2:
+                                response = message[response_start:]
+                                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
+                                # Format multi-line responses properly
+                                for line in response.split('\n'):
+                                    output.append(f"   {line}")
+                            else:
+                                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
                         else:
                             output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
                     
@@ -216,13 +311,20 @@ class LogViewer:
                         if 'severity' in entry['raw']:
                             output.append(f"   Severity: {entry['raw']['severity']}")
                     
+                    elif 'vulnerability exploitation attempt' in message.lower():
+                        output.append(f"\n[{timestamp}] 🚨 CRITICAL: {message}")
+                        if 'vulnerability_id' in entry['raw']:
+                            output.append(f"   Vulnerability: {entry['raw']['vulnerability_id']}")
+                        if 'cvss_score' in entry['raw']:
+                            output.append(f"   CVSS Score: {entry['raw']['cvss_score']}")
+                    
                     elif entry['level'] in ['WARNING', 'ERROR', 'CRITICAL']:
                         emoji = {'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🚨'}.get(entry['level'], 'ℹ️')
                         output.append(f"\n[{timestamp}] {emoji} {entry['level']}: {message}")
             else:
-                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message'] or 'HTTP request' in e['message']]
-                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'FTP response' in e['message'] or 'HTTP response' in e['message']]
-                attacks = [e for e in conv['entries'] if 'attack' in e['message'].lower()]
+                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message'] or 'HTTP request' in e['message'] or 'MySQL query received' in e['message']]
+                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'LLM raw response' in e['message'] or 'FTP response' in e['message'] or 'HTTP response' in e['message'] or 'MySQL response' in e['message']]
+                attacks = [e for e in conv['entries'] if 'attack' in e['message'].lower() or 'vulnerability exploitation' in e['message'].lower()]
                 
                 output.append(f"   Commands: {len(commands)}")
                 output.append(f"   Responses: {len(responses)}")
@@ -256,7 +358,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.service not in ['ssh', 'ftp', 'http']:
+    if args.service not in ['ssh', 'ftp', 'http', 'mysql']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
@@ -274,6 +376,9 @@ def main():
         elif args.service == 'http':
             new_log_path = base_dir / 'logs' / 'http_log.log'
             old_log_path = base_dir / 'service_emulators' / 'HTTP' / 'http_log.log'
+        elif args.service == 'mysql':
+            new_log_path = base_dir / 'logs' / 'mysql_log.log'
+            old_log_path = base_dir / 'service_emulators' / 'MySQL' / 'mysql_log.log'
         
         if new_log_path and new_log_path.exists():
             args.log_file = str(new_log_path)
@@ -297,6 +402,10 @@ def main():
             conversations = viewer.parse_http_logs(
                 args.log_file, args.session_id, args.decode, args.filter
             )
+        elif args.service == 'mysql':
+            conversations = viewer.parse_mysql_logs(
+                args.log_file, args.session_id, args.decode, args.filter
+            )
         
         if not conversations:
             print("No conversations found")
@@ -308,7 +417,14 @@ def main():
             saved_path = viewer.save_conversation(output, args.save)
             print(f"Conversation saved to: {saved_path}")
         else:
-            print(output)
+            # Handle encoding issues on Windows
+            try:
+                print(output)
+            except UnicodeEncodeError:
+                # Fallback to UTF-8 encoding
+                import sys
+                sys.stdout.buffer.write(output.encode('utf-8'))
+                sys.stdout.buffer.write(b'\n')
             
     except Exception as e:
         print(f"Error: {e}")

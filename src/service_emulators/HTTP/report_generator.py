@@ -40,7 +40,7 @@ class HTTPHoneypotReportGenerator:
             
         for session_file in session_files:
             try:
-                with open(session_file, 'r') as f:
+                with open(session_file, 'r', encoding='utf-8') as f:
                     session_data = json.load(f)
                     self.report_data['sessions'].append(session_data)
                     
@@ -212,8 +212,8 @@ class HTTPHoneypotReportGenerator:
             }
         }
         
-        with open(report_file, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
+        with open(report_file, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, default=str, ensure_ascii=False)
             
         return report_file
     
@@ -405,7 +405,7 @@ class HTTPHoneypotReportGenerator:
 </html>
         """
         
-        with open(report_file, 'w') as f:
+        with open(report_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
             
         return report_file

@@ -94,6 +94,10 @@ class AttackAnalyzer:
             'pattern_matches': []
         }
         
+        # Check if attack pattern recognition is enabled
+        if not config['ai_features'].getboolean('attack_pattern_recognition', True):
+            return analysis
+        
         # Combine all request data for analysis
         request_data = f"{method} {path} {str(headers)} {body}"
         
@@ -136,9 +140,42 @@ class AttackAnalyzer:
         for vuln in analysis['vulnerabilities']:
             if severity_scores.get(vuln['severity'], 1) > severity_scores[max_severity]:
                 max_severity = vuln['severity']
-                
+        
+        # Apply sensitivity level adjustment
+        sensitivity = config['attack_detection'].get('sensitivity_level', 'medium').lower()
+        if sensitivity == 'high' and max_severity == 'low':
+            max_severity = 'medium'
+        elif sensitivity == 'low' and max_severity == 'medium':
+            max_severity = 'low'
+        
         analysis['severity'] = max_severity
+        
+        # Calculate threat score if enabled
+        if config['attack_detection'].getboolean('threat_scoring', True):
+            threat_score = self._calculate_threat_score(analysis)
+            analysis['threat_score'] = threat_score
+            
+            # Check alert threshold
+            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+            analysis['alert_triggered'] = threat_score >= alert_threshold
+        
         return analysis
+    
+    def _calculate_threat_score(self, analysis: Dict[str, Any]) -> int:
+        """Calculate threat score based on analysis"""
+        score = 0
+        severity_scores = {'low': 10, 'medium': 30, 'high': 60, 'critical': 90}
+        
+        # Base score from severity
+        score += severity_scores.get(analysis['severity'], 0)
+        
+        # Add points for multiple attack types
+        score += len(analysis['attack_types']) * 5
+        
+        # Add points for vulnerabilities
+        score += len(analysis['vulnerabilities']) * 15
+        
+        return min(score, 100)  # Cap at 100
 
 class FileTransferHandler:
     """Handle file uploads and downloads with forensic logging"""
@@ -157,18 +194,67 @@ class FileTransferHandler:
             'filename': filename,
             'type': 'upload',
             'file_size': len(content),
-            'file_hash': hashlib.sha256(content).hexdigest(),
             'content_type': content_type
         }
         
-        file_path = self.uploads_dir / filename
-        with open(file_path, 'wb') as f:
-            f.write(content)
-            
-        upload_info['file_path'] = str(file_path)
-        upload_info['status'] = 'completed'
+        # Check if file monitoring is enabled
+        if not config['forensics'].getboolean('file_monitoring', True):
+            return upload_info
         
+        # Save upload if enabled
+        if config['forensics'].getboolean('save_uploads', True):
+            file_path = self.uploads_dir / filename
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            upload_info['file_path'] = str(file_path)
+        
+        # Add file hash analysis if enabled
+        if config['forensics'].getboolean('file_hash_analysis', True):
+            upload_info['file_hash'] = hashlib.sha256(content).hexdigest()
+            upload_info['md5_hash'] = hashlib.md5(content).hexdigest()
+        
+        # Add malware detection if enabled
+        if config['forensics'].getboolean('malware_detection', True):
+            upload_info['malware_detected'] = str(self._detect_malware(filename, content))
+            upload_info['file_type'] = self._identify_file_type(filename, content)
+            
+        upload_info['status'] = 'completed'
         return upload_info
+        
+    def _detect_malware(self, filename: str, content: bytes) -> bool:
+        """Simple malware detection based on patterns"""
+        malware_patterns = [b'malware', b'virus', b'trojan', b'backdoor', b'payload', b'exploit']
+        filename_lower = filename.lower()
+        
+        # Check filename patterns
+        if any(pattern in filename_lower for pattern in ['malware', 'virus', 'trojan', 'backdoor', 'payload', 'exploit']):
+            return True
+        
+        # Check content patterns
+        for pattern in malware_patterns:
+            if pattern in content.lower():
+                return True
+        
+        return False
+    
+    def _identify_file_type(self, filename: str, content: bytes) -> str:
+        """Identify file type based on extension and content"""
+        filename_lower = filename.lower()
+        
+        if filename_lower.endswith(('.html', '.htm')):
+            return 'html_file'
+        elif filename_lower.endswith(('.php', '.asp', '.jsp')):
+            return 'web_script'
+        elif filename_lower.endswith(('.js', '.css')):
+            return 'web_resource'
+        elif filename_lower.endswith(('.jpg', '.png', '.gif')):
+            return 'image_file'
+        elif filename_lower.endswith(('.exe', '.dll')):
+            return 'executable'
+        elif b'<script' in content[:1000]:
+            return 'html_with_script'
+        else:
+            return 'unknown'
         
     def generate_fake_file_content(self, filename: str, file_type: str = "") -> bytes:
         """Generate realistic fake file content based on file type"""
@@ -254,6 +340,10 @@ class VulnerabilityLogger:
         """Analyze HTTP request for vulnerability exploitation attempts using JSON data"""
         vulnerabilities = []
         
+        # Check if vulnerability detection is enabled
+        if not config['ai_features'].getboolean('vulnerability_detection', True):
+            return vulnerabilities
+        
         for vuln_id, vuln_data in self.vulnerability_signatures.items():
             patterns = vuln_data.get('patterns', [])
             for pattern in patterns:
@@ -288,6 +378,10 @@ class ForensicChainLogger:
         
     def log_event(self, event_type: str, data: Dict[str, Any]):
         """Log forensic event"""
+        # Check if chain of custody is enabled
+        if not config['forensics'].getboolean('chain_of_custody', True):
+            return
+            
         event = {
             'event_id': str(uuid.uuid4()),
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -301,6 +395,10 @@ class ForensicChainLogger:
         
     def add_evidence(self, evidence_type: str, file_path: str, description: str):
         """Add evidence to forensic chain"""
+        # Check if chain of custody is enabled
+        if not config['forensics'].getboolean('chain_of_custody', True):
+            return
+            
         if os.path.exists(file_path):
             with open(file_path, 'rb') as f:
                 content = f.read()
@@ -310,10 +408,14 @@ class ForensicChainLogger:
                 'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'type': evidence_type,
                 'file_path': file_path,
-                'file_hash': hashlib.sha256(content).hexdigest(),
                 'file_size': len(content),
                 'description': description
             }
+            
+            # Add file hash analysis if enabled
+            if config['forensics'].getboolean('file_hash_analysis', True):
+                evidence['file_hash'] = hashlib.sha256(content).hexdigest()
+                evidence['md5_hash'] = hashlib.md5(content).hexdigest()
             
             self.chain_data['evidence'].append(evidence)
             self._save_chain()
@@ -362,12 +464,18 @@ class HTTPHoneypot:
         self.session_dir = sessions_dir / session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
         
-        # Initialize integrated components
+        # Create downloads and uploads directories
+        downloads_dirname = config['features'].get('downloads_dir', 'downloads')
+        uploads_dirname = config['features'].get('uploads_dir', 'uploads')
+        (self.session_dir / downloads_dirname).mkdir(parents=True, exist_ok=True)
+        (self.session_dir / uploads_dirname).mkdir(parents=True, exist_ok=True)
+        
+        # Initialize integrated components with error handling
         try:
             self.attack_analyzer = AttackAnalyzer()
-            self.file_handler = FileTransferHandler(str(self.session_dir))
+            self.file_handler = FileTransferHandler(str(self.session_dir)) if config['forensics'].getboolean('file_monitoring', True) else None
             self.vuln_logger = VulnerabilityLogger()
-            self.forensic_logger = ForensicChainLogger(str(self.session_dir))
+            self.forensic_logger = ForensicChainLogger(str(self.session_dir)) if config['forensics'].getboolean('chain_of_custody', True) else None
         except Exception as e:
             logger.error(f"Failed to initialize HTTP honeypot components: {e}")
             self.attack_analyzer = None
@@ -421,6 +529,11 @@ class HTTPHoneypot:
                 'files_uploaded': [],
                 'client_info': {'ip': src_ip, 'port': src_port}
             }
+            
+            # Initialize session recording if enabled
+            if config['features'].getboolean('session_recording', True):
+                self.active_sessions[session_key]['session_transcript'] = []
+                
         session_data = self.active_sessions[session_key]
         
         # Log request
@@ -458,26 +571,45 @@ class HTTPHoneypot:
         
         # Log attack analysis if threats detected
         if attack_analysis.get('attack_types'):
-            logger.warning("HTTP attack pattern detected", extra={
+            log_extra = {
                 "attack_types": attack_analysis['attack_types'],
                 "severity": attack_analysis['severity'],
                 "indicators": attack_analysis.get('indicators', []),
                 "method": method,
                 "path": path
-            })
+            }
+            
+            # Add threat score if available
+            if 'threat_score' in attack_analysis:
+                log_extra['threat_score'] = attack_analysis['threat_score']
+                
+            # Check if alert should be triggered
+            if attack_analysis.get('alert_triggered', False):
+                logger.critical("High-threat HTTP attack detected", extra=log_extra)
+            else:
+                logger.warning("HTTP attack pattern detected", extra=log_extra)
+                
             if self.forensic_logger:
                 try:
                     self.forensic_logger.log_event("attack_detected", attack_analysis)
                 except Exception as e:
                     logger.error(f"Forensic logging failed: {e}")
         
-        # Log vulnerabilities
+        # Log vulnerabilities with enhanced context
         for vuln in vulnerabilities:
             try:
                 enhanced_vuln = dict(vuln)
                 enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
                 enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
-                logger.critical("HTTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                enhanced_vuln['threat_score'] = attack_analysis.get('threat_score', 0)
+                
+                # Check alert threshold for vulnerabilities
+                alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+                if enhanced_vuln['threat_score'] >= alert_threshold:
+                    logger.critical("Critical HTTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                else:
+                    logger.critical("HTTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                    
                 if self.forensic_logger:
                     self.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
             except Exception as e:
@@ -505,7 +637,7 @@ class HTTPHoneypot:
         )
         
         # Store request in session data
-        session_data['requests'].append({
+        request_data = {
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'method': method,
             'path': path,
@@ -516,7 +648,20 @@ class HTTPHoneypot:
             'response_content': response_content[:2000],  # Store AI response
             'response_status': status_code,
             'response_headers': response_headers
-        })
+        }
+        session_data['requests'].append(request_data)
+        
+        # Record in session transcript if enabled
+        if config['features'].getboolean('session_recording', True) and 'session_transcript' in session_data:
+            session_data['session_transcript'].append({
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'type': 'http_request',
+                'method': method,
+                'path': path,
+                'status_code': status_code,
+                'user_agent': headers.get('User-Agent', ''),
+                'attack_detected': bool(attack_analysis.get('attack_types'))
+            })
         
         # Log response
         logger.info("HTTP response", extra={
@@ -525,20 +670,39 @@ class HTTPHoneypot:
             "content_type": response_headers.get('Content-Type', 'text/html')
         })
         
-        # Save session data
-        session_data['end_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
-        session_file = self.session_dir / f"session_{uuid.uuid4().hex[:8]}.json"
-        with open(session_file, 'w') as f:
-            json.dump(session_data, f, indent=2)
-            
-        # Generate AI session summary like SSH/FTP
-        await self.generate_session_summary(session_data, session_file)
-            
-        if self.forensic_logger:
-            try:
-                self.forensic_logger.add_evidence("session_summary", str(session_file), "HTTP session activity summary")
-            except Exception as e:
-                logger.error(f"Forensic finalization failed: {e}")
+        # Save session data if forensic reports are enabled
+        if config['forensics'].getboolean('forensic_reports', True):
+            session_data['end_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
+            session_file = self.session_dir / f"session_{uuid.uuid4().hex[:8]}.json"
+            with open(session_file, 'w') as f:
+                json.dump(session_data, f, indent=2)
+                
+            # Save replay data if enabled
+            if config['features'].getboolean('save_replay', True) and 'session_transcript' in session_data:
+                replay_file = self.session_dir / f"session_replay_{uuid.uuid4().hex[:8]}.json"
+                with open(replay_file, 'w') as f:
+                    json.dump({
+                        'session_id': session_key,
+                        'start_time': session_data['start_time'],
+                        'end_time': session_data['end_time'],
+                        'transcript': session_data['session_transcript']
+                    }, f, indent=2)
+                    
+                if self.forensic_logger:
+                    try:
+                        self.forensic_logger.add_evidence("session_replay", str(replay_file), "Complete HTTP session transcript for replay")
+                    except Exception as e:
+                        logger.error(f"Replay data forensic logging failed: {e}")
+                
+            # Generate AI session summary if enabled
+            if config['ai_features'].getboolean('ai_attack_summaries', True):
+                await self.generate_session_summary(session_data, session_file)
+                
+            if self.forensic_logger:
+                try:
+                    self.forensic_logger.add_evidence("session_summary", str(session_file), "HTTP session activity summary")
+                except Exception as e:
+                    logger.error(f"Forensic finalization failed: {e}")
         
         return Response(
             text=response_content,
@@ -556,18 +720,32 @@ Body: {body[:500]}
 User-Agent: {headers.get('User-Agent', 'Unknown')}
 Generate realistic HTTP response for NexusGames Studio website."""
         
-        if attack_analysis.get('attack_types'):
+        if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
             ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
         
+        # Apply deception techniques if enabled
+        if config['ai_features'].getboolean('deception_techniques', True):
+            # Add deception context for more realistic responses
+            if 'reconnaissance' in attack_analysis.get('attack_types', []):
+                ai_prompt += "\n[DECEPTION: Show realistic but controlled system information]"
+            elif 'sql_injection' in attack_analysis.get('attack_types', []):
+                ai_prompt += "\n[DECEPTION: Simulate database errors while logging attempts]"
+        
+        # Get AI response timeout from config
+        llm_response_timeout = config['http'].getfloat('llm_response_timeout', 5.0)
+        
         try:
-            # Get AI response without timeout
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=ai_prompt)],
-                    "username": headers.get('User-Agent', 'anonymous'),
-                    "interactive": True
-                },
-                config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
+            # Get AI response with timeout
+            llm_response = await asyncio.wait_for(
+                with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=ai_prompt)],
+                        "username": headers.get('User-Agent', 'anonymous'),
+                        "interactive": True
+                    },
+                    config={"configurable": {"session_id": f"http-{uuid.uuid4().hex[:8]}"}}
+                ),
+                timeout=llm_response_timeout
             )
             
             ai_content = llm_response.content.strip() if llm_response else ""
@@ -589,15 +767,25 @@ Generate realistic HTTP response for NexusGames Studio website."""
             else:
                 return self.generate_fallback_response(path, attack_analysis)
                 
-
+        except asyncio.TimeoutError:
+            logger.warning("AI response timed out, using fallback", extra={"timeout": llm_response_timeout})
+            return self.generate_fallback_response(path, attack_analysis)
         except Exception as e:
             logger.error(f"AI response generation failed: {e}")
             return self.generate_fallback_response(path, attack_analysis)
 
     def generate_response_headers(self, path: str, content: str, attack_analysis: Dict) -> Dict[str, str]:
         """Generate appropriate HTTP response headers"""
+        server_name = config['http'].get('server_name', 'Apache/2.4.41 (Ubuntu)')
+        
+        # Apply adaptive banners if enabled
+        if config['ai_features'].getboolean('adaptive_banners', True) and attack_analysis.get('attack_types'):
+            # Modify server header based on attack patterns
+            if 'reconnaissance' in attack_analysis.get('attack_types', []):
+                server_name = 'nginx/1.18.0 (Ubuntu)'  # Change server type to confuse attackers
+        
         headers = {
-            'Server': 'Apache/2.4.41 (Ubuntu)',
+            'Server': server_name,
             'Date': datetime.datetime.now(datetime.UTC).strftime('%a, %d %b %Y %H:%M:%S GMT'),
             'Connection': 'close'
         }
@@ -675,7 +863,13 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
             elif "Judgement: MALICIOUS" in llm_response.content:
                 judgement = "MALICIOUS"
 
-            logger.info("HTTP session summary", extra={"details": llm_response.content, "judgement": judgement, "session_file": str(session_file)})
+            logger.info("HTTP session summary", extra={
+                "details": llm_response.content, 
+                "judgement": judgement, 
+                "session_file": str(session_file),
+                "session_requests": len(session_data.get('requests', [])),
+                "attack_patterns_detected": len([a for a in session_data.get('attack_analysis', []) if a.get('attack_types')])
+            })
             
         except Exception as e:
             logger.error(f"Session summary generation failed: {e}")
@@ -820,6 +1014,13 @@ try:
             config['http'] = {'port': '8080'}
             config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
             config['user_accounts'] = {}
+            config['ai_features'] = {}
+            config['attack_detection'] = {}
+            config['forensics'] = {}
+            config['features'] = {}
+            config['logging'] = {}
+            config['visualization'] = {}
+            config['security'] = {}
 
     # Override config values with command line arguments if provided
     if args.llm_provider:
@@ -859,14 +1060,29 @@ try:
     # Get the sensor name from the config or use the system's hostname
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
 
-    # Set up the honeypot logger
+    # Set up the honeypot logger with configurable log level
     logger = logging.getLogger(__name__)  
-    logger.setLevel(logging.INFO)  
+    log_level = config['logging'].get('log_level', 'INFO').upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "http_log.log"))
     logger.addHandler(log_file_handler)
 
-    log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    # Configure structured logging
+    if config['logging'].getboolean('structured_logging', True):
+        log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    else:
+        log_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Add console handler for real-time streaming if enabled
+    if config['logging'].getboolean('real_time_streaming', True):
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        if config['logging'].getboolean('structured_logging', True):
+            console_handler.setFormatter(JSONFormatter(sensor_name))
+        else:
+            console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(console_handler)
 
     f = ContextFilter()
     logger.addFilter(f)

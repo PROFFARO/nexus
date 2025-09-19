@@ -84,6 +84,10 @@ class AttackAnalyzer:
             'pattern_matches': []
         }
         
+        # Check if attack pattern recognition is enabled
+        if not config['ai_features'].getboolean('attack_pattern_recognition', True):
+            return analysis
+        
         # Check attack patterns from JSON
         for attack_type, attack_data in self.attack_patterns.items():
             patterns = attack_data.get('patterns', [])
@@ -123,17 +127,53 @@ class AttackAnalyzer:
         for vuln in analysis['vulnerabilities']:
             if severity_scores.get(vuln['severity'], 1) > severity_scores[max_severity]:
                 max_severity = vuln['severity']
-                
+        
+        # Apply sensitivity level adjustment
+        sensitivity = config['attack_detection'].get('sensitivity_level', 'medium').lower()
+        if sensitivity == 'high' and max_severity == 'low':
+            max_severity = 'medium'
+        elif sensitivity == 'low' and max_severity == 'medium':
+            max_severity = 'low'
+        
         analysis['severity'] = max_severity
+        
+        # Calculate threat score if enabled
+        if config['attack_detection'].getboolean('threat_scoring', True):
+            threat_score = self._calculate_threat_score(analysis)
+            analysis['threat_score'] = threat_score
+            
+            # Check alert threshold
+            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+            analysis['alert_triggered'] = threat_score >= alert_threshold
+        
         return analysis
+    
+    def _calculate_threat_score(self, analysis: Dict[str, Any]) -> int:
+        """Calculate threat score based on analysis"""
+        score = 0
+        severity_scores = {'low': 10, 'medium': 30, 'high': 60, 'critical': 90}
+        
+        # Base score from severity
+        score += severity_scores.get(analysis['severity'], 0)
+        
+        # Add points for multiple attack types
+        score += len(analysis['attack_types']) * 5
+        
+        # Add points for vulnerabilities
+        score += len(analysis['vulnerabilities']) * 15
+        
+        return min(score, 100)  # Cap at 100
 
 class FileTransferHandler:
     """Handle file uploads and downloads with forensic logging"""
     
     def __init__(self, session_dir: str):
         self.session_dir = Path(session_dir)
-        self.downloads_dir = self.session_dir / "downloads"
-        self.uploads_dir = self.session_dir / "uploads"
+        # Use configured directories or defaults
+        downloads_dirname = config['features'].get('downloads_dir', 'downloads')
+        uploads_dirname = config['features'].get('uploads_dir', 'uploads')
+        self.downloads_dir = self.session_dir / downloads_dirname
+        self.uploads_dir = self.session_dir / uploads_dirname
         self.downloads_dir.mkdir(parents=True, exist_ok=True)
         self.uploads_dir.mkdir(parents=True, exist_ok=True)
         
@@ -146,21 +186,39 @@ class FileTransferHandler:
             'status': 'attempted'
         }
         
+        # Check if file monitoring is enabled
+        if not config['forensics'].getboolean('file_monitoring', True):
+            return download_info
+        
         # Generate fake file content if not provided
         if content is None:
             content = self._generate_fake_file_content(filename)
         
         file_path = self.downloads_dir / filename
         
-        with open(file_path, 'wb') as f:
-            f.write(content)
-            
+        # Save download if enabled
+        if config['forensics'].getboolean('save_downloads', True):
+            with open(file_path, 'wb') as f:
+                f.write(content)
+        
         download_info.update(
-            file_path=str(file_path),
             file_size=str(len(content)),
-            file_hash=hashlib.sha256(content).hexdigest(),
             status='completed'
         )
+        
+        # Only add file_path if downloads are being saved
+        if config['forensics'].getboolean('save_downloads', True):
+            download_info['file_path'] = str(file_path)
+        
+        # Add file hash analysis if enabled
+        if config['forensics'].getboolean('file_hash_analysis', True):
+            download_info['file_hash'] = hashlib.sha256(content).hexdigest()
+            download_info['md5_hash'] = hashlib.md5(content).hexdigest()
+        
+        # Add malware detection if enabled
+        if config['forensics'].getboolean('malware_detection', True):
+            download_info['malware_detected'] = str(self._detect_malware(filename, content))
+            download_info['file_type'] = self._identify_file_type(filename, content)
         
         return download_info
         
@@ -257,6 +315,41 @@ Access restricted to authorized personnel only.
 """.encode()
             
         return content
+    
+    def _detect_malware(self, filename: str, content: bytes) -> bool:
+        """Simple malware detection based on patterns"""
+        malware_patterns = [b'malware', b'virus', b'trojan', b'backdoor', b'payload', b'exploit']
+        filename_lower = filename.lower()
+        
+        # Check filename patterns
+        if any(pattern in filename_lower for pattern in ['malware', 'virus', 'trojan', 'backdoor', 'payload', 'exploit']):
+            return True
+        
+        # Check content patterns
+        for pattern in malware_patterns:
+            if pattern in content.lower():
+                return True
+        
+        return False
+    
+    def _identify_file_type(self, filename: str, content: bytes) -> str:
+        """Identify file type based on extension and content"""
+        filename_lower = filename.lower()
+        
+        if filename_lower.endswith(('.txt', '.log', '.conf', '.cfg')):
+            return 'text_file'
+        elif filename_lower.endswith(('.sh', '.bash')):
+            return 'shell_script'
+        elif filename_lower.endswith(('.py', '.python')):
+            return 'python_script'
+        elif filename_lower.endswith(('.sql', '.db')):
+            return 'database_file'
+        elif b'#!/bin/bash' in content[:100]:
+            return 'shell_script'
+        elif b'#!/usr/bin/env python' in content[:100]:
+            return 'python_script'
+        else:
+            return 'unknown'
         
     def handle_upload(self, filename: str, content: bytes) -> Dict[str, Any]:
         """Handle file uploads via STOR command"""
@@ -264,17 +357,31 @@ Access restricted to authorized personnel only.
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
             'filename': filename,
             'type': 'upload',
-            'file_size': len(content),
-            'file_hash': hashlib.sha256(content).hexdigest()
+            'file_size': len(content)
         }
         
-        file_path = self.uploads_dir / filename
-        with open(file_path, 'wb') as f:
-            f.write(content)
-            
-        upload_info['file_path'] = str(file_path)
-        upload_info['status'] = 'completed'
+        # Check if file monitoring is enabled
+        if not config['forensics'].getboolean('file_monitoring', True):
+            return upload_info
         
+        # Save upload if enabled
+        if config['forensics'].getboolean('save_uploads', True):
+            file_path = self.uploads_dir / filename
+            with open(file_path, 'wb') as f:
+                f.write(content)
+            upload_info['file_path'] = str(file_path)
+        
+        # Add file hash analysis if enabled
+        if config['forensics'].getboolean('file_hash_analysis', True):
+            upload_info['file_hash'] = hashlib.sha256(content).hexdigest()
+            upload_info['md5_hash'] = hashlib.md5(content).hexdigest()
+        
+        # Add malware detection if enabled
+        if config['forensics'].getboolean('malware_detection', True):
+            upload_info['malware_detected'] = str(self._detect_malware(filename, content))
+            upload_info['file_type'] = self._identify_file_type(filename, content)
+            
+        upload_info['status'] = 'completed'
         return upload_info
 
 class VulnerabilityLogger:
@@ -301,6 +408,10 @@ class VulnerabilityLogger:
     def analyze_for_vulnerabilities(self, command: str, headers: Optional[Dict] = None) -> List[Dict[str, Any]]:
         """Analyze FTP command for vulnerability exploitation attempts using JSON data"""
         vulnerabilities = []
+        
+        # Check if vulnerability detection is enabled
+        if not config['ai_features'].getboolean('vulnerability_detection', True):
+            return vulnerabilities
         
         for vuln_id, vuln_data in self.vulnerability_signatures.items():
             patterns = vuln_data.get('patterns', [])
@@ -336,6 +447,10 @@ class ForensicChainLogger:
         
     def log_event(self, event_type: str, data: Dict[str, Any]):
         """Log forensic event"""
+        # Check if chain of custody is enabled
+        if not config['forensics'].getboolean('chain_of_custody', True):
+            return
+            
         event = {
             'event_id': str(uuid.uuid4()),
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -349,6 +464,10 @@ class ForensicChainLogger:
         
     def add_evidence(self, evidence_type: str, file_path: str, description: str):
         """Add evidence to forensic chain"""
+        # Check if chain of custody is enabled
+        if not config['forensics'].getboolean('chain_of_custody', True):
+            return
+            
         if os.path.exists(file_path):
             with open(file_path, 'rb') as f:
                 content = f.read()
@@ -358,10 +477,14 @@ class ForensicChainLogger:
                 'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'type': evidence_type,
                 'file_path': file_path,
-                'file_hash': hashlib.sha256(content).hexdigest(),
                 'file_size': len(content),
                 'description': description
             }
+            
+            # Add file hash analysis if enabled
+            if config['forensics'].getboolean('file_hash_analysis', True):
+                evidence['file_hash'] = hashlib.sha256(content).hexdigest()
+                evidence['md5_hash'] = hashlib.md5(content).hexdigest()
             
             self.chain_data['evidence'].append(evidence)
             self._save_chain()
@@ -422,13 +545,48 @@ class FTPSession:
             'attack_analysis': [],
             'start_time': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+        # Initialize seed filesystem if configured
+        self.seed_fs = self._load_seed_filesystem()
+        self.seed_first_reply = config['honeypot'].getboolean('seed_first_reply', False)
+        # Initialize session recording if enabled
+        self.session_recording = config['features'].getboolean('session_recording', True)
+        self.save_replay = config['features'].getboolean('save_replay', True)
+        self.session_transcript = [] if self.session_recording else None
         
         # Initialize integrated components
+        self._initialize_components(server)
+        
+    def _load_seed_filesystem(self) -> Dict[str, Any]:
+        """Load seed filesystem from configured directory"""
+        seed_dir = config['honeypot'].get('seed_fs_dir', '')
+        if not seed_dir or not os.path.exists(seed_dir):
+            return {}
+        
+        try:
+            seed_fs = {}
+            for root, dirs, files in os.walk(seed_dir):
+                rel_path = os.path.relpath(root, seed_dir)
+                if rel_path == '.':
+                    rel_path = '/home/ftp'
+                else:
+                    rel_path = f'/home/ftp/{rel_path.replace(os.sep, "/")}'
+                
+                seed_fs[rel_path] = {
+                    'dirs': dirs[:],
+                    'files': files[:]
+                }
+            return seed_fs
+        except Exception as e:
+            logger.error(f"Failed to load seed filesystem: {e}")
+            return {}
+    
+    def _initialize_components(self, server):
+        """Initialize integrated components"""
         try:
             self.attack_analyzer = AttackAnalyzer()
-            self.file_handler = FileTransferHandler(str(server.session_dir))
+            self.file_handler = FileTransferHandler(str(server.session_dir)) if config['forensics'].getboolean('file_monitoring', True) else None
             self.vuln_logger = VulnerabilityLogger()
-            self.forensic_logger = ForensicChainLogger(str(server.session_dir))
+            self.forensic_logger = ForensicChainLogger(str(server.session_dir)) if config['forensics'].getboolean('chain_of_custody', True) else None
         except Exception as e:
             logger.error(f"Failed to initialize FTP session components: {e}")
             self.attack_analyzer = None
@@ -441,6 +599,16 @@ class FTPSession:
         response = f"{code} {message}\r\n"
         self.writer.write(response.encode())
         await self.writer.drain()
+        
+        # Record response in session transcript if enabled
+        if self.session_recording and self.session_transcript is not None:
+            self.session_transcript.append({
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'type': 'output',
+                'content': response.strip(),
+                'code': code,
+                'message': message
+            })
         
         # Log response
         logger.info("FTP response", extra={
@@ -469,6 +637,16 @@ class FTPSession:
                 command = "LIST"
             args = parts[1] if len(parts) > 1 else ""
         
+        # Record session transcript if enabled
+        if self.session_recording and self.session_transcript is not None:
+            self.session_transcript.append({
+                'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                'type': 'input',
+                'content': command_line,
+                'command': command,
+                'args': args
+            })
+        
         # Log command
         logger.info("FTP command", extra={
             "details": b64encode(command_line.encode('utf-8')).decode('utf-8'),
@@ -477,18 +655,18 @@ class FTPSession:
             "username": self.username
         })
         
-        # Analyze command for attacks
+        # Analyze command for attacks if real-time analysis is enabled
         attack_analysis = {'command': command_line, 'attack_types': [], 'severity': 'low'}
         vulnerabilities = []
         
-        if self.attack_analyzer:
+        if self.attack_analyzer and config['ai_features'].getboolean('real_time_analysis', True):
             try:
                 attack_analysis = self.attack_analyzer.analyze_command(command_line)
                 self.session_data['attack_analysis'].append(attack_analysis)
             except Exception as e:
                 logger.error(f"Attack analysis failed: {e}")
         
-        if self.vuln_logger:
+        if self.vuln_logger and config['ai_features'].getboolean('vulnerability_detection', True):
             try:
                 vulnerabilities = self.vuln_logger.analyze_for_vulnerabilities(command_line)
                 self.session_data['vulnerabilities'].extend(vulnerabilities)
@@ -497,25 +675,44 @@ class FTPSession:
         
         # Log attack analysis if threats detected
         if attack_analysis.get('attack_types'):
-            logger.warning("FTP attack pattern detected", extra={
+            log_extra = {
                 "attack_types": attack_analysis['attack_types'],
                 "severity": attack_analysis['severity'],
                 "indicators": attack_analysis.get('indicators', []),
                 "command": command_line
-            })
+            }
+            
+            # Add threat score if available
+            if 'threat_score' in attack_analysis:
+                log_extra['threat_score'] = attack_analysis['threat_score']
+                
+            # Check if alert should be triggered
+            if attack_analysis.get('alert_triggered', False):
+                logger.critical("High-threat FTP attack detected", extra=log_extra)
+            else:
+                logger.warning("FTP attack pattern detected", extra=log_extra)
+                
             if self.forensic_logger:
                 try:
                     self.forensic_logger.log_event("attack_detected", attack_analysis)
                 except Exception as e:
                     logger.error(f"Forensic logging failed: {e}")
         
-        # Log vulnerabilities
+        # Log vulnerabilities with enhanced context
         for vuln in vulnerabilities:
             try:
                 enhanced_vuln = dict(vuln)
                 enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
                 enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
-                logger.critical("FTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                enhanced_vuln['threat_score'] = attack_analysis.get('threat_score', 0)
+                
+                # Check alert threshold for vulnerabilities
+                alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+                if enhanced_vuln['threat_score'] >= alert_threshold:
+                    logger.critical("Critical FTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                else:
+                    logger.critical("FTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                    
                 if self.forensic_logger:
                     self.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
             except Exception as e:
@@ -578,8 +775,18 @@ class FTPSession:
         
         # Create AI prompt with FTP context
         ai_prompt = f"FTP: {full_command}\nDir: {self.current_directory}\nUser: {self.username}\nAuth: {self.authenticated}\nRespond with standard FTP code and message."
-        if attack_analysis.get('attack_types'):
+        
+        # Apply dynamic responses if enabled
+        if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
             ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
+        
+        # Apply deception techniques if enabled
+        if config['ai_features'].getboolean('deception_techniques', True):
+            # Add deception context for more realistic responses
+            if 'reconnaissance' in attack_analysis.get('attack_types', []):
+                ai_prompt += "\n[DECEPTION: Show realistic but controlled directory information]"
+            elif 'privilege_escalation' in attack_analysis.get('attack_types', []):
+                ai_prompt += "\n[DECEPTION: Simulate security resistance while logging attempts]"
         
         try:
             # Get AI response for the command
@@ -1010,6 +1217,19 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
             "session_dir": str(self.session_dir)
         }
         
+        # Add AI features status
+        connection_info["ai_features_enabled"] = {
+            "dynamic_responses": config['ai_features'].getboolean('dynamic_responses', True),
+            "attack_pattern_recognition": config['ai_features'].getboolean('attack_pattern_recognition', True),
+            "vulnerability_detection": config['ai_features'].getboolean('vulnerability_detection', True),
+            "adaptive_banners": config['ai_features'].getboolean('adaptive_banners', True),
+            "deception_techniques": config['ai_features'].getboolean('deception_techniques', True)
+        }
+        
+        # Add forensics configuration status
+        connection_info["file_monitoring_enabled"] = config['forensics'].getboolean('file_monitoring', True)
+        connection_info["chain_of_custody_enabled"] = config['forensics'].getboolean('chain_of_custody', True)
+        
         logger.info("FTP connection received", extra=connection_info)
         
         if session.forensic_logger:
@@ -1019,8 +1239,16 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
                 logger.error(f"Forensic logging failed: {e}")
         
         try:
-            # Send welcome message
-            await session.send_response(220, "NexusGames Studio FTP Server Ready")
+            # Send welcome message with adaptive banner if enabled
+            banner_message = "NexusGames Studio FTP Server Ready"
+            
+            # Apply adaptive banners if enabled
+            if config['ai_features'].getboolean('adaptive_banners', True):
+                # Modify banner based on source IP or attack patterns
+                if src_ip != 'unknown' and not src_ip.startswith('192.168.'):
+                    banner_message += f" (Last connection from {src_ip})"
+            
+            await session.send_response(220, banner_message)
             
             # Handle commands
             while True:
@@ -1057,16 +1285,32 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
             session.session_data['duration'] = str(datetime.datetime.fromisoformat(session.session_data['end_time']) - 
                                                    datetime.datetime.fromisoformat(session.session_data['start_time']))
             
-            session_file = self.session_dir / "session_summary.json"
-            with open(session_file, 'w') as f:
-                json.dump(session.session_data, f, indent=2)
+            # Save session data if forensic reports are enabled
+            if config['forensics'].getboolean('forensic_reports', True):
+                session_file = self.session_dir / "session_summary.json"
+                with open(session_file, 'w') as f:
+                    json.dump(session.session_data, f, indent=2)
                 
-            if session.forensic_logger:
-                try:
-                    session.forensic_logger.add_evidence("session_summary", str(session_file), "Complete FTP session activity summary")
-                    session.forensic_logger.log_event("connection_closed", {"reason": "normal_closure"})
-                except Exception as e:
-                    logger.error(f"Forensic finalization failed: {e}")
+                # Save replay data if enabled
+                if session.save_replay and hasattr(session, 'session_transcript') and session.session_transcript:
+                    replay_file = self.session_dir / "session_replay.json"
+                    with open(replay_file, 'w') as f:
+                        json.dump({
+                            'session_id': task_uuid,
+                            'start_time': session.session_data['start_time'],
+                            'end_time': session.session_data['end_time'],
+                            'transcript': session.session_transcript
+                        }, f, indent=2)
+                
+                if session.forensic_logger:
+                    try:
+                        session.forensic_logger.add_evidence("session_summary", str(session_file), "Complete FTP session activity summary")
+                        if session.save_replay and hasattr(session, 'session_transcript') and session.session_transcript:
+                            replay_file = self.session_dir / "session_replay.json"
+                            session.forensic_logger.add_evidence("session_replay", str(replay_file), "Complete FTP session transcript for replay")
+                        session.forensic_logger.log_event("connection_closed", {"reason": "normal_closure"})
+                    except Exception as e:
+                        logger.error(f"Forensic finalization failed: {e}")
 
             # Ensure downloads/uploads directories exist under the session dir
             try:
@@ -1089,8 +1333,8 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
                 logger.error(f"Session finalization failed: {e}")
             
             
-            # Generate session summary using AI like SSH server
-            if session.session_data.get('commands'):
+            # Generate session summary using AI if enabled
+            if session.session_data.get('commands') and config['ai_features'].getboolean('ai_attack_summaries', True):
                 try:
                     await self.generate_session_summary(session)
                 except Exception as e:
@@ -1287,14 +1531,29 @@ try:
     # Get the sensor name from the config or use the system's hostname
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
 
-    # Set up the honeypot logger
+    # Set up the honeypot logger with configurable log level
     logger = logging.getLogger(__name__)  
-    logger.setLevel(logging.INFO)  
+    log_level = config['logging'].get('log_level', 'INFO').upper()
+    logger.setLevel(getattr(logging, log_level, logging.INFO))
 
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "ftp_log.log"))
     logger.addHandler(log_file_handler)
 
-    log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    # Configure structured logging
+    if config['logging'].getboolean('structured_logging', True):
+        log_file_handler.setFormatter(JSONFormatter(sensor_name))
+    else:
+        log_file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    
+    # Add console handler for real-time streaming if enabled
+    if config['logging'].getboolean('real_time_streaming', True):
+        console_handler = logging.StreamHandler()
+        console_handler.setLevel(logging.INFO)
+        if config['logging'].getboolean('structured_logging', True):
+            console_handler.setFormatter(JSONFormatter(sensor_name))
+        else:
+            console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+        logger.addHandler(console_handler)
 
     f = ContextFilter()
     logger.addFilter(f)

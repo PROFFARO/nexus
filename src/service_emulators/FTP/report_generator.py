@@ -38,7 +38,7 @@ class FTPHoneypotReportGenerator:
         """Load attack patterns from JSON configuration"""
         try:
             patterns_file = Path(__file__).parent / "attack_patterns.json"
-            with open(patterns_file, 'r') as f:
+            with open(patterns_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             print(f"Warning: Failed to load attack patterns: {e}")
@@ -48,7 +48,7 @@ class FTPHoneypotReportGenerator:
         """Load vulnerability signatures from JSON configuration"""
         try:
             vuln_file = Path(__file__).parent / "vulnerability_signatures.json"
-            with open(vuln_file, 'r') as f:
+            with open(vuln_file, 'r', encoding='utf-8') as f:
                 return json.load(f)
         except Exception as e:
             print(f"Warning: Failed to load vulnerability signatures: {e}")
@@ -84,14 +84,14 @@ class FTPHoneypotReportGenerator:
         
         # JSON Report
         json_file = output_path / f"ftp_honeypot_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
-        with open(json_file, 'w') as f:
-            json.dump(report, f, indent=2, default=str)
+        with open(json_file, 'w', encoding='utf-8') as f:
+            json.dump(report, f, indent=2, default=str, ensure_ascii=False)
         report_files['json'] = str(json_file)
         
         # HTML Report
         html_file = output_path / f"ftp_honeypot_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
         html_content = self._generate_html_report(report)
-        with open(html_file, 'w') as f:
+        with open(html_file, 'w', encoding='utf-8') as f:
             f.write(html_content)
         report_files['html'] = str(html_file)
         
@@ -120,7 +120,7 @@ class FTPHoneypotReportGenerator:
                 # Load session summary
                 if session_file.exists():
                     try:
-                        with open(session_file, 'r') as f:
+                        with open(session_file, 'r', encoding='utf-8') as f:
                             session_info.update(json.load(f))
                     except Exception as e:
                         print(f"Error loading FTP session {session_dir.name}: {e}")
@@ -129,7 +129,7 @@ class FTPHoneypotReportGenerator:
                 # Load forensic data
                 if forensic_file.exists():
                     try:
-                        with open(forensic_file, 'r') as f:
+                        with open(forensic_file, 'r', encoding='utf-8') as f:
                             forensic_data = json.load(f)
                             session_info['forensic_data'] = forensic_data
                     except Exception as e:
