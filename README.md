@@ -26,9 +26,9 @@
 | Feature | Description | Status |
 |---------|-------------|--------|
 | **🤖 AI-Powered Responses** | Dynamic, context-aware responses using 5+ LLM providers (OpenAI, Gemini, Ollama, Azure, AWS) | ✅ Production |
-| **🔍 Real-time Analysis** | Advanced attack pattern recognition with ML-based behavioral analysis | ✅ Production |
+| **🔍 Real-time Analysis** | Advanced attack pattern recognition with AI-based behavioral analysis | ✅ Production |
 | **📊 Comprehensive Reporting** | Interactive dashboards, detailed security reports with visualizations | ✅ Production |
-| **🔐 Forensic Chain** | Legal-grade evidence tracking with cryptographic integrity verification | ✅ Production |
+| **🔐 Forensic Chain** | evidence tracking with integrity verification | ✅ Production |
 | **🌐 Multi-Protocol Support** | SSH, FTP, HTTP/HTTPS, MySQL with SMB planned | ✅ 4/5 Services |
 | **⚡ Enterprise Deployment** | CLI interface, Docker support | ✅ Production |
 | **📈 Scalability** | Horizontal scaling, load balancing, distributed deployment | 🚧 In Progress |
