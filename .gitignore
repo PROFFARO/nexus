@@ -188,6 +188,10 @@ sessions/
 *.log
 forensic_chain.json
 session_summary.json
+*_report_*.json
+*_security_*.json
+*.xlsx
+*.html
 
 # Honeypot Specific Files
 downloads/
