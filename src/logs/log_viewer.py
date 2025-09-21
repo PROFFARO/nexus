@@ -334,14 +334,20 @@ class LogViewer:
         return "\n".join(output)
     
     def save_conversation(self, content: str, output_file: str):
-        """Save conversation to file"""
+        """Save conversation to file with flexible path handling"""
         output_path = Path(output_file)
+        
+        # Convert relative paths to absolute from current working directory
+        if not output_path.is_absolute():
+            output_path = Path.cwd() / output_path
+        
+        # Create parent directories if they don't exist
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
         with open(output_path, 'w', encoding='utf-8') as f:
             f.write(content)
         
-        return str(output_path)
+        return str(output_path.resolve())
 
 def main():
     parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer')

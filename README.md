@@ -769,7 +769,9 @@ ssh admin@localhost -p 8022
 
 # Test FTP honeypot
 telnet localhost 2121
-# Or use FTP client: ftp localhost 2121
+# Or use FTP client: 
+# ftp
+# open localhost 2121
 
 # Test HTTP honeypot
 curl http://localhost:8080/
