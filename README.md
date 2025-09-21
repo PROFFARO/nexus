@@ -681,13 +681,20 @@ pip install pytest black flake8 mypy
 
 ## 📄 License
 
-This project is for **educational and research purposes only**. Please ensure compliance with local laws and regulations when deploying honeypots.
+This project is licensed under the **MIT License** with additional terms for honeypot software - see the [LICENSE](LICENSE) file for details.
+
+### Key Points
+
+- **Open Source**: Free to use, modify, and distribute
+- **Educational Focus**: Intended for research and cybersecurity training
+- **Legal Compliance**: Users must comply with applicable laws
+- **Responsible Use**: No malicious or unauthorized use permitted
 
 ### Disclaimer
 
 - This software is provided "as is" without warranty
 - Users are responsible for legal compliance in their jurisdiction
-- Not intended for production security without proper review
+- Proper network isolation required for production deployments
 - AI responses may reveal honeypot nature to sophisticated attackers
 
 ---
@@ -776,17 +783,6 @@ mysql -h localhost -P 3306 -u root -p
 <div align="center">
 
 **🕸️ NEXUS - Next-Generation AI-Enhanced Honeypot Platform**
-
-*Revolutionizing cybersecurity through intelligent deception and advanced threat detection*
-
-[![GitHub Stars](https://img.shields.io/github/stars/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
-[![GitHub Forks](https://img.shields.io/github/forks/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
-[![GitHub Issues](https://img.shields.io/github/issues/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development/issues)
-[![GitHub Contributors](https://img.shields.io/github/contributors/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development/graphs/contributors)
-
-**[🚀 Get Started](https://nexus-honeypot.com/get-started)** • **[📚 Documentation](https://docs.nexus-honeypot.com)** • **[💼 Enterprise](https://nexus-honeypot.com/enterprise)** • **[🎓 Training](https://training.nexus-honeypot.com)**
-
----
 
 **Made with ❤️ by the PROFFARO**  
 *Licensed under Educational Use - See [LICENSE](LICENSE) for details*

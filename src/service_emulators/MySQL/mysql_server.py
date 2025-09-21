@@ -1699,15 +1699,22 @@ class MySQLHoneypotServer:
         # Store connection info for sessions
         self.connection_info = {}
 
+        llm_provider = self.config['llm'].get('llm_provider', 'openai')
+        model_name = self.config['llm'].get('model_name', 'gpt-4o-mini')
+        sensor_name = self.config['honeypot'].get('sensor_name', 'nexus-mysql-honeypot')
+        
+        print(f"\n✅ MySQL Honeypot Starting...")
+        print(f"📡 Port: {self.port}")
+        print(f"🤖 LLM Provider: {llm_provider}")
+        print(f"📊 Model: {model_name}")
+        print(f"🔍 Sensor: {sensor_name}")
+        print(f"📁 Log File: {self.config['honeypot'].get('log_file', 'mysql_log.log')}")
+        print(f"⚠️  Press Ctrl+C to stop\n")
+        
         logger.info(f"MySQL honeypot server started on {self.host}:{self.port}")
-        print(f"\n🕸️  NEXUS MySQL Honeypot Server Started")
-        print(f"📡 Listening on: {self.host}:{self.port}")
-        print(f"🤖 LLM Provider: {self.config['llm'].get('llm_provider', 'unknown')}")
-        print(f"🔧 Model: {self.config['llm'].get('model_name', 'unknown')}")
-        print(f"👥 User Accounts: {len(self.accounts)} configured")
-        print(f"📝 Logs: {self.config['honeypot'].get('log_file', 'mysql_log.log')}")
-        print(f"\n🎯 Ready to capture MySQL attacks!")
-        print(f"💡 Test connection: mysql -h localhost -P {self.port} -u admin -padmin\n")
+        print(f"✅ MySQL honeypot listening on {self.host}:{self.port}")
+        print("📡 Ready for connections...")
+        print(f"Test connection: mysql -h localhost -P {self.port} -u <username> -p<password>\n")
         
         # Patch server to capture connection info
         original_client_connected = server._client_connected_cb
@@ -1775,7 +1782,8 @@ class MySQLHoneypotServer:
         
         try:
             await server.serve_forever()
-        except KeyboardInterrupt:
+        except (KeyboardInterrupt, asyncio.CancelledError):
+            print("\n🛑 MySQL honeypot stopped by user")
             logger.info("MySQL honeypot stopped by user")
         finally:
             # Clean up all active sessions before shutdown
@@ -1897,6 +1905,8 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
 async def main():
     """Main entry point"""
     global config, logger, llm_sessions, with_message_history, thread_local
+    
+    server = None
 
     # Parse arguments
     parser = argparse.ArgumentParser(description='Start the MySQL honeypot server')
@@ -2055,15 +2065,18 @@ async def main():
     thread_local = threading.local()
 
     # Start server
-    server = None
     try:
         server = MySQLHoneypotServer(config)
         await server.start_server()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 MySQL honeypot stopped by user")
+        logger.info("MySQL honeypot stopped by user")
     except Exception as e:
         logger.error(f"MySQL honeypot error: {e}")
         traceback.print_exc()
-        # Clean up active sessions on error
-        if server and server.active_sessions:
+    finally:
+        # Clean up active sessions on shutdown
+        if server and hasattr(server, 'active_sessions') and server.active_sessions:
             session_count = len(server.active_sessions)
             logger.info(f"Emergency cleanup of {session_count} sessions...")
             for session_id in list(server.active_sessions.keys()):

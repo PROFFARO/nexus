@@ -1357,11 +1357,28 @@ async def start_server():
         reuse_address=True
     )
     
-    logger.info(f"FTP honeypot started on 127.0.0.1:{port}")
-    print(f"FTP honeypot listening on 127.0.0.1:{port}")
+    llm_provider = config['llm'].get('llm_provider', 'openai')
+    model_name = config['llm'].get('model_name', 'gpt-4o-mini')
     
-    async with server:
-        await server.serve_forever()
+    print(f"\n✅ FTP Honeypot Starting...")
+    print(f"📡 Port: {port}")
+    print(f"🤖 LLM Provider: {llm_provider}")
+    print(f"📊 Model: {model_name}")
+    print(f"🔍 Sensor: {sensor_name}")
+    print(f"📁 Log File: {config['honeypot'].get('log_file', 'ftp_log.log')}")
+    print(f"⚠️  Press Ctrl+C to stop\n")
+    
+    logger.info(f"FTP honeypot started on 127.0.0.1:{port}")
+    print(f"✅ FTP honeypot listening on 127.0.0.1:{port}")
+    print("📡 Ready for connections...")
+    
+    try:
+        async with server:
+            await server.serve_forever()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 FTP honeypot stopped by user")
+        logger.info("FTP honeypot stopped by user")
+        raise
 
 class ContextFilter(logging.Filter):
     """Filter to add asyncio task name to log records"""
@@ -1608,10 +1625,20 @@ try:
     # Start the server
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_server())
+    try:
+        loop.run_until_complete(start_server())
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 FTP honeypot stopped by user")
+        logger.info("FTP honeypot stopped by user")
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
-except KeyboardInterrupt:
-    print("\nFTP honeypot stopped by user")
+except (KeyboardInterrupt, asyncio.CancelledError):
+    print("\n🛑 FTP honeypot stopped by user")
+    logger.info("FTP honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()

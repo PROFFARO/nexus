@@ -1629,11 +1629,23 @@ def handle_file_creation(command: str, server: MySSHServer):
 async def start_server() -> None:
     server_instance = MySSHServer()
     
+    port = config['ssh'].getint('port', 8022)
+    llm_provider = config['llm'].get('llm_provider', 'openai')
+    model_name = config['llm'].get('model_name', 'gpt-4o-mini')
+    
+    print(f"\n✅ SSH Honeypot Starting...")
+    print(f"📡 Port: {port}")
+    print(f"🤖 LLM Provider: {llm_provider}")
+    print(f"📊 Model: {model_name}")
+    print(f"🔍 Sensor: {sensor_name}")
+    print(f"📁 Log File: {config['honeypot'].get('log_file', 'ssh_log.log')}")
+    print(f"⚠️  Press Ctrl+C to stop\n")
+    
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         await handle_client(process, server_instance)
 
     await asyncssh.listen(
-        port=config['ssh'].getint("port", 8022),
+        port=port,
         reuse_address=True,
         server_factory=lambda: server_instance,
         server_host_keys=config['ssh'].get("host_priv_key", "ssh_host_key"),
@@ -1643,6 +1655,9 @@ async def start_server() -> None:
         keepalive_count_max=10,
         login_timeout=3600
     )
+    
+    print(f"✅ SSH honeypot listening on 127.0.0.1:{port}")
+    print("📡 Ready for connections...")
 
 class ContextFilter(logging.Filter):
     """
@@ -1909,11 +1924,20 @@ try:
     # Kick off the server!
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
-    loop.run_until_complete(start_server())
-    loop.run_forever()
+    try:
+        loop.run_until_complete(start_server())
+        loop.run_forever()
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 SSH honeypot stopped by user")
+        logger.info("SSH honeypot stopped by user")
+    finally:
+        try:
+            loop.close()
+        except Exception:
+            pass
 
 except KeyboardInterrupt:
-    print("\nSSH honeypot stopped by user")
+    print("\n🛑 SSH honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()

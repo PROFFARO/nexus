@@ -1,0 +1,46 @@
+MIT License
+
+Copyright (c) 2024 PROFFARO - NEXUS Development Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+ADDITIONAL TERMS FOR HONEYPOT SOFTWARE:
+
+1. EDUCATIONAL AND RESEARCH USE: This honeypot software is intended primarily 
+   for educational, research, and cybersecurity training purposes.
+
+2. LEGAL COMPLIANCE: Users must ensure compliance with all applicable local, 
+   national, and international laws and regulations when deploying this software.
+
+3. RESPONSIBLE DISCLOSURE: Any vulnerabilities discovered in this software should 
+   be responsibly disclosed to the maintainers.
+
+4. NO MALICIOUS USE: This software must not be used for illegal activities, 
+   unauthorized access, or any malicious purposes.
+
+5. DATA PRIVACY: Users are responsible for handling any collected data in 
+   accordance with applicable privacy laws and regulations.
+
+6. NETWORK ISOLATION: Production deployments should be properly isolated and 
+   secured to prevent unintended exposure or misuse.
+
+7. DISCLAIMER: The authors and contributors are not responsible for any misuse 
+   of this software or any consequences arising from its deployment.

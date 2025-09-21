@@ -1136,15 +1136,31 @@ try:
 
     # Start the server
     port = config['http'].getint('port', 8080)
+    llm_provider = config['llm'].get('llm_provider', 'openai')
+    model_name = config['llm'].get('model_name', 'gpt-4o-mini')
+    
+    print(f"\n✅ HTTP Honeypot Starting...")
+    print(f"📡 Port: {port}")
+    print(f"🤖 LLM Provider: {llm_provider}")
+    print(f"📊 Model: {model_name}")
+    print(f"🔍 Sensor: {sensor_name}")
+    print(f"📁 Log File: {config['honeypot'].get('log_file', 'http_log.log')}")
+    print(f"⚠️  Press Ctrl+C to stop\n")
     
     logger.info(f"HTTP honeypot started on 127.0.0.1:{port}")
-    print(f"HTTP honeypot listening on 127.0.0.1:{port}")
+    print(f"✅ HTTP honeypot listening on 127.0.0.1:{port}")
+    print("📡 Ready for connections...")
     
-    app = asyncio.run(create_app())
-    web.run_app(app, host='127.0.0.1', port=port)
+    try:
+        app = asyncio.run(create_app())
+        web.run_app(app, host='127.0.0.1', port=port)
+    except (KeyboardInterrupt, asyncio.CancelledError):
+        print("\n🛑 HTTP honeypot stopped by user")
+        logger.info("HTTP honeypot stopped by user")
 
-except KeyboardInterrupt:
-    print("\nHTTP honeypot stopped by user")
+except (KeyboardInterrupt, asyncio.CancelledError):
+    print("\n🛑 HTTP honeypot stopped by user")
+    logger.info("HTTP honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()
