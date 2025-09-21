@@ -307,8 +307,6 @@ Examples:
         ssh_dir = self.services['ssh']['path'].parent
         
         try:
-            print(f"Starting SSH honeypot...")
-            print(f"Command: {' '.join(cmd)}")
             subprocess.run(cmd, cwd=ssh_dir, env=env)
         except KeyboardInterrupt:
             print("\nSSH honeypot stopped")
@@ -376,8 +374,6 @@ Examples:
         mysql_dir = self.services['mysql']['path'].parent
         
         try:
-            print(f"Starting MySQL honeypot...")
-            print(f"Command: {' '.join(cmd)}")
             subprocess.run(cmd, cwd=mysql_dir, env=env)
         except KeyboardInterrupt:
             print("\nMySQL honeypot stopped")
@@ -445,8 +441,6 @@ Examples:
         ftp_dir = self.services['ftp']['path'].parent
         
         try:
-            print(f"Starting FTP honeypot...")
-            print(f"Command: {' '.join(cmd)}")
             subprocess.run(cmd, cwd=ftp_dir, env=env)
         except KeyboardInterrupt:
             print("\nFTP honeypot stopped")
@@ -514,8 +508,6 @@ Examples:
         http_dir = self.services['http']['path'].parent
         
         try:
-            print(f"Starting HTTP honeypot...")
-            print(f"Command: {' '.join(cmd)}")
             subprocess.run(cmd, cwd=http_dir, env=env)
         except KeyboardInterrupt:
             print("\nHTTP honeypot stopped")
