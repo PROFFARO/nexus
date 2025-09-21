@@ -81,9 +81,9 @@ Examples:
                                help='Decode base64 encoded details')
         logs_parser.add_argument('--conversation', '-c', action='store_true',
                                help='Show full conversation format')
-        logs_parser.add_argument('--save', '-s', help='Save conversation to file')
+        logs_parser.add_argument('--save', '-s', help='Save analysis to file (absolute or relative path)')
         logs_parser.add_argument('--format', choices=['text', 'json'], default='text',
-                               help='Output format')
+                               help='Output format (text or json)')
         logs_parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks'],
                                default='all', help='Filter log entries')
         
@@ -103,6 +103,19 @@ Examples:
         
         # SMB service parser
         smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot (not implemented)')
+        
+        # Management commands
+        status_parser = subparsers.add_parser('status', help='Check service status')
+        status_parser.add_argument('service', nargs='?', help='Specific service to check (optional)')
+        
+        stop_parser = subparsers.add_parser('stop-all', help='Stop all running services')
+        stop_parser.add_argument('--force', action='store_true', help='Force stop processes')
+        
+        start_parser = subparsers.add_parser('start-all', help='Start all implemented services')
+        start_parser.add_argument('--config-dir', help='Directory containing service configs')
+        start_parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'], help='LLM provider for all services')
+        start_parser.add_argument('--model-name', help='LLM model name for all services')
+        
         
         return parser
 
@@ -965,9 +978,268 @@ except Exception as e:
             return self.run_mysql_service(args)
         elif args.command == 'smb':
             return self.run_placeholder_service(args.command)
+        elif args.command == 'status':
+            return self.show_status(args)
+        elif args.command == 'stop-all':
+            return self.stop_all(args)
+        elif args.command == 'start-all':
+            return self.start_all(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
+
+    def check_service_status(self, service_name):
+        """Check if a service is running"""
+        service_info = self.services.get(service_name)
+        if not service_info:
+            return {'status': 'unknown', 'pid': None, 'port': None}
+        
+        port = self.get_default_port(service_name)
+        
+        # Check if port is in use
+        import socket
+        try:
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                s.settimeout(1)
+                result = s.connect_ex(('127.0.0.1', port))
+                if result == 0:
+                    return {'status': 'running', 'pid': 'unknown', 'port': port}
+                else:
+                    return {'status': 'stopped', 'pid': None, 'port': port}
+        except Exception:
+            return {'status': 'unknown', 'pid': None, 'port': port}
+    
+    def get_service_config(self, service_name, config_dir=None):
+        """Get service configuration dynamically"""
+        service_info = self.services.get(service_name)
+        if not service_info:
+            return None
+        
+        config_file = None
+        if config_dir:
+            config_file = Path(config_dir) / f"{service_name}_config.ini"
+        else:
+            config_file = service_info['path'].parent / "config.ini"
+        
+        config: dict = {'port': None}
+        
+        if config_file.exists():
+            try:
+                from configparser import ConfigParser
+                parser = ConfigParser()
+                parser.read(config_file)
+                
+                # Get port from config
+                port_value = None
+                if service_name == 'ssh' and 'ssh' in parser:
+                    port_value = parser['ssh'].getint('port', fallback=None)
+                elif service_name == 'ftp' and 'ftp' in parser:
+                    port_value = parser['ftp'].getint('port', fallback=None)
+                elif service_name == 'http' and 'http' in parser:
+                    port_value = parser['http'].getint('port', fallback=None)
+                elif service_name == 'mysql' and 'mysql' in parser:
+                    port_value = parser['mysql'].getint('port', fallback=None)
+                
+                if port_value is not None:
+                    config['port'] = port_value
+            except Exception:
+                pass
+        
+        return config
+    
+    def get_default_port(self, service_name):
+        """Get default port for service from config or fallback"""
+        config = self.get_service_config(service_name)
+        if config and config['port']:
+            return config['port']
+        
+        # Fallback defaults only if no config found
+        fallback_ports = {
+            'ssh': 8022,
+            'ftp': 2121,
+            'http': 8080,
+            'mysql': 3306
+        }
+        return fallback_ports.get(service_name, 0)
+    
+    def find_service_processes(self):
+        """Find running service processes"""
+        processes = []
+        
+        try:
+            import psutil
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = ' '.join(proc.info['cmdline'] or [])
+                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py']):
+                        processes.append({
+                            'pid': proc.info['pid'],
+                            'name': proc.info['name'],
+                            'cmdline': cmdline
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+        except ImportError:
+            pass
+        
+        return processes
+    
+    def stop_all_services(self):
+        """Stop all running services"""
+        stopped_count = 0
+        
+        try:
+            import psutil
+            processes = self.find_service_processes()
+            
+            for proc_info in processes:
+                try:
+                    proc = psutil.Process(proc_info['pid'])
+                    proc.terminate()
+                    stopped_count += 1
+                    print(f"Stopped process {proc_info['pid']}: {proc_info['name']}")
+                except (psutil.NoSuchProcess, psutil.AccessDenied) as e:
+                    print(f"Could not stop process {proc_info['pid']}: {e}")
+                    
+        except ImportError:
+            print("psutil not available - cannot stop processes automatically")
+            return 0
+        
+        return stopped_count
+    
+    def show_status(self, args):
+        """Show service status"""
+        if args.service:
+            if args.service not in self.services:
+                print(f"Unknown service: {args.service}")
+                return 1
+            
+            if not self.services[args.service]['implemented']:
+                print(f"Service {args.service} is not implemented")
+                return 1
+            
+            status = self.check_service_status(args.service)
+            print(f"\n{args.service.upper()} Service Status:")
+            print(f"  Status: {status['status']}")
+            print(f"  Port: {status['port']}")
+            if status['pid']:
+                print(f"  PID: {status['pid']}")
+        else:
+            print("\n📊 NEXUS Services Status:")
+            print("=" * 40)
+            
+            for service_name, service_info in self.services.items():
+                if service_info['implemented']:
+                    status = self.check_service_status(service_name)
+                    status_icon = "✅" if status['status'] == 'running' else "❌"
+                    print(f"{status_icon} {service_name.upper():<8} {status['status']:<10} Port: {status['port']}")
+                else:
+                    print(f"⚠️  {service_name.upper():<8} {'not implemented':<10}")
+            
+            processes = self.find_service_processes()
+            if processes:
+                print("\n🔄 Running Processes:")
+                for proc in processes:
+                    print(f"  PID {proc['pid']}: {proc['name']}")
+            else:
+                print("\n🔄 No emulators running currently")
+        
+        return 0
+    
+    def stop_all(self, args):
+        """Stop all services"""
+        print("🛑 Stopping all service emulators...")
+        
+        stopped_count = self.stop_all_services()
+        
+        if stopped_count > 0:
+            print(f"✅ Stopped {stopped_count} service(s)")
+        else:
+            print("ℹ️  No running services found")
+        
+        return 0
+    
+    def start_all(self, args):
+        """Start all implemented services"""
+        print("⚙️  Starting all service emulators...")
+        started_count: int = 0
+        failed_count: int = 0
+        
+        for service_name, service_info in self.services.items():
+            if not service_info['implemented']:
+                continue
+            
+            # Check if already running
+            status = self.check_service_status(service_name)
+            if status['status'] == 'running':
+                print(f"ℹ️  {service_name.upper()} already running on port {status['port']}")
+                continue
+            
+            print(f"🚀 Starting {service_name.upper()}...")
+            
+            try:
+                # Build command for service
+                cmd = [sys.executable, str(service_info['path'])]
+                
+                # Add global arguments if provided
+                if args.llm_provider:
+                    if service_name == 'ssh':
+                        cmd.extend(['-l', args.llm_provider])
+                    elif service_name in ['ftp', 'http']:
+                        cmd.extend(['-l', args.llm_provider])
+                    elif service_name == 'mysql':
+                        cmd.extend(['--llm-provider', args.llm_provider])
+                
+                if args.model_name:
+                    if service_name == 'ssh':
+                        cmd.extend(['-m', args.model_name])
+                    elif service_name in ['ftp', 'http']:
+                        cmd.extend(['-m', args.model_name])
+                    elif service_name == 'mysql':
+                        cmd.extend(['--model-name', args.model_name])
+                
+                # Add config file if specified
+                if args.config_dir:
+                    config_file = Path(args.config_dir) / f"{service_name}_config.ini"
+                    if config_file.exists():
+                        cmd.extend(['-c', str(config_file)])
+                
+                # Start service in background
+                import subprocess
+                import threading
+                
+                def run_service():
+                    try:
+                        subprocess.run(cmd, cwd=service_info['path'].parent)
+                    except Exception as e:
+                        print(f"❌ Error running {service_name}: {e}")
+                
+                thread = threading.Thread(target=run_service, daemon=True)
+                thread.start()
+                
+                # Give service time to start
+                import time
+                time.sleep(2)
+                
+                # Check if service started successfully
+                new_status = self.check_service_status(service_name)
+                if new_status['status'] == 'running':
+                    print(f"✅ {service_name.upper()} started on port {new_status['port']}")
+                    started_count += 1
+                else:
+                    print(f"❌ Failed to start {service_name.upper()}")
+                    failed_count += 1
+                    
+            except Exception as e:
+                print(f"❌ Error starting {service_name}: {e}")
+                failed_count += 1
+        
+        print(f"\n📊 Summary:")
+        print(f"✅ Started: {started_count} service(s)")
+        if failed_count > 0:
+            print(f"❌ Failed: {failed_count} service(s)")
+        
+        return 0 if failed_count == 0 else 1
 
 if __name__ == '__main__':
     cli = NexusCLI()
