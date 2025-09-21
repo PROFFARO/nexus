@@ -223,24 +223,15 @@ whoami
 cat /etc/passwd
 ```
 
-### 🎮 Interactive Demo Mode
-
-```bash
-# Launch interactive setup wizard
-python src/cli/nexus_cli.py demo
-
-# Or quick demo with all services
-python src/cli/nexus_cli.py demo --all-services
-```
-
 ### 🖥️ Centralized CLI Interface
 
 **The NEXUS CLI provides a unified interface for all honeypot services:**
 
 ```bash
 # 📋 Service Management
-python src/cli/nexus_cli.py list                    # List all services
+python src/cli/nexus_cli.py list                    # List all the available services
 python src/cli/nexus_cli.py status                  # Check service status
+python src/cli/nexus_cli.py start-all -h            # start the parellal threads to run the emulators
 python src/cli/nexus_cli.py stop-all               # Emergency stop all
 
 # 🚀 Start Services (choose your preferred LLM)
@@ -261,10 +252,6 @@ python src/cli/nexus_cli.py deploy --config production.yaml
 ### 📊 Monitoring & Analysis
 
 ```bash
-# 📈 Real-time Monitoring
-python src/cli/nexus_cli.py monitor --service ssh --live
-python src/cli/nexus_cli.py dashboard --port 8090    # Web dashboard
-
 # 📋 Generate Reports
 python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
