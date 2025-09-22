@@ -554,17 +554,23 @@ Examples:
         
         # Build command for SSH report generator with proper path handling
         import tempfile
+        
+        # Escape paths properly for Windows
+        ssh_dir_escaped = str(ssh_dir).replace('\\', '\\\\')
+        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
+        output_dir_escaped = args.output.replace('\\', '\\\\')
+        
         script_content = f'''import sys
 from pathlib import Path
 
 # Add SSH directory to path
-sys.path.insert(0, r"{ssh_dir}")
+sys.path.insert(0, r"{ssh_dir_escaped}")
 
 try:
     from report_generator import HoneypotReportGenerator
     
-    generator = HoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    generator = HoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -575,7 +581,7 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {args.output}/visualizations/")
+    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -628,17 +634,23 @@ except Exception as e:
         
         # Build command for FTP report generator with proper path handling
         import tempfile
+        
+        # Escape paths properly for Windows
+        ftp_dir_escaped = str(ftp_dir).replace('\\', '\\\\')
+        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
+        output_dir_escaped = args.output.replace('\\', '\\\\')
+        
         script_content = f'''import sys
 from pathlib import Path
 
 # Add FTP directory to path
-sys.path.insert(0, r"{ftp_dir}")
+sys.path.insert(0, r"{ftp_dir_escaped}")
 
 try:
     from report_generator import FTPHoneypotReportGenerator
     
-    generator = FTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    generator = FTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -649,7 +661,7 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {args.output}/visualizations/")
+    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -702,17 +714,23 @@ except Exception as e:
         
         # Build command for HTTP report generator with proper path handling
         import tempfile
+        
+        # Escape paths properly for Windows
+        http_dir_escaped = str(http_dir).replace('\\', '\\\\')
+        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
+        output_dir_escaped = args.output.replace('\\', '\\\\')
+        
         script_content = f'''import sys
 from pathlib import Path
 
 # Add HTTP directory to path
-sys.path.insert(0, r"{http_dir}")
+sys.path.insert(0, r"{http_dir_escaped}")
 
 try:
     from report_generator import HTTPHoneypotReportGenerator
     
-    generator = HTTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    generator = HTTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -723,7 +741,7 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {args.output}/visualizations/")
+    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -775,18 +793,23 @@ except Exception as e:
         sessions_dir = args.sessions_dir or str(mysql_dir / 'sessions')
         
         # Use Python script execution instead of inline code to avoid path escaping issues
+        # Escape paths properly for Windows
+        mysql_dir_escaped = str(mysql_dir).replace('\\', '\\\\')
+        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
+        output_dir_escaped = args.output.replace('\\', '\\\\')
+        
         script_content = f'''import sys
 import os
 from pathlib import Path
 
 # Add MySQL directory to path
-sys.path.insert(0, r"{mysql_dir}")
+sys.path.insert(0, r"{mysql_dir_escaped}")
 
 try:
     from report_generator import MySQLHoneypotReportGenerator
     
-    generator = MySQLHoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    generator = MySQLHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -797,7 +820,7 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {args.output}/visualizations/")
+    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
     # Verify HTML file was created and has content
     html_file = report_files.get('html')
@@ -865,17 +888,23 @@ except Exception as e:
         
         # Build command for SMB report generator with proper path handling
         import tempfile
+        
+        # Escape paths properly for Windows
+        smb_dir_escaped = str(smb_dir).replace('\\', '\\\\')
+        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
+        output_dir_escaped = args.output.replace('\\', '\\\\')
+        
         script_content = f'''import sys
 from pathlib import Path
 
 # Add SMB directory to path
-sys.path.insert(0, r"{smb_dir}")
+sys.path.insert(0, r"{smb_dir_escaped}")
 
 try:
     from report_generator import SMBHoneypotReportGenerator
     
-    generator = SMBHoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    generator = SMBHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -886,7 +915,7 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {args.output}/visualizations/")
+    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -1109,7 +1138,9 @@ except Exception as e:
                     port_value = parser['http'].getint('port', fallback=None)
                 elif service_name == 'mysql' and 'mysql' in parser:
                     port_value = parser['mysql'].getint('port', fallback=None)
-                
+                elif service_name == 'smb' and 'smb' in parser:
+                    port_value = parser['smb'].getint('port', fallback=None)
+
                 if port_value is not None:
                     config['port'] = port_value
             # amazonq-ignore-next-line
@@ -1130,7 +1161,8 @@ except Exception as e:
             'ssh': 8022,
             'ftp': 2121,
             'http': 8080,
-            'mysql': 3306
+            'mysql': 3306,
+            'smb': 445
         }
         return fallback_ports.get(service_name, 0)
     
@@ -1143,7 +1175,7 @@ except Exception as e:
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     cmdline = ' '.join(proc.info['cmdline'] or [])
-                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py']):
+                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py', 'smb_server.py']):
                         processes.append({
                             'pid': proc.info['pid'],
                             'name': proc.info['name'],
@@ -1207,6 +1239,14 @@ except Exception as e:
                     print(f"{status_icon} {service_name.upper():<8} {status['status']:<10} Port: {status['port']}")
                 else:
                     print(f"⚠️  {service_name.upper():<8} {'not implemented':<10}")
+            
+            processes = self.find_service_processes()
+            if processes:
+                print("\n🔄 Running Processes:")
+                for proc in processes:
+                    print(f"  PID {proc['pid']}: {proc['name']}")
+            else:
+                print("\n🔄 No emulators running currently")
             
             processes = self.find_service_processes()
             if processes:

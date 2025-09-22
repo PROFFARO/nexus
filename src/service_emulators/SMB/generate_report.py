@@ -32,22 +32,35 @@ try:
         
         try:
             generator = SMBHoneypotReportGenerator(args.sessions_dir)
-            report_files = generator.generate_comprehensive_report(args.output_dir)
+            report_files = generator.generate_comprehensive_report(args.output_dir, args.format)
             
             if "error" in report_files:
-                print(f"Error: {report_files['error']}")
+                print(f"❌ Error: {report_files['error']}")
                 return 1
             
-            print("SMB Security Report Generated Successfully!")
-            if args.format in ['json', 'both']:
-                print(f"JSON Report: {report_files.get('json', 'Not generated')}")
-            if args.format in ['html', 'both']:
-                print(f"HTML Report: {report_files.get('html', 'Not generated')}")
-            print(f"Visualizations: {args.output_dir}/visualizations/")
+            print("\n🛡️ SMB Security Report Generated Successfully!")
+            print("=" * 50)
+            
+            if args.format in ['json', 'both'] and 'json' in report_files:
+                print(f"📊 Enhanced JSON Report: {report_files['json']}")
+                
+            if args.format in ['html', 'both'] and 'html' in report_files:
+                print(f"🌐 Modern HTML Report: {report_files['html']}")
+                
+            if 'visualizations' in report_files:
+                print(f"📈 Professional Visualizations:")
+                for viz_type, viz_path in report_files['visualizations'].items():
+                    if viz_path:
+                        print(f"   • {viz_type.replace('_', ' ').title()}: {viz_path}")
+                        
+            print(f"\n📁 Reports saved to: {args.output_dir}")
+            print(f"🔍 Sessions analyzed: {len(generator.sessions_data)}")
+            print(f"⚡ Powered by: NEXUS AI Enhanced Analysis Engine")
             
         except Exception as e:
-            print(f"Error: {e}")
+            print(f"❌ Error: {e}")
             import traceback
+            print("\n🔧 Debug Information:")
             traceback.print_exc()
             return 1
             
