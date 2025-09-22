@@ -178,9 +178,9 @@ id_ed25519*
 
 # Environment and Configuration Files
 *.env
-*.ini
+# *.ini
 *.conf
-config.ini
+# config.ini
 config.conf
 
 # Session Data and Logs

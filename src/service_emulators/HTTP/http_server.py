@@ -15,6 +15,7 @@ import uuid
 import hashlib
 import re
 import time
+import random
 import shutil
 from pathlib import Path
 from base64 import b64encode, b64decode
@@ -458,6 +459,47 @@ class HTTPHoneypot:
         self.sessions = {}
         self.active_sessions = {}
         
+        # HTTP server configuration
+        self.port = config['http'].getint('port', 8080)
+        self.server_name = config['http'].get('server_name', 'Apache/2.4.41 (Ubuntu)')
+        self.document_root = config['http'].get('document_root', '/var/www/nexusgames')
+        self.max_connections = config['http'].getint('max_connections', 100)
+        self.connection_timeout = config['http'].getint('connection_timeout', 300)
+        self.enable_ssl = config['http'].getboolean('enable_ssl', False)
+        self.ssl_cert = config['http'].get('ssl_cert', 'server.crt')
+        self.ssl_key = config['http'].get('ssl_key', 'server.key')
+        self.max_request_size = config['http'].getint('max_request_size', 10485760)
+        self.max_header_size = config['http'].getint('max_header_size', 8192)
+        self.keep_alive_timeout = config['http'].getint('keep_alive_timeout', 5)
+        self.max_keep_alive_requests = config['http'].getint('max_keep_alive_requests', 100)
+        self.enable_http2 = config['http'].getboolean('enable_http2', False)
+        self.enable_compression = config['http'].getboolean('enable_compression', True)
+        self.llm_response_timeout = config['http'].getfloat('llm_response_timeout', 60.0)
+        
+        # Connection tracking for max_connections limit
+        self.connection_count = 0
+        
+        # Latency simulation configuration
+        self.latency_enable = config['honeypot'].getboolean('latency_enable', False)
+        self.latency_min_ms = config['honeypot'].getint('latency_min_ms', 20)
+        self.latency_max_ms = config['honeypot'].getint('latency_max_ms', 250)
+        
+        # Behavioral analysis and adaptive responses
+        self.behavioral_analysis = config['honeypot'].getboolean('behavioral_analysis', True)
+        self.adaptive_responses = config['honeypot'].getboolean('adaptive_responses', True)
+        self.attack_logging = config['honeypot'].getboolean('attack_logging', True)
+        self.forensic_chain = config['honeypot'].getboolean('forensic_chain', True)
+        
+        # Security configuration
+        self.ip_reputation = config['security'].getboolean('ip_reputation', True)
+        self.rate_limiting = config['security'].getboolean('rate_limiting', True)
+        self.max_connections_per_ip = config['security'].getint('max_connections_per_ip', 10)
+        self.intrusion_detection = config['security'].getboolean('intrusion_detection', True)
+        self.automated_blocking = config['security'].getboolean('automated_blocking', False)
+        
+        # Connection tracking per IP for rate limiting
+        self.ip_connections = {}
+        
         # Create session directory
         session_id = f"http_session_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
         sessions_dir = Path(config['honeypot'].get('sessions_dir', 'sessions'))
@@ -477,7 +519,7 @@ class HTTPHoneypot:
             self.vuln_logger = VulnerabilityLogger()
             self.forensic_logger = ForensicChainLogger(str(self.session_dir)) if config['forensics'].getboolean('chain_of_custody', True) else None
         except Exception as e:
-            logger.error(f"Failed to initialize HTTP honeypot components: {e}")
+            logging.error(f"Failed to initialize HTTP honeypot components: {e}")
             self.attack_analyzer = None
             self.file_handler = None
             self.vuln_logger = None
@@ -500,11 +542,32 @@ class HTTPHoneypot:
         else:
             dst_ip, dst_port = request.host.split(':')[0] if ':' in str(request.host) else str(request.host), request.url.port or 80
         
+        # Check connection limit
+        if self.connection_count >= self.max_connections:
+            logging.warning(f"Connection limit reached ({self.max_connections}), rejecting request from {src_ip}")
+            return Response(text="Service Unavailable", status=503)
+        
+        # Rate limiting check
+        if self.rate_limiting and src_ip != '-':
+            if src_ip not in self.ip_connections:
+                self.ip_connections[src_ip] = 0
+            
+            if self.ip_connections[src_ip] >= self.max_connections_per_ip:
+                logging.warning(f"Rate limit exceeded for IP {src_ip} ({self.ip_connections[src_ip]} connections)")
+                return Response(text="Too Many Requests", status=429)
+            
+            self.ip_connections[src_ip] += 1
+        
+        self.connection_count += 1
+        
         # Store connection details in thread-local storage
         thread_local.src_ip = src_ip
         thread_local.src_port = src_port
         thread_local.dst_ip = dst_ip
         thread_local.dst_port = dst_port
+        
+        # Simulate latency if enabled
+        await self._simulate_latency()
         
         # Get request data
         method = request.method
@@ -548,7 +611,7 @@ class HTTPHoneypot:
             "src_port": src_port
         }
         
-        logger.info("HTTP request received", extra=request_info)
+        logging.info("HTTP request received")
         
         # Analyze request for attacks
         attack_analysis = {'method': method, 'path': path, 'attack_types': [], 'severity': 'low'}
@@ -559,7 +622,7 @@ class HTTPHoneypot:
                 attack_analysis = self.attack_analyzer.analyze_request(method, path, headers, body_text)
                 session_data['attack_analysis'].append(attack_analysis)
             except Exception as e:
-                logger.error(f"Attack analysis failed: {e}")
+                logging.error(f"Attack analysis failed: {e}")
         
         if self.vuln_logger:
             try:
@@ -567,7 +630,7 @@ class HTTPHoneypot:
                 vulnerabilities = self.vuln_logger.analyze_for_vulnerabilities(request_data, headers)
                 session_data['vulnerabilities'].extend(vulnerabilities)
             except Exception as e:
-                logger.error(f"Vulnerability analysis failed: {e}")
+                logging.error(f"Vulnerability analysis failed: {e}")
         
         # Log attack analysis if threats detected
         if attack_analysis.get('attack_types'):
@@ -585,15 +648,15 @@ class HTTPHoneypot:
                 
             # Check if alert should be triggered
             if attack_analysis.get('alert_triggered', False):
-                logger.critical("High-threat HTTP attack detected", extra=log_extra)
+                logging.critical("High-threat HTTP attack detected")
             else:
-                logger.warning("HTTP attack pattern detected", extra=log_extra)
+                logging.warning("HTTP attack pattern detected")
                 
             if self.forensic_logger:
                 try:
                     self.forensic_logger.log_event("attack_detected", attack_analysis)
                 except Exception as e:
-                    logger.error(f"Forensic logging failed: {e}")
+                    logging.error(f"Forensic logging failed: {e}")
         
         # Log vulnerabilities with enhanced context
         for vuln in vulnerabilities:
@@ -606,14 +669,14 @@ class HTTPHoneypot:
                 # Check alert threshold for vulnerabilities
                 alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
                 if enhanced_vuln['threat_score'] >= alert_threshold:
-                    logger.critical("Critical HTTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                    logging.critical("Critical HTTP vulnerability exploitation attempt")
                 else:
-                    logger.critical("HTTP vulnerability exploitation attempt", extra=enhanced_vuln)
+                    logging.critical("HTTP vulnerability exploitation attempt")
                     
                 if self.forensic_logger:
                     self.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
             except Exception as e:
-                logger.error(f"Vulnerability logging failed: {e}")
+                logging.error(f"Vulnerability logging failed: {e}")
         
         # Handle file uploads
         if method == 'POST' and request.content_type and 'multipart' in request.content_type and self.file_handler:
@@ -624,12 +687,12 @@ class HTTPHoneypot:
                         file_content = await part.read()
                         upload_info = self.file_handler.handle_upload(part.filename, file_content, part.content_type)
                         session_data['files_uploaded'].append(upload_info)
-                        logger.info("HTTP file upload", extra=upload_info)
+                        logging.info("HTTP file upload")
                         if self.forensic_logger:
                             self.forensic_logger.log_event("file_upload", upload_info)
                             self.forensic_logger.add_evidence("uploaded_file", upload_info['file_path'], f"File uploaded via HTTP: {part.filename}")
             except Exception as e:
-                logger.error(f"File upload handling failed: {e}")
+                logging.error(f"File upload handling failed: {e}")
         
         # Generate AI response
         response_content, status_code, response_headers = await self.generate_ai_response(
@@ -664,11 +727,7 @@ class HTTPHoneypot:
             })
         
         # Log response
-        logger.info("HTTP response", extra={
-            "status_code": status_code,
-            "content_length": len(response_content),
-            "content_type": response_headers.get('Content-Type', 'text/html')
-        })
+        logging.info(f"HTTP response: {status_code}")
         
         # Save session data if forensic reports are enabled
         if config['forensics'].getboolean('forensic_reports', True):
@@ -692,7 +751,7 @@ class HTTPHoneypot:
                     try:
                         self.forensic_logger.add_evidence("session_replay", str(replay_file), "Complete HTTP session transcript for replay")
                     except Exception as e:
-                        logger.error(f"Replay data forensic logging failed: {e}")
+                        logging.error(f"Replay data forensic logging failed: {e}")
                 
             # Generate AI session summary if enabled
             if config['ai_features'].getboolean('ai_attack_summaries', True):
@@ -702,7 +761,19 @@ class HTTPHoneypot:
                 try:
                     self.forensic_logger.add_evidence("session_summary", str(session_file), "HTTP session activity summary")
                 except Exception as e:
-                    logger.error(f"Forensic finalization failed: {e}")
+                    logging.error(f"Forensic finalization failed: {e}")
+        
+        # Cleanup connection counts
+        try:
+            self.connection_count -= 1
+            
+            # Decrement IP connection count for rate limiting
+            if self.rate_limiting and src_ip != '-' and src_ip in self.ip_connections:
+                self.ip_connections[src_ip] -= 1
+                if self.ip_connections[src_ip] <= 0:
+                    del self.ip_connections[src_ip]
+        except Exception as e:
+            logging.debug(f"Connection cleanup error: {e}")
         
         return Response(
             text=response_content,
@@ -711,17 +782,30 @@ class HTTPHoneypot:
         )
 
     async def generate_ai_response(self, method: str, path: str, headers: Dict, body: str, attack_analysis: Dict) -> tuple:
-        """Generate AI-powered HTTP response"""
+        """Generate AI-powered HTTP response with enhanced context awareness"""
         
         # Create AI prompt with HTTP context
         ai_prompt = f"""HTTP Request: {method} {path}
+Server: {self.server_name}
+Document Root: {self.document_root}
 Headers: {json.dumps(headers, indent=2)}
 Body: {body[:500]}
 User-Agent: {headers.get('User-Agent', 'Unknown')}
 Generate realistic HTTP response for NexusGames Studio website."""
         
-        if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
+        # Add context awareness if enabled
+        if config['llm'].getboolean('context_awareness', True):
+            ai_prompt += f"\nServer Configuration: {self.server_name}"
+            ai_prompt += f"\nSSL Enabled: {self.enable_ssl}"
+            ai_prompt += f"\nCompression: {self.enable_compression}"
+        
+        # Add threat adaptation if enabled
+        if config['llm'].getboolean('threat_adaptation', True) and attack_analysis.get('attack_types'):
             ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
+            ai_prompt += f"\nThreat Level: {attack_analysis.get('severity', 'low')}"
+            
+            if attack_analysis.get('threat_score', 0) >= config['attack_detection'].getint('alert_threshold', 70):
+                ai_prompt += "\n[HIGH_THREAT_ALERT: Adapt response accordingly]"
         
         # Apply deception techniques if enabled
         if config['ai_features'].getboolean('deception_techniques', True):
@@ -730,9 +814,11 @@ Generate realistic HTTP response for NexusGames Studio website."""
                 ai_prompt += "\n[DECEPTION: Show realistic but controlled system information]"
             elif 'sql_injection' in attack_analysis.get('attack_types', []):
                 ai_prompt += "\n[DECEPTION: Simulate database errors while logging attempts]"
+            elif attack_analysis.get('severity') in ['high', 'critical']:
+                ai_prompt += "\n[DECEPTION_MODE: Use advanced deception techniques]"
         
         # Get AI response timeout from config
-        llm_response_timeout = config['http'].getfloat('llm_response_timeout', 5.0)
+        llm_response_timeout = self.llm_response_timeout
         
         try:
             # Get AI response with timeout
@@ -768,10 +854,10 @@ Generate realistic HTTP response for NexusGames Studio website."""
                 return self.generate_fallback_response(path, attack_analysis)
                 
         except asyncio.TimeoutError:
-            logger.warning("AI response timed out, using fallback", extra={"timeout": llm_response_timeout})
+            logging.warning(f"AI response timed out, using fallback (timeout: {llm_response_timeout})")
             return self.generate_fallback_response(path, attack_analysis)
         except Exception as e:
-            logger.error(f"AI response generation failed: {e}")
+            logging.error(f"AI response generation failed: {e}")
             return self.generate_fallback_response(path, attack_analysis)
 
     def generate_response_headers(self, path: str, content: str, attack_analysis: Dict) -> Dict[str, str]:
@@ -826,6 +912,12 @@ Generate realistic HTTP response for NexusGames Studio website."""
         status_code = 503
         headers = self.generate_response_headers(path, content, attack_analysis)
         return content, status_code, headers
+    
+    async def _simulate_latency(self):
+        """Simulate network latency if enabled"""
+        if self.latency_enable:
+            latency_ms = random.randint(self.latency_min_ms, self.latency_max_ms)
+            await asyncio.sleep(latency_ms / 1000.0)
 
     async def generate_session_summary(self, session_data: Dict, session_file: Path):
         """Generate AI-powered session summary like SSH/FTP services"""
@@ -863,16 +955,10 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
             elif "Judgement: MALICIOUS" in llm_response.content:
                 judgement = "MALICIOUS"
 
-            logger.info("HTTP session summary", extra={
-                "details": llm_response.content, 
-                "judgement": judgement, 
-                "session_file": str(session_file),
-                "session_requests": len(session_data.get('requests', [])),
-                "attack_patterns_detected": len([a for a in session_data.get('attack_analysis', []) if a.get('attack_types')])
-            })
+            logging.info(f"HTTP session summary: {judgement}")
             
         except Exception as e:
-            logger.error(f"Session summary generation failed: {e}")
+            logging.error(f"Session summary generation failed: {e}")
 
 async def create_app():
     """Create aiohttp application"""
@@ -1010,17 +1096,99 @@ try:
         else:
             # Use defaults when no config file found
             default_log_file = str(Path(__file__).parent.parent.parent / 'logs' / 'http_log.log')
-            config['honeypot'] = {'log_file': default_log_file, 'sensor_name': socket.gethostname()}
-            config['http'] = {'port': '8080'}
-            config['llm'] = {'llm_provider': 'openai', 'model_name': 'gpt-3.5-turbo', 'trimmer_max_tokens': '64000', 'temperature': '0.7', 'system_prompt': ''}
+            config['honeypot'] = {
+                'log_file': default_log_file, 
+                'sensor_name': socket.gethostname(),
+                'sessions_dir': 'sessions',
+                'latency_min_ms': '20',
+                'latency_max_ms': '250',
+                'latency_enable': 'false',
+                'attack_logging': 'true',
+                'behavioral_analysis': 'true',
+                'forensic_chain': 'true',
+                'adaptive_responses': 'true'
+            }
+            config['http'] = {
+                'port': '8080',
+                'server_name': 'Apache/2.4.41 (Ubuntu)',
+                'document_root': '/var/www/nexusgames',
+                'max_connections': '100',
+                'connection_timeout': '300',
+                'enable_ssl': 'false',
+                'ssl_cert': 'server.crt',
+                'ssl_key': 'server.key',
+                'max_request_size': '10485760',
+                'max_header_size': '8192',
+                'keep_alive_timeout': '5',
+                'max_keep_alive_requests': '100',
+                'enable_http2': 'false',
+                'enable_compression': 'true',
+                'llm_response_timeout': '60.0'
+            }
+            config['llm'] = {
+                'llm_provider': 'openai', 
+                'model_name': 'gpt-3.5-turbo', 
+                'trimmer_max_tokens': '64000', 
+                'temperature': '0.7', 
+                'system_prompt': '',
+                'context_awareness': 'true',
+                'threat_adaptation': 'true'
+            }
             config['user_accounts'] = {}
-            config['ai_features'] = {}
-            config['attack_detection'] = {}
-            config['forensics'] = {}
-            config['features'] = {}
-            config['logging'] = {}
-            config['visualization'] = {}
-            config['security'] = {}
+            config['ai_features'] = {
+                'dynamic_responses': 'true',
+                'attack_pattern_recognition': 'true',
+                'vulnerability_detection': 'true',
+                'real_time_analysis': 'true',
+                'ai_attack_summaries': 'true',
+                'adaptive_banners': 'true',
+                'deception_techniques': 'true'
+            }
+            config['attack_detection'] = {
+                'sensitivity_level': 'medium',
+                'threat_scoring': 'true',
+                'alert_threshold': '70',
+                'geolocation_analysis': 'true',
+                'reputation_filtering': 'true'
+            }
+            config['forensics'] = {
+                'file_monitoring': 'true',
+                'save_uploads': 'true',
+                'save_downloads': 'true',
+                'file_hash_analysis': 'true',
+                'malware_detection': 'true',
+                'forensic_reports': 'true',
+                'chain_of_custody': 'true'
+            }
+            config['features'] = {
+                'save_downloads': 'true',
+                'save_replay': 'true',
+                'downloads_dir': 'downloads',
+                'uploads_dir': 'uploads',
+                'session_recording': 'true',
+                'command_replay': 'true',
+                'network_analysis': 'true',
+                'process_monitoring': 'true'
+            }
+            config['logging'] = {
+                'log_level': 'INFO',
+                'structured_logging': 'true',
+                'real_time_streaming': 'true'
+            }
+            config['visualization'] = {
+                'real_time_dashboard': 'true',
+                'attack_visualization': 'true',
+                'geographic_mapping': 'true',
+                'timeline_analysis': 'true'
+            }
+            config['security'] = {
+                'ip_reputation': 'true',
+                'rate_limiting': 'true',
+                'max_connections_per_ip': '10',
+                'connection_timeout': '300',
+                'intrusion_detection': 'true',
+                'automated_blocking': 'false'
+            }
 
     # Override config values with command line arguments if provided
     if args.llm_provider:
@@ -1139,12 +1307,24 @@ try:
     llm_provider = config['llm'].get('llm_provider', 'openai')
     model_name = config['llm'].get('model_name', 'gpt-4o-mini')
     
+    # Get honeypot instance for configuration display
+    honeypot_instance = HTTPHoneypot()
+    
     print(f"\n✅ HTTP Honeypot Starting...")
     print(f"📡 Port: {port}")
+    print(f"🖥️  Server: {honeypot_instance.server_name}")
+    print(f"📂 Document Root: {honeypot_instance.document_root}")
     print(f"🤖 LLM Provider: {llm_provider}")
     print(f"📊 Model: {model_name}")
     print(f"🔍 Sensor: {sensor_name}")
     print(f"📁 Log File: {config['honeypot'].get('log_file', 'http_log.log')}")
+    print(f"🔗 Max Connections: {honeypot_instance.max_connections}")
+    print(f"⏱️  Connection Timeout: {honeypot_instance.connection_timeout}s")
+    print(f"🛡️  Rate Limiting: {'Enabled' if honeypot_instance.rate_limiting else 'Disabled'}")
+    print(f"🔐 SSL/HTTPS: {'Enabled' if honeypot_instance.enable_ssl else 'Disabled'}")
+    print(f"📦 Compression: {'Enabled' if honeypot_instance.enable_compression else 'Disabled'}")
+    print(f"🎭 Behavioral Analysis: {'Enabled' if honeypot_instance.behavioral_analysis else 'Disabled'}")
+    print(f"🤖 Adaptive Responses: {'Enabled' if honeypot_instance.adaptive_responses else 'Disabled'}")
     print(f"⚠️  Press Ctrl+C to stop\n")
     
     logger.info(f"HTTP honeypot started on 127.0.0.1:{port}")
@@ -1160,7 +1340,7 @@ try:
 
 except (KeyboardInterrupt, asyncio.CancelledError):
     print("\n🛑 HTTP honeypot stopped by user")
-    logger.info("HTTP honeypot stopped by user")
+    logging.info("HTTP honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
     traceback.print_exc()

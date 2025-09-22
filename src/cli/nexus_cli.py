@@ -35,8 +35,8 @@ class NexusCLI:
             },
             'smb': {
                 'path': self.base_dir / 'service_emulators' / 'SMB' / 'smb_server.py',
-                'implemented': False,
-                'description': 'SMB file share honeypot (not implemented)'
+                'implemented': True,
+                'description': 'SMB file share honeypot with AI-powered responses'
             }
         }
 
@@ -102,7 +102,8 @@ Examples:
         self._add_mysql_arguments(mysql_parser)
         
         # SMB service parser
-        smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot (not implemented)')
+        smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot')
+        self._add_smb_arguments(smb_parser)
         
         # Management commands
         status_parser = subparsers.add_parser('status', help='Check service status')
@@ -230,6 +231,39 @@ Examples:
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
         parser.add_argument('-P', '--port', type=int, help='MySQL port (default: 3306)')
+        parser.add_argument('-L', '--log-file', help='Log file path')
+        parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
+        
+        # LLM Configuration
+        parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
+                          help='LLM provider')
+        parser.add_argument('--model-name', help='LLM model name')
+        parser.add_argument('--temperature', type=float, help='LLM temperature (0.0-2.0)')
+        parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
+        parser.add_argument('--base-url', help='Base URL for Ollama/custom providers')
+        
+        # Azure OpenAI specific
+        parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
+        parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint')
+        parser.add_argument('--azure-api-version', help='Azure OpenAI API version')
+        
+        # AWS specific
+        parser.add_argument('--aws-region', help='AWS region')
+        parser.add_argument('--aws-profile', help='AWS credentials profile')
+        
+        # User accounts
+        parser.add_argument('-u', '--user-account', action='append',
+                          help='User account (username=password). Can be repeated')
+        
+        # Prompts
+        parser.add_argument('-p', '--prompt', help='System prompt text')
+        parser.add_argument('-f', '--prompt-file', help='System prompt file')
+
+    def _add_smb_arguments(self, parser):
+        """Add SMB-specific arguments"""
+        # Configuration
+        parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-P', '--port', type=int, help='SMB port (default: 445)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
         
@@ -869,14 +903,78 @@ except Exception as e:
         return 0
     
     def _generate_smb_report(self, args):
-        """Generate SMB-specific security report (placeholder)"""
-        print("SMB report generation not implemented")
-        print("SMB honeypot data structure:")
-        print("  - SMB connection logs")
-        print("  - File share enumeration")
-        print("  - Credential harvesting")
-        print("  - Lateral movement attempts")
-        return 1
+        """Generate SMB-specific security report"""
+        smb_dir = self.services['smb']['path'].parent
+        sessions_dir = args.sessions_dir or str(smb_dir / 'sessions')
+        
+        # Build command for SMB report generator with proper path handling
+        import tempfile
+        script_content = f'''import sys
+from pathlib import Path
+
+# Add SMB directory to path
+sys.path.insert(0, r"{smb_dir}")
+
+try:
+    from report_generator import SMBHoneypotReportGenerator
+    
+    generator = SMBHoneypotReportGenerator(sessions_dir=r"{sessions_dir}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{args.output}")
+    
+    if "error" in report_files:
+        print(f"Error: {{report_files['error']}}")
+        sys.exit(1)
+    
+    print("SMB Security Report Generated Successfully!")
+    if "{args.format}" in ["json", "both"]:
+        print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+    if "{args.format}" in ["html", "both"]:
+        print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+    print(f"Visualizations: {args.output}/visualizations/")
+    
+except Exception as e:
+    print(f"Error: {{e}}")
+    import traceback
+    traceback.print_exc()
+    sys.exit(1)
+'''
+        
+        # Write script to temporary file
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
+            f.write(script_content)
+            temp_script = f.name
+        
+        cmd = [sys.executable, temp_script]
+        
+        try:
+            print(f"Generating SMB security report...")
+            print(f"Sessions directory: {sessions_dir}")
+            print(f"Output directory: {args.output}")
+            print(f"Format: {args.format}")
+            
+            result = subprocess.run(cmd, cwd=smb_dir, capture_output=True, text=True, encoding='utf-8')
+            
+            # Print output
+            if result.stdout:
+                print(result.stdout)
+            if result.stderr:
+                print(result.stderr, file=sys.stderr)
+            
+            if result.returncode != 0:
+                print(f"Report generation failed with exit code {result.returncode}")
+                return 1
+                
+        except Exception as e:
+            print(f"Unexpected error: {e}")
+            return 1
+        finally:
+            # Clean up temporary file
+            try:
+                os.unlink(temp_script)
+            except:
+                pass
+        
+        return 0
 
     def list_services(self):
         """List all available services"""
@@ -977,7 +1075,7 @@ except Exception as e:
         elif args.command == 'mysql':
             return self.run_mysql_service(args)
         elif args.command == 'smb':
-            return self.run_placeholder_service(args.command)
+            return self.run_smb_service(args)
         elif args.command == 'status':
             return self.show_status(args)
         elif args.command == 'stop-all':
@@ -1240,6 +1338,73 @@ except Exception as e:
             print(f"❌ Failed: {failed_count} service(s)")
         
         return 0 if failed_count == 0 else 1
+
+    def run_smb_service(self, args):
+        """Run SMB honeypot with provided arguments"""
+        if not self.services['smb']['implemented']:
+            print("Error: SMB service not implemented")
+            return 1
+            
+        smb_script = self.services['smb']['path']
+        if not smb_script.exists():
+            print(f"Error: SMB script not found at {smb_script}")
+            return 1
+        
+        # Build command arguments
+        cmd = [sys.executable, str(smb_script)]
+        
+        # Add arguments
+        if args.config:
+            cmd.extend(['-c', args.config])
+        if args.port:
+            cmd.extend(['-P', str(args.port)])
+        if args.log_file:
+            cmd.extend(['-L', args.log_file])
+        if args.sensor_name:
+            cmd.extend(['-S', args.sensor_name])
+        if args.llm_provider:
+            cmd.extend(['-l', args.llm_provider])
+        if args.model_name:
+            cmd.extend(['-m', args.model_name])
+        if args.temperature is not None:
+            cmd.extend(['-r', str(args.temperature)])
+        if args.max_tokens:
+            cmd.extend(['-t', str(args.max_tokens)])
+        if args.prompt:
+            cmd.extend(['-p', args.prompt])
+        if args.prompt_file:
+            cmd.extend(['-f', args.prompt_file])
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        # Set environment variables for additional configs
+        env = os.environ.copy()
+        if args.base_url:
+            env['OLLAMA_BASE_URL'] = args.base_url
+        if args.azure_deployment:
+            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
+        if args.azure_endpoint:
+            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
+        if args.azure_api_version:
+            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
+        if args.aws_region:
+            env['AWS_DEFAULT_REGION'] = args.aws_region
+        if args.aws_profile:
+            env['AWS_PROFILE'] = args.aws_profile
+        
+        # Change to SMB directory
+        smb_dir = self.services['smb']['path'].parent
+        
+        try:
+            subprocess.run(cmd, cwd=smb_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nSMB honeypot stopped")
+        except Exception as e:
+            print(f"Error running SMB honeypot: {e}")
+            return 1
+        
+        return 0
 
 if __name__ == '__main__':
     cli = NexusCLI()

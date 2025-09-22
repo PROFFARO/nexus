@@ -693,6 +693,7 @@ class MySQLHoneypotSession(Session):
                 json.dump(self.session_data, f, indent=2, default=str, ensure_ascii=False)
             
             # Save query_log.json (detailed query information)
+            query_log_file = None
             if self.session_data.get('queries'):
                 query_log_file = session_dir / "query_log.json"
                 with open(query_log_file, 'w', encoding='utf-8') as f:
@@ -706,6 +707,7 @@ class MySQLHoneypotSession(Session):
                     }, f, indent=2, default=str, ensure_ascii=False)
             
             # Save attack_analysis.json (security analysis)
+            attack_file = None
             if self.session_data.get('attack_analysis') or self.session_data.get('vulnerabilities'):
                 attack_file = session_dir / "attack_analysis.json"
                 with open(attack_file, 'w', encoding='utf-8') as f:
@@ -723,9 +725,9 @@ class MySQLHoneypotSession(Session):
             if config['forensics'].getboolean('chain_of_custody', True):
                 self.forensic_logger.add_evidence("session_summary", str(session_file), "Complete MySQL session activity summary")
                 self.forensic_logger.add_evidence("session_data", str(session_data_file), "Detailed MySQL session data for analysis")
-                if self.session_data.get('queries'):
+                if query_log_file is not None:
                     self.forensic_logger.add_evidence("query_log", str(query_log_file), "Complete MySQL query execution log")
-                if self.session_data.get('attack_analysis') or self.session_data.get('vulnerabilities'):
+                if attack_file is not None:
                     self.forensic_logger.add_evidence("attack_analysis", str(attack_file), "MySQL attack and vulnerability analysis")
         
         # Log session summary
@@ -1089,7 +1091,7 @@ class MySQLHoneypotSession(Session):
                     MySQLHoneypotSession._global_tables[db_name].add(table_name)
 
     async def _get_llm_response(self, query: str) -> str:
-        """Get LLM response for MySQL query"""
+        """Get LLM response for MySQL query with enhanced context awareness"""
         session_id = self.session_data['session_id']
 
         # Create LLM session if not exists
@@ -1098,10 +1100,30 @@ class MySQLHoneypotSession(Session):
 
         config_dict = {"configurable": {"session_id": session_id}}
 
-        # Create simple query context
-        enhanced_query = query
-        if self.session_data.get('database'):
-            enhanced_query = f"USE {self.session_data['database']}; {query}"
+        # Create enhanced query context with server information
+        enhanced_query = f"MySQL Server: {config['mysql'].get('server_version', '8.0.32')} | Database: {self.session_data.get('database', 'none')} | Query: {query}"
+        
+        # Add context awareness if enabled
+        if config['llm'].getboolean('context_awareness', True):
+            enhanced_query += f" | Charset: {config['mysql'].get('charset', 'utf8mb4')}"
+            enhanced_query += f" | Default DB: {config['mysql'].get('default_database', 'nexus_gamedev')}"
+        
+        # Add threat adaptation if enabled and attacks detected
+        attack_analysis = self.attack_analyzer.analyze_query(query)
+        if config['llm'].getboolean('threat_adaptation', True) and attack_analysis.get('attack_types'):
+            enhanced_query += f" | ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}"
+            enhanced_query += f" | Threat Level: {attack_analysis.get('severity', 'low')}"
+            
+            if attack_analysis.get('threat_score', 0) >= config['attack_detection'].getint('alert_threshold', 70):
+                enhanced_query += " | HIGH_THREAT_ALERT: Adapt response accordingly"
+        
+        # Add deception techniques if enabled
+        if config['ai_features'].getboolean('deception_techniques', True) and attack_analysis.get('severity') in ['high', 'critical']:
+            enhanced_query += " | DECEPTION_MODE: Use advanced deception techniques"
+        
+        # Add query result manipulation if enabled
+        if config['ai_features'].getboolean('query_result_manipulation', True) and attack_analysis.get('attack_types'):
+            enhanced_query += " | MANIPULATE_RESULTS: Provide believable but controlled data"
 
         response = await with_message_history.ainvoke(
             {
@@ -1121,7 +1143,9 @@ class MySQLHoneypotSession(Session):
         logger.info("LLM raw response", extra={
             'query': query,
             'llm_response': raw,
-            'session_id': self.session_data.get('session_id')
+            'session_id': self.session_data.get('session_id'),
+            'attack_detected': bool(attack_analysis.get('attack_types')),
+            'threat_score': attack_analysis.get('threat_score', 0)
         })
         return raw
 
@@ -1580,6 +1604,60 @@ class MySQLHoneypotServer:
         self.port = config['mysql'].getint('port', 3306)
         self.accounts = self._load_accounts()
         self.server_version = config['mysql'].get('server_version', '8.0.32-0ubuntu0.20.04.2')
+        
+        # MySQL server configuration
+        self.default_database = config['mysql'].get('default_database', 'nexus_gamedev')
+        self.charset = config['mysql'].get('charset', 'utf8mb4')
+        self.collation = config['mysql'].get('collation', 'utf8mb4_unicode_ci')
+        self.max_connections = config['mysql'].getint('max_connections', 100)
+        self.connect_timeout = config['mysql'].getint('connect_timeout', 10)
+        self.query_timeout = config['mysql'].getint('query_timeout', 30)
+        
+        # Connection tracking for max_connections limit
+        self.connection_count = 0
+        
+        # Behavioral analysis and adaptive responses
+        self.behavioral_analysis = config['honeypot'].getboolean('behavioral_analysis', True)
+        self.adaptive_responses = config['honeypot'].getboolean('adaptive_responses', True)
+        self.attack_logging = config['honeypot'].getboolean('attack_logging', True)
+        self.forensic_chain = config['honeypot'].getboolean('forensic_chain', True)
+        
+        # AI features configuration
+        self.dynamic_responses = config['ai_features'].getboolean('dynamic_responses', True)
+        self.real_time_analysis = config['ai_features'].getboolean('real_time_analysis', True)
+        self.ai_attack_summaries = config['ai_features'].getboolean('ai_attack_summaries', True)
+        self.deception_techniques = config['ai_features'].getboolean('deception_techniques', True)
+        self.query_result_manipulation = config['ai_features'].getboolean('query_result_manipulation', True)
+        
+        # Security configuration
+        self.rate_limiting = config['security'].getboolean('rate_limiting', True)
+        self.max_connections_per_ip = config['security'].getint('max_connections_per_ip', 10)
+        self.connection_timeout = config['security'].getint('connection_timeout', 300)
+        self.intrusion_detection = config['security'].getboolean('intrusion_detection', True)
+        self.automated_blocking = config['security'].getboolean('automated_blocking', False)
+        self.ssl_simulation = config['security'].getboolean('ssl_simulation', True)
+        
+        # Connection tracking per IP for rate limiting
+        self.ip_connections = {}
+        
+        # Attack detection configuration
+        self.sql_injection_detection = config['attack_detection'].getboolean('sql_injection_detection', True)
+        self.privilege_escalation_detection = config['attack_detection'].getboolean('privilege_escalation_detection', True)
+        self.data_exfiltration_detection = config['attack_detection'].getboolean('data_exfiltration_detection', True)
+        self.sensitivity_level = config['attack_detection'].get('sensitivity_level', 'medium')
+        self.threat_scoring = config['attack_detection'].getboolean('threat_scoring', True)
+        self.alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+        
+        # Forensics configuration
+        self.query_logging = config['forensics'].getboolean('query_logging', True)
+        self.save_queries = config['forensics'].getboolean('save_queries', True)
+        self.query_hash_analysis = config['forensics'].getboolean('query_hash_analysis', True)
+        self.attack_correlation = config['forensics'].getboolean('attack_correlation', True)
+        self.forensic_reports = config['forensics'].getboolean('forensic_reports', True)
+        
+        # Database simulation configuration
+        self.realistic_data_generation = config['database_simulation'].getboolean('realistic_data_generation', True)
+        self.schema_evolution = config['database_simulation'].getboolean('schema_evolution', True)
 
         # Initialize components
         self.attack_analyzer = MySQLAttackAnalyzer()
@@ -1704,11 +1782,21 @@ class MySQLHoneypotServer:
         sensor_name = self.config['honeypot'].get('sensor_name', 'nexus-mysql-honeypot')
         
         print(f"\n✅ MySQL Honeypot Starting...")
-        print(f"📡 Port: {self.port}")
+        print(f"📡 Host: {self.host}:{self.port}")
+        print(f"🗄️  Server Version: {self.server_version}")
+        print(f"🎯 Default Database: {self.default_database}")
+        print(f"🔤 Charset: {self.charset} ({self.collation})")
         print(f"🤖 LLM Provider: {llm_provider}")
         print(f"📊 Model: {model_name}")
         print(f"🔍 Sensor: {sensor_name}")
         print(f"📁 Log File: {self.config['honeypot'].get('log_file', 'mysql_log.log')}")
+        print(f"🔗 Max Connections: {self.max_connections}")
+        print(f"⏱️  Connection Timeout: {self.connect_timeout}s / Query Timeout: {self.query_timeout}s")
+        print(f"🛡️  Rate Limiting: {'Enabled' if self.rate_limiting else 'Disabled'}")
+        print(f"🔍 SQL Injection Detection: {'Enabled' if self.sql_injection_detection else 'Disabled'}")
+        print(f"🎭 Behavioral Analysis: {'Enabled' if self.behavioral_analysis else 'Disabled'}")
+        print(f"🤖 Adaptive Responses: {'Enabled' if self.adaptive_responses else 'Disabled'}")
+        print(f"🔐 SSL Simulation: {'Enabled' if self.ssl_simulation else 'Disabled'}")
         print(f"⚠️  Press Ctrl+C to stop\n")
         
         logger.info(f"MySQL honeypot server started on {self.host}:{self.port}")
@@ -1723,19 +1811,45 @@ class MySQLHoneypotServer:
         async def enhanced_client_connected(reader, writer):
             transport_id = None
             session_id = None
+            client_ip = 'unknown'
+            client_port = 'unknown'
             
             # Extract connection info before processing
             try:
                 if hasattr(writer, 'transport') and hasattr(writer.transport, 'get_extra_info'):
                     peername = writer.transport.get_extra_info('peername')
                     if peername:
+                        client_ip, client_port = peername[0], peername[1]
+                        
+                        # Check connection limit
+                        if server_instance.connection_count >= server_instance.max_connections:
+                            logger.warning(f"Connection limit reached ({server_instance.max_connections}), rejecting connection from {client_ip}")
+                            writer.close()
+                            await writer.wait_closed()
+                            return
+                        
+                        # Rate limiting check
+                        if server_instance.rate_limiting:
+                            if client_ip not in server_instance.ip_connections:
+                                server_instance.ip_connections[client_ip] = 0
+                            
+                            if server_instance.ip_connections[client_ip] >= server_instance.max_connections_per_ip:
+                                logger.warning(f"Rate limit exceeded for IP {client_ip} ({server_instance.ip_connections[client_ip]} connections)")
+                                writer.close()
+                                await writer.wait_closed()
+                                return
+                            
+                            server_instance.ip_connections[client_ip] += 1
+                        
+                        server_instance.connection_count += 1
+                        
                         # Store connection info by transport object for later retrieval
                         transport_id = id(writer.transport)
                         server_instance.connection_info[transport_id] = {
-                            'client_ip': peername[0],
-                            'client_port': peername[1]
+                            'client_ip': client_ip,
+                            'client_port': client_port
                         }
-                        logger.debug(f"Captured connection info: {peername[0]}:{peername[1]}")
+                        logger.debug(f"Captured connection info: {client_ip}:{client_port}")
             except Exception as e:
                 logger.debug(f"Failed to capture connection info: {e}")
             
@@ -1747,8 +1861,17 @@ class MySQLHoneypotServer:
             except Exception as e:
                 logger.debug(f"MySQL client connection error: {e}")
             finally:
-                # Clean up connection info and ensure session cleanup
+                # Decrement connection counts
                 try:
+                    server_instance.connection_count -= 1
+                    
+                    # Decrement IP connection count for rate limiting
+                    if server_instance.rate_limiting and client_ip != 'unknown' and client_ip in server_instance.ip_connections:
+                        server_instance.ip_connections[client_ip] -= 1
+                        if server_instance.ip_connections[client_ip] <= 0:
+                            del server_instance.ip_connections[client_ip]
+                    
+                    # Clean up connection info
                     if transport_id and transport_id in server_instance.connection_info:
                         del server_instance.connection_info[transport_id]
                     
@@ -1932,18 +2055,30 @@ async def main():
         config['honeypot'] = {
             'log_file': '../../logs/mysql_log.log',
             'sensor_name': 'nexus-mysql-honeypot',
-            'sessions_dir': 'sessions'
+            'sessions_dir': 'sessions',
+            'attack_logging': 'true',
+            'behavioral_analysis': 'true',
+            'forensic_chain': 'true',
+            'adaptive_responses': 'true'
         }
         config['mysql'] = {
             'host': '0.0.0.0',
             'port': '3306',
-            'server_version': '8.0.32-0ubuntu0.20.04.2'
+            'server_version': '8.0.32-0ubuntu0.20.04.2',
+            'default_database': 'nexus_gamedev',
+            'charset': 'utf8mb4',
+            'collation': 'utf8mb4_unicode_ci',
+            'max_connections': '100',
+            'connect_timeout': '10',
+            'query_timeout': '30'
         }
         config['llm'] = {
             'llm_provider': 'openai',
             'model_name': 'gpt-4o-mini',
             'temperature': '0.2',
             'trimmer_max_tokens': '64000',
+            'context_awareness': 'true',
+            'threat_adaptation': 'true',
             'system_prompt': 'You are a MySQL 8.0.32 server at NexusGames Studio game company. Return ONLY valid JSON arrays. No explanations, notes, or extra text ever. Examples: SHOW DATABASES -> [{"Database":"player_data"},{"Database":"game_analytics"}]. SHOW TABLES -> [{"Tables_in_dbname":"players"},{"Tables_in_dbname":"scores"}]. DESCRIBE table -> [{"Field":"id","Type":"int(11)","Null":"NO","Key":"PRI","Default":null,"Extra":"auto_increment"}]. SELECT -> realistic game data rows. CREATE/INSERT/UPDATE/DELETE -> []. Always valid JSON only.'
         }
         config['user_accounts'] = {
@@ -1954,11 +2089,48 @@ async def main():
             'developer': 'dev123',
             'gamedev': 'nexus2024'
         }
-        config['ai_features'] = {}
-        config['attack_detection'] = {}
-        config['forensics'] = {}
-        config['logging'] = {}
-        config['security'] = {}
+        config['ai_features'] = {
+            'dynamic_responses': 'true',
+            'attack_pattern_recognition': 'true',
+            'vulnerability_detection': 'true',
+            'real_time_analysis': 'true',
+            'ai_attack_summaries': 'true',
+            'deception_techniques': 'true',
+            'query_result_manipulation': 'true'
+        }
+        config['attack_detection'] = {
+            'sensitivity_level': 'medium',
+            'threat_scoring': 'true',
+            'alert_threshold': '70',
+            'sql_injection_detection': 'true',
+            'privilege_escalation_detection': 'true',
+            'data_exfiltration_detection': 'true'
+        }
+        config['forensics'] = {
+            'query_logging': 'true',
+            'save_queries': 'true',
+            'query_hash_analysis': 'true',
+            'attack_correlation': 'true',
+            'forensic_reports': 'true',
+            'chain_of_custody': 'true'
+        }
+        config['database_simulation'] = {
+            'realistic_data_generation': 'true',
+            'schema_evolution': 'true'
+        }
+        config['logging'] = {
+            'log_level': 'INFO',
+            'structured_logging': 'true',
+            'real_time_streaming': 'true'
+        }
+        config['security'] = {
+            'rate_limiting': 'true',
+            'max_connections_per_ip': '10',
+            'connection_timeout': '300',
+            'intrusion_detection': 'true',
+            'automated_blocking': 'false',
+            'ssl_simulation': 'true'
+        }
 
     # Override with command line arguments
     if args.port:
