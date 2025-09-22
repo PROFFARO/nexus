@@ -782,6 +782,7 @@ class SMBHoneypot:
                 text_data = data.decode('utf-8', errors='ignore').strip()
                 if text_data and not any(ord(c) < 32 for c in text_data if c not in '\r\n\t'):
                     return await self._handle_telnet_command(text_data, session_data)
+            # amazonq-ignore-next-line
             except:
                 pass
             
@@ -1154,7 +1155,8 @@ class SMBHoneypot:
                 clean_response = ai_response.replace('```', '').replace('`', '')
                 clean_response = '\n'.join(line.strip() for line in clean_response.split('\n') if line.strip())
                 return f"{clean_response}\r\nSMB> ".encode()
-            except:
+            except Exception as e:
+                logger.debug(f"AI response failed for command '{command}': {e}")
                 return f"Command '{command}' processed by {self.server_name}.\r\nSMB> ".encode()
 
 

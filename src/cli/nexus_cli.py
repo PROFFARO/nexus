@@ -292,6 +292,53 @@ Examples:
         parser.add_argument('-p', '--prompt', help='System prompt text')
         parser.add_argument('-f', '--prompt-file', help='System prompt file')
 
+    def _build_ssh_command(self, args, ssh_script):
+        """Build SSH command arguments"""
+        cmd = [sys.executable, str(ssh_script)]
+        
+        arg_mappings = [
+            (args.config, ['-c', args.config]),
+            (args.port, ['-P', str(args.port)]),
+            (args.host_key, ['-k', args.host_key]),
+            (args.server_version, ['-v', args.server_version]),
+            (args.log_file, ['-L', args.log_file]),
+            (args.sensor_name, ['-S', args.sensor_name]),
+            (args.llm_provider, ['-l', args.llm_provider]),
+            (args.model_name, ['-m', args.model_name]),
+            (args.temperature is not None, ['-r', str(args.temperature)]),
+            (args.max_tokens, ['-t', str(args.max_tokens)]),
+            (args.prompt, ['-p', args.prompt]),
+            (args.prompt_file, ['-f', args.prompt_file])
+        ]
+        
+        for condition, extension in arg_mappings:
+            if condition:
+                cmd.extend(extension)
+        
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        return cmd
+    
+    def _setup_environment(self, args):
+        """Setup environment variables"""
+        env = os.environ.copy()
+        env_mappings = [
+            (args.base_url, 'OLLAMA_BASE_URL'),
+            (args.azure_deployment, 'AZURE_OPENAI_DEPLOYMENT'),
+            (args.azure_endpoint, 'AZURE_OPENAI_ENDPOINT'),
+            (args.azure_api_version, 'AZURE_OPENAI_API_VERSION'),
+            (args.aws_region, 'AWS_DEFAULT_REGION'),
+            (args.aws_profile, 'AWS_PROFILE')
+        ]
+        
+        for value, key in env_mappings:
+            if value:
+                env[key] = value
+        
+        return env
+
     def run_ssh_service(self, args):
         """Run SSH honeypot with provided arguments"""
         if not self.services['ssh']['implemented']:
@@ -303,54 +350,8 @@ Examples:
             print(f"Error: SSH script not found at {ssh_script}")
             return 1
         
-        # Build command arguments
-        cmd = [sys.executable, str(ssh_script)]
-        
-        # Add arguments
-        if args.config:
-            cmd.extend(['-c', args.config])
-        if args.port:
-            cmd.extend(['-P', str(args.port)])
-        if args.host_key:
-            cmd.extend(['-k', args.host_key])
-        if args.server_version:
-            cmd.extend(['-v', args.server_version])
-        if args.log_file:
-            cmd.extend(['-L', args.log_file])
-        if args.sensor_name:
-            cmd.extend(['-S', args.sensor_name])
-        if args.llm_provider:
-            cmd.extend(['-l', args.llm_provider])
-        if args.model_name:
-            cmd.extend(['-m', args.model_name])
-        if args.temperature is not None:
-            cmd.extend(['-r', str(args.temperature)])
-        if args.max_tokens:
-            cmd.extend(['-t', str(args.max_tokens)])
-        if args.prompt:
-            cmd.extend(['-p', args.prompt])
-        if args.prompt_file:
-            cmd.extend(['-f', args.prompt_file])
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        # Set environment variables for additional configs
-        env = os.environ.copy()
-        if args.base_url:
-            env['OLLAMA_BASE_URL'] = args.base_url
-        if args.azure_deployment:
-            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
-        if args.azure_endpoint:
-            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
-        if args.azure_api_version:
-            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
-        if args.aws_region:
-            env['AWS_DEFAULT_REGION'] = args.aws_region
-        if args.aws_profile:
-            env['AWS_PROFILE'] = args.aws_profile
-        
-        # Change to SSH directory
+        cmd = self._build_ssh_command(args, ssh_script)
+        env = self._setup_environment(args)
         ssh_dir = self.services['ssh']['path'].parent
         
         try:
@@ -363,6 +364,33 @@ Examples:
         
         return 0
 
+    def _build_mysql_command(self, args, mysql_script):
+        """Build MySQL command arguments"""
+        cmd = [sys.executable, str(mysql_script)]
+        
+        arg_mappings = [
+            (args.config, ['-c', args.config]),
+            (args.port, ['--port', str(args.port)]),
+            (args.log_file, ['--log-file', args.log_file]),
+            (args.sensor_name, ['--sensor-name', args.sensor_name]),
+            (args.llm_provider, ['--llm-provider', args.llm_provider]),
+            (args.model_name, ['--model-name', args.model_name]),
+            (args.temperature is not None, ['--temperature', str(args.temperature)]),
+            (args.max_tokens, ['--max-tokens', str(args.max_tokens)]),
+            (args.prompt, ['--prompt', args.prompt]),
+            (args.prompt_file, ['--prompt-file', args.prompt_file])
+        ]
+        
+        for condition, extension in arg_mappings:
+            if condition:
+                cmd.extend(extension)
+        
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['--user-account', account])
+        
+        return cmd
+
     def run_mysql_service(self, args):
         """Run MySQL honeypot with provided arguments"""
         if not self.services['mysql']['implemented']:
@@ -374,50 +402,8 @@ Examples:
             print(f"Error: MySQL script not found at {mysql_script}")
             return 1
         
-        # Build command arguments
-        cmd = [sys.executable, str(mysql_script)]
-        
-        # Add arguments
-        if args.config:
-            cmd.extend(['-c', args.config])
-        if args.port:
-            cmd.extend(['--port', str(args.port)])
-        if args.log_file:
-            cmd.extend(['--log-file', args.log_file])
-        if args.sensor_name:
-            cmd.extend(['--sensor-name', args.sensor_name])
-        if args.llm_provider:
-            cmd.extend(['--llm-provider', args.llm_provider])
-        if args.model_name:
-            cmd.extend(['--model-name', args.model_name])
-        if args.temperature is not None:
-            cmd.extend(['--temperature', str(args.temperature)])
-        if args.max_tokens:
-            cmd.extend(['--max-tokens', str(args.max_tokens)])
-        if args.prompt:
-            cmd.extend(['--prompt', args.prompt])
-        if args.prompt_file:
-            cmd.extend(['--prompt-file', args.prompt_file])
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['--user-account', account])
-        
-        # Set environment variables for additional configs
-        env = os.environ.copy()
-        if args.base_url:
-            env['OLLAMA_BASE_URL'] = args.base_url
-        if args.azure_deployment:
-            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
-        if args.azure_endpoint:
-            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
-        if args.azure_api_version:
-            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
-        if args.aws_region:
-            env['AWS_DEFAULT_REGION'] = args.aws_region
-        if args.aws_profile:
-            env['AWS_PROFILE'] = args.aws_profile
-        
-        # Change to MySQL directory
+        cmd = self._build_mysql_command(args, mysql_script)
+        env = self._setup_environment(args)
         mysql_dir = self.services['mysql']['path'].parent
         
         try:
@@ -430,6 +416,33 @@ Examples:
         
         return 0
 
+    def _build_ftp_command(self, args, ftp_script):
+        """Build FTP command arguments"""
+        cmd = [sys.executable, str(ftp_script)]
+        
+        arg_mappings = [
+            (args.config, ['-c', args.config]),
+            (args.port, ['-P', str(args.port)]),
+            (args.log_file, ['-L', args.log_file]),
+            (args.sensor_name, ['-S', args.sensor_name]),
+            (args.llm_provider, ['-l', args.llm_provider]),
+            (args.model_name, ['-m', args.model_name]),
+            (args.temperature is not None, ['-r', str(args.temperature)]),
+            (args.max_tokens, ['-t', str(args.max_tokens)]),
+            (args.prompt, ['-p', args.prompt]),
+            (args.prompt_file, ['-f', args.prompt_file])
+        ]
+        
+        for condition, extension in arg_mappings:
+            if condition:
+                cmd.extend(extension)
+        
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        return cmd
+
     def run_ftp_service(self, args):
         """Run FTP honeypot with provided arguments"""
         if not self.services['ftp']['implemented']:
@@ -441,50 +454,8 @@ Examples:
             print(f"Error: FTP script not found at {ftp_script}")
             return 1
         
-        # Build command arguments
-        cmd = [sys.executable, str(ftp_script)]
-        
-        # Add arguments
-        if args.config:
-            cmd.extend(['-c', args.config])
-        if args.port:
-            cmd.extend(['-P', str(args.port)])
-        if args.log_file:
-            cmd.extend(['-L', args.log_file])
-        if args.sensor_name:
-            cmd.extend(['-S', args.sensor_name])
-        if args.llm_provider:
-            cmd.extend(['-l', args.llm_provider])
-        if args.model_name:
-            cmd.extend(['-m', args.model_name])
-        if args.temperature is not None:
-            cmd.extend(['-r', str(args.temperature)])
-        if args.max_tokens:
-            cmd.extend(['-t', str(args.max_tokens)])
-        if args.prompt:
-            cmd.extend(['-p', args.prompt])
-        if args.prompt_file:
-            cmd.extend(['-f', args.prompt_file])
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        # Set environment variables for additional configs
-        env = os.environ.copy()
-        if args.base_url:
-            env['OLLAMA_BASE_URL'] = args.base_url
-        if args.azure_deployment:
-            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
-        if args.azure_endpoint:
-            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
-        if args.azure_api_version:
-            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
-        if args.aws_region:
-            env['AWS_DEFAULT_REGION'] = args.aws_region
-        if args.aws_profile:
-            env['AWS_PROFILE'] = args.aws_profile
-        
-        # Change to FTP directory
+        cmd = self._build_ftp_command(args, ftp_script)
+        env = self._setup_environment(args)
         ftp_dir = self.services['ftp']['path'].parent
         
         try:
@@ -497,6 +468,33 @@ Examples:
         
         return 0
 
+    def _build_http_command(self, args, http_script):
+        """Build HTTP command arguments"""
+        cmd = [sys.executable, str(http_script)]
+        
+        arg_mappings = [
+            (args.config, ['-c', args.config]),
+            (args.port, ['-P', str(args.port)]),
+            (args.log_file, ['-L', args.log_file]),
+            (args.sensor_name, ['-S', args.sensor_name]),
+            (args.llm_provider, ['-l', args.llm_provider]),
+            (args.model_name, ['-m', args.model_name]),
+            (args.temperature is not None, ['-r', str(args.temperature)]),
+            (args.max_tokens, ['-t', str(args.max_tokens)]),
+            (args.prompt, ['-p', args.prompt]),
+            (args.prompt_file, ['-f', args.prompt_file])
+        ]
+        
+        for condition, extension in arg_mappings:
+            if condition:
+                cmd.extend(extension)
+        
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        return cmd
+
     def run_http_service(self, args):
         """Run HTTP honeypot with provided arguments"""
         if not self.services['http']['implemented']:
@@ -508,50 +506,8 @@ Examples:
             print(f"Error: HTTP script not found at {http_script}")
             return 1
         
-        # Build command arguments
-        cmd = [sys.executable, str(http_script)]
-        
-        # Add arguments
-        if args.config:
-            cmd.extend(['-c', args.config])
-        if args.port:
-            cmd.extend(['-P', str(args.port)])
-        if args.log_file:
-            cmd.extend(['-L', args.log_file])
-        if args.sensor_name:
-            cmd.extend(['-S', args.sensor_name])
-        if args.llm_provider:
-            cmd.extend(['-l', args.llm_provider])
-        if args.model_name:
-            cmd.extend(['-m', args.model_name])
-        if args.temperature is not None:
-            cmd.extend(['-r', str(args.temperature)])
-        if args.max_tokens:
-            cmd.extend(['-t', str(args.max_tokens)])
-        if args.prompt:
-            cmd.extend(['-p', args.prompt])
-        if args.prompt_file:
-            cmd.extend(['-f', args.prompt_file])
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        # Set environment variables for additional configs
-        env = os.environ.copy()
-        if args.base_url:
-            env['OLLAMA_BASE_URL'] = args.base_url
-        if args.azure_deployment:
-            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
-        if args.azure_endpoint:
-            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
-        if args.azure_api_version:
-            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
-        if args.aws_region:
-            env['AWS_DEFAULT_REGION'] = args.aws_region
-        if args.aws_profile:
-            env['AWS_PROFILE'] = args.aws_profile
-        
-        # Change to HTTP directory
+        cmd = self._build_http_command(args, http_script)
+        env = self._setup_environment(args)
         http_dir = self.services['http']['path'].parent
         
         try:
@@ -897,7 +853,7 @@ except Exception as e:
             # Clean up temporary file
             try:
                 os.unlink(temp_script)
-            except:
+            except (OSError, FileNotFoundError):
                 pass
         
         return 0
@@ -1020,13 +976,28 @@ except Exception as e:
         if args.session_id:
             cmd.extend(['--session-id', args.session_id])
         if args.log_file:
-            cmd.extend(['--log-file', args.log_file])
+            # Validate and sanitize log file path to prevent path traversal
+            log_path = Path(args.log_file).resolve()
+            try:
+                log_path.relative_to(Path.cwd())
+                cmd.extend(['--log-file', str(log_path)])
+            except ValueError:
+                print(f"Error: Log file path must be within current directory")
+                return 1
         if args.decode:
             cmd.append('--decode')
         if args.conversation:
             cmd.append('--conversation')
         if args.save:
-            cmd.extend(['--save', args.save])
+            # Validate and sanitize save path to prevent path traversal
+            save_path = Path(args.save).resolve()
+            # Ensure the path is within current directory or subdirectories
+            try:
+                save_path.relative_to(Path.cwd())
+                cmd.extend(['--save', str(save_path)])
+            except ValueError:
+                print(f"Error: Save path must be within current directory")
+                return 1
         if args.format:
             cmd.extend(['--format', args.format])
         if args.filter:
@@ -1125,6 +1096,7 @@ except Exception as e:
             try:
                 from configparser import ConfigParser
                 parser = ConfigParser()
+                # amazonq-ignore-next-line
                 parser.read(config_file)
                 
                 # Get port from config
@@ -1140,6 +1112,7 @@ except Exception as e:
                 
                 if port_value is not None:
                     config['port'] = port_value
+            # amazonq-ignore-next-line
             except Exception:
                 pass
         
@@ -1257,79 +1230,81 @@ except Exception as e:
         
         return 0
     
+    def _build_service_command(self, service_name, service_info, args):
+        """Build command for starting a service"""
+        cmd = [sys.executable, str(service_info['path'])]
+        
+        # Add global arguments based on service type
+        if args.llm_provider:
+            if service_name == 'mysql':
+                cmd.extend(['--llm-provider', args.llm_provider])
+            else:
+                cmd.extend(['-l', args.llm_provider])
+        
+        if args.model_name:
+            if service_name == 'mysql':
+                cmd.extend(['--model-name', args.model_name])
+            else:
+                cmd.extend(['-m', args.model_name])
+        
+        # Add config file if specified
+        if args.config_dir:
+            config_file = Path(args.config_dir) / f"{service_name}_config.ini"
+            if config_file.exists():
+                cmd.extend(['-c', str(config_file)])
+        
+        return cmd
+    
+    def _start_single_service(self, service_name, service_info, args):
+        """Start a single service and return success status"""
+        status = self.check_service_status(service_name)
+        if status['status'] == 'running':
+            print(f"ℹ️  {service_name.upper()} already running on port {status['port']}")
+            return True
+        
+        print(f"🚀 Starting {service_name.upper()}...")
+        
+        try:
+            cmd = self._build_service_command(service_name, service_info, args)
+            
+            import subprocess
+            import threading
+            import time
+            
+            def run_service():
+                try:
+                    subprocess.run(cmd, cwd=service_info['path'].parent)
+                except Exception as e:
+                    print(f"❌ Error running {service_name}: {e}")
+            
+            thread = threading.Thread(target=run_service, daemon=True)
+            thread.start()
+            time.sleep(2)
+            
+            new_status = self.check_service_status(service_name)
+            if new_status['status'] == 'running':
+                print(f"✅ {service_name.upper()} started on port {new_status['port']}")
+                return True
+            else:
+                print(f"❌ Failed to start {service_name.upper()}")
+                return False
+        except Exception as e:
+            print(f"❌ Error starting {service_name}: {e}")
+            return False
+
     def start_all(self, args):
         """Start all implemented services"""
         print("⚙️  Starting all service emulators...")
-        started_count: int = 0
-        failed_count: int = 0
+        started_count = 0
+        failed_count = 0
         
         for service_name, service_info in self.services.items():
             if not service_info['implemented']:
                 continue
             
-            # Check if already running
-            status = self.check_service_status(service_name)
-            if status['status'] == 'running':
-                print(f"ℹ️  {service_name.upper()} already running on port {status['port']}")
-                continue
-            
-            print(f"🚀 Starting {service_name.upper()}...")
-            
-            try:
-                # Build command for service
-                cmd = [sys.executable, str(service_info['path'])]
-                
-                # Add global arguments if provided
-                if args.llm_provider:
-                    if service_name == 'ssh':
-                        cmd.extend(['-l', args.llm_provider])
-                    elif service_name in ['ftp', 'http']:
-                        cmd.extend(['-l', args.llm_provider])
-                    elif service_name == 'mysql':
-                        cmd.extend(['--llm-provider', args.llm_provider])
-                
-                if args.model_name:
-                    if service_name == 'ssh':
-                        cmd.extend(['-m', args.model_name])
-                    elif service_name in ['ftp', 'http']:
-                        cmd.extend(['-m', args.model_name])
-                    elif service_name == 'mysql':
-                        cmd.extend(['--model-name', args.model_name])
-                
-                # Add config file if specified
-                if args.config_dir:
-                    config_file = Path(args.config_dir) / f"{service_name}_config.ini"
-                    if config_file.exists():
-                        cmd.extend(['-c', str(config_file)])
-                
-                # Start service in background
-                import subprocess
-                import threading
-                
-                def run_service():
-                    try:
-                        subprocess.run(cmd, cwd=service_info['path'].parent)
-                    except Exception as e:
-                        print(f"❌ Error running {service_name}: {e}")
-                
-                thread = threading.Thread(target=run_service, daemon=True)
-                thread.start()
-                
-                # Give service time to start
-                import time
-                time.sleep(2)
-                
-                # Check if service started successfully
-                new_status = self.check_service_status(service_name)
-                if new_status['status'] == 'running':
-                    print(f"✅ {service_name.upper()} started on port {new_status['port']}")
-                    started_count += 1
-                else:
-                    print(f"❌ Failed to start {service_name.upper()}")
-                    failed_count += 1
-                    
-            except Exception as e:
-                print(f"❌ Error starting {service_name}: {e}")
+            if self._start_single_service(service_name, service_info, args):
+                started_count += 1
+            else:
                 failed_count += 1
         
         print(f"\n📊 Summary:")
@@ -1338,6 +1313,33 @@ except Exception as e:
             print(f"❌ Failed: {failed_count} service(s)")
         
         return 0 if failed_count == 0 else 1
+
+    def _build_smb_command(self, args, smb_script):
+        """Build SMB command arguments"""
+        cmd = [sys.executable, str(smb_script)]
+        
+        arg_mappings = [
+            (args.config, ['-c', args.config]),
+            (args.port, ['-P', str(args.port)]),
+            (args.log_file, ['-L', args.log_file]),
+            (args.sensor_name, ['-S', args.sensor_name]),
+            (args.llm_provider, ['-l', args.llm_provider]),
+            (args.model_name, ['-m', args.model_name]),
+            (args.temperature is not None, ['-r', str(args.temperature)]),
+            (args.max_tokens, ['-t', str(args.max_tokens)]),
+            (args.prompt, ['-p', args.prompt]),
+            (args.prompt_file, ['-f', args.prompt_file])
+        ]
+        
+        for condition, extension in arg_mappings:
+            if condition:
+                cmd.extend(extension)
+        
+        if args.user_account:
+            for account in args.user_account:
+                cmd.extend(['-u', account])
+        
+        return cmd
 
     def run_smb_service(self, args):
         """Run SMB honeypot with provided arguments"""
@@ -1350,50 +1352,8 @@ except Exception as e:
             print(f"Error: SMB script not found at {smb_script}")
             return 1
         
-        # Build command arguments
-        cmd = [sys.executable, str(smb_script)]
-        
-        # Add arguments
-        if args.config:
-            cmd.extend(['-c', args.config])
-        if args.port:
-            cmd.extend(['-P', str(args.port)])
-        if args.log_file:
-            cmd.extend(['-L', args.log_file])
-        if args.sensor_name:
-            cmd.extend(['-S', args.sensor_name])
-        if args.llm_provider:
-            cmd.extend(['-l', args.llm_provider])
-        if args.model_name:
-            cmd.extend(['-m', args.model_name])
-        if args.temperature is not None:
-            cmd.extend(['-r', str(args.temperature)])
-        if args.max_tokens:
-            cmd.extend(['-t', str(args.max_tokens)])
-        if args.prompt:
-            cmd.extend(['-p', args.prompt])
-        if args.prompt_file:
-            cmd.extend(['-f', args.prompt_file])
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        # Set environment variables for additional configs
-        env = os.environ.copy()
-        if args.base_url:
-            env['OLLAMA_BASE_URL'] = args.base_url
-        if args.azure_deployment:
-            env['AZURE_OPENAI_DEPLOYMENT'] = args.azure_deployment
-        if args.azure_endpoint:
-            env['AZURE_OPENAI_ENDPOINT'] = args.azure_endpoint
-        if args.azure_api_version:
-            env['AZURE_OPENAI_API_VERSION'] = args.azure_api_version
-        if args.aws_region:
-            env['AWS_DEFAULT_REGION'] = args.aws_region
-        if args.aws_profile:
-            env['AWS_PROFILE'] = args.aws_profile
-        
-        # Change to SMB directory
+        cmd = self._build_smb_command(args, smb_script)
+        env = self._setup_environment(args)
         smb_dir = self.services['smb']['path'].parent
         
         try:

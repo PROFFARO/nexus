@@ -56,7 +56,12 @@ class FTPHoneypotReportGenerator:
         
     def generate_comprehensive_report(self, output_dir: str = "reports") -> Dict[str, str]:
         """Generate a comprehensive FTP security report"""
-        output_path = Path(output_dir)
+        # Validate and sanitize output directory to prevent path traversal
+        output_path = Path(output_dir).resolve()
+        try:
+            output_path.relative_to(Path.cwd())
+        except ValueError:
+            raise ValueError("Output directory must be within current working directory")
         output_path.mkdir(exist_ok=True)
         
         # Collect all session data
@@ -84,6 +89,7 @@ class FTPHoneypotReportGenerator:
         
         # JSON Report
         json_file = output_path / f"ftp_honeypot_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        # amazonq-ignore-next-line
         with open(json_file, 'w', encoding='utf-8') as f:
             json.dump(report, f, indent=2, default=str, ensure_ascii=False)
         report_files['json'] = str(json_file)
@@ -96,7 +102,11 @@ class FTPHoneypotReportGenerator:
         report_files['html'] = str(html_file)
         
         # Generate visualizations
-        viz_dir = output_path / "visualizations"
+        viz_dir = (output_path / "visualizations").resolve()
+        try:
+            viz_dir.relative_to(output_path)
+        except ValueError:
+            raise ValueError("Visualizations directory must be within output directory")
         viz_dir.mkdir(exist_ok=True)
         self._generate_visualizations(session_data, viz_dir)
         

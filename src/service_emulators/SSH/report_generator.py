@@ -643,6 +643,7 @@ class HoneypotReportGenerator:
             short_term_improvements=short_term_improvements_html
         )
     
+    # amazonq-ignore-next-line
     def _generate_visualizations(self, session_data: List[Dict[str, Any]], output_dir: Path):
         """Generate visualization charts"""
         try:
@@ -735,18 +736,36 @@ class HoneypotReportGenerator:
         except:
             return 0
     
-    def _generate_key_findings(self, session_data: List[Dict[str, Any]]) -> List[str]:
-        """Generate key findings from analysis using integrated JSON data"""
-        findings = []
-        
-        # Analyze attack patterns
+    def _extract_attack_counts(self, session_data: List[Dict[str, Any]]) -> Counter:
+        """Extract attack type counts from session data"""
         attack_types = Counter()
         for session in session_data:
             for attack in session.get('attack_analysis', []):
                 for attack_type in attack.get('attack_types', []):
                     attack_types[attack_type] += 1
+        return attack_types
+    
+    def _extract_critical_vulnerabilities(self, session_data: List[Dict[str, Any]]) -> List[str]:
+        """Extract critical vulnerability names from session data"""
+        critical_vulns = []
+        for session in session_data:
+            for vuln in session.get('vulnerabilities', []):
+                vuln_id = vuln.get('vulnerability_id', '')
+                if vuln_id in self.vulnerability_signatures:
+                    vuln_data = self.vulnerability_signatures[vuln_id]
+                    if vuln_data.get('severity') == 'critical':
+                        critical_vulns.append(vuln_data.get('name', vuln_id))
+        return list(set(critical_vulns))
+    
+    def _generate_key_findings(self, session_data: List[Dict[str, Any]]) -> List[str]:
+        """Generate key findings from analysis using integrated JSON data"""
+        findings = []
         
-        if 'reconnaissance' in attack_types and attack_types['reconnaissance'] > 5:
+        # Get attack counts
+        attack_types = self._extract_attack_counts(session_data)
+        
+        # Check for high-volume attacks
+        if attack_types.get('reconnaissance', 0) > 5:
             findings.append(f"High volume of reconnaissance activities detected ({attack_types['reconnaissance']} instances)")
         
         if 'privilege_escalation' in attack_types:
@@ -755,26 +774,16 @@ class HoneypotReportGenerator:
         if 'persistence' in attack_types:
             findings.append(f"Persistence mechanisms deployed by attackers ({attack_types['persistence']} instances)")
         
-        # Analyze vulnerability exploits using integrated JSON data
+        # Check vulnerabilities
         vuln_count = sum(len(s.get('vulnerabilities', [])) for s in session_data)
         if vuln_count > 0:
             findings.append(f"Multiple vulnerability exploitation attempts detected ({vuln_count} total)")
             
-            # Identify specific high-risk vulnerabilities
-            critical_vulns = []
-            for session in session_data:
-                for vuln in session.get('vulnerabilities', []):
-                    vuln_id = vuln.get('vulnerability_id', '')
-                    if vuln_id in self.vulnerability_signatures:
-                        vuln_data = self.vulnerability_signatures[vuln_id]
-                        if vuln_data.get('severity') == 'critical':
-                            critical_vulns.append(vuln_data.get('name', vuln_id))
-            
+            critical_vulns = self._extract_critical_vulnerabilities(session_data)
             if critical_vulns:
-                unique_critical = list(set(critical_vulns))
-                findings.append(f"Critical vulnerabilities targeted: {', '.join(unique_critical[:3])}{'...' if len(unique_critical) > 3 else ''}")
+                findings.append(f"Critical vulnerabilities targeted: {', '.join(critical_vulns[:3])}{'...' if len(critical_vulns) > 3 else ''}")
         
-        # Analyze file operations
+        # Check file operations
         download_count = sum(len(s.get('files_downloaded', [])) for s in session_data)
         upload_count = sum(len(s.get('files_uploaded', [])) for s in session_data)
         

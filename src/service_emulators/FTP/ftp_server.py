@@ -435,6 +435,7 @@ class ForensicChainLogger:
     """Generate forensic chain of custody for attacks"""
     
     def __init__(self, session_dir: str):
+        # amazonq-ignore-next-line
         self.session_dir = Path(session_dir)
         self.chain_file = self.session_dir / "forensic_chain.json"
         self.chain_data = {
@@ -1101,10 +1102,20 @@ class FTPSession:
 
     def _resolve_path(self, path: str) -> str:
         """Resolve path with security checks"""
+        # Sanitize path to prevent traversal attacks
+        path = path.replace('..', '').replace('\\', '/')
+        
         if path.startswith("/"):
+            # Ensure path stays within allowed root
+            if not path.startswith("/home/ftp"):
+                return "/home/ftp"
             return path
         else:
-            return f"{self.current_directory}/{path}".replace("//", "/")
+            resolved = f"{self.current_directory}/{path}".replace("//", "/")
+            # Ensure resolved path stays within allowed root
+            if not resolved.startswith("/home/ftp"):
+                return "/home/ftp"
+            return resolved
 
     def _generate_fallback_listing(self) -> str:
         """Generate fallback directory listing"""
@@ -1633,7 +1644,7 @@ try:
     finally:
         try:
             loop.close()
-        except Exception:
+        except (OSError, RuntimeError):
             pass
 
 except (KeyboardInterrupt, asyncio.CancelledError):

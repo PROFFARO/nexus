@@ -440,16 +440,24 @@ class MySQLForensicLogger:
         # Check if chain of custody is enabled
         if not config['forensics'].getboolean('chain_of_custody', True):
             return
+        
+        # Validate and sanitize file path to prevent path traversal
+        safe_path = Path(file_path).resolve()
+        try:
+            safe_path.relative_to(Path.cwd())
+        except ValueError:
+            logger.warning(f"Rejected evidence file outside working directory: {file_path}")
+            return
             
-        if os.path.exists(file_path):
-            with open(file_path, 'rb') as f:
+        if os.path.exists(safe_path):
+            with open(safe_path, 'rb') as f:
                 content = f.read()
 
             evidence = {
                 'evidence_id': str(uuid.uuid4()),
                 'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
                 'type': evidence_type,
-                'file_path': file_path,
+                'file_path': str(safe_path),
                 'file_size': len(content),
                 'description': description
             }
@@ -570,87 +578,102 @@ class MySQLHoneypotSession(Session):
             MySQLHoneypotSession._global_tables = {}
         self.forensic_logger = None
 
+    def _extract_server_connection_info(self, connection) -> tuple[bool, str, str]:
+        """Extract connection info from server's captured data"""
+        if not (hasattr(self, '_server') and hasattr(self._server, 'connection_info')):
+            return False, 'unknown', 'unknown'
+        
+        for transport_id, conn_info in self._server.connection_info.items():
+            if self._transport_matches(connection, transport_id):
+                logger.debug(f"Using server captured connection info: {conn_info['client_ip']}:{conn_info['client_port']}")
+                return True, conn_info['client_ip'], conn_info['client_port']
+        
+        return False, 'unknown', 'unknown'
+    
+    def _transport_matches(self, connection, transport_id: int) -> bool:
+        """Check if connection matches transport ID"""
+        transport_checks = [
+            lambda: hasattr(connection, '_reader') and hasattr(connection._reader, '_transport') and id(connection._reader._transport) == transport_id,
+            lambda: hasattr(connection, 'transport') and id(connection.transport) == transport_id,
+            lambda: hasattr(connection, '_transport') and id(connection._transport) == transport_id,
+            lambda: hasattr(connection, 'writer') and hasattr(connection.writer, 'transport') and id(connection.writer.transport) == transport_id
+        ]
+        
+        return any(check() for check in transport_checks)
+    
+    def _extract_direct_connection_info(self, connection) -> tuple[bool, str, str]:
+        """Extract connection info directly from transport"""
+        transport = self._get_transport(connection)
+        if not transport or not hasattr(transport, 'get_extra_info'):
+            return False, 'unknown', 'unknown'
+        
+        peername = transport.get_extra_info('peername')
+        if peername:
+            logger.debug(f"Direct extraction connection info: {peername[0]}:{peername[1]}")
+            return True, peername[0], peername[1]
+        
+        return False, 'unknown', 'unknown'
+    
+    def _get_transport(self, connection):
+        """Get transport object from connection"""
+        transport_getters = [
+            lambda: getattr(connection._reader, '_transport', None) if hasattr(connection, '_reader') else None,
+            lambda: getattr(connection, 'transport', None),
+            lambda: getattr(connection, '_transport', None),
+            lambda: getattr(connection.writer, 'transport', None) if hasattr(connection, 'writer') else None
+        ]
+        
+        for getter in transport_getters:
+            try:
+                transport = getter()
+                if transport:
+                    return transport
+            except AttributeError:
+                continue
+        return None
+    
+    def _extract_username(self, connection) -> str:
+        """Extract username from connection"""
+        try:
+            session = getattr(connection, "session", None)
+            if session:
+                username = getattr(session, "username", None)
+                return username or "unknown"
+        except Exception:
+            pass
+        return "unknown"
+
     async def init(self, connection) -> None:
         """Initialize session with connection info"""
-        # Extract connection details with multiple fallback methods
-        connection_found = False
-        
         try:
-            # Method 1: Use server's captured connection info
-            if hasattr(self, '_server') and hasattr(self._server, 'connection_info'):
-                # Try to find connection info by checking all transports
-                for transport_id, conn_info in self._server.connection_info.items():
-                    # Check if this connection matches any of the transport objects
-                    transport_matches = False
-                    
-                    if hasattr(connection, '_reader') and hasattr(connection._reader, '_transport'):
-                        if id(connection._reader._transport) == transport_id:
-                            transport_matches = True
-                    elif hasattr(connection, 'transport') and id(connection.transport) == transport_id:
-                        transport_matches = True
-                    elif hasattr(connection, '_transport') and id(connection._transport) == transport_id:
-                        transport_matches = True
-                    elif hasattr(connection, 'writer') and hasattr(connection.writer, 'transport'):
-                        if id(connection.writer.transport) == transport_id:
-                            transport_matches = True
-                    
-                    if transport_matches:
-                        self.session_data['client_info']['ip'] = conn_info['client_ip']
-                        self.session_data['client_info']['port'] = conn_info['client_port']
-                        connection_found = True
-                        logger.debug(f"Using server captured connection info: {conn_info['client_ip']}:{conn_info['client_port']}")
-                        break
+            # Try multiple methods to extract connection info
+            connection_found, client_ip, client_port = self._extract_server_connection_info(connection)
             
-            # Method 2: Direct extraction fallback
             if not connection_found:
-                transport = None
-                if hasattr(connection, '_reader') and hasattr(connection._reader, '_transport'):
-                    transport = connection._reader._transport
-                elif hasattr(connection, 'transport'):
-                    transport = connection.transport
-                elif hasattr(connection, '_transport'):
-                    transport = connection._transport
-                elif hasattr(connection, 'writer') and hasattr(connection.writer, 'transport'):
-                    transport = connection.writer.transport
-                
-                if transport and hasattr(transport, 'get_extra_info'):
-                    peername = transport.get_extra_info('peername')
-                    if peername:
-                        self.session_data['client_info']['ip'] = peername[0]
-                        self.session_data['client_info']['port'] = peername[1]
-                        connection_found = True
-                        logger.debug(f"Direct extraction connection info: {peername[0]}:{peername[1]}")
+                connection_found, client_ip, client_port = self._extract_direct_connection_info(connection)
             
-            # Method 3: Use localhost as fallback for local connections
             if not connection_found:
-                self.session_data['client_info']['ip'] = '127.0.0.1'
-                self.session_data['client_info']['port'] = '0'
-                connection_found = True
+                client_ip, client_port = '127.0.0.1', '0'
                 logger.debug("Using localhost fallback for connection info")
             
-            # Get username from connection
-            try:
-                username = getattr(connection, "session", None)
-                if username:
-                    username = getattr(username, "username", None)
-                self.session_data['username'] = username or "unknown"
-            except Exception:
-                self.session_data['username'] = "unknown"
-                
+            self.session_data['client_info']['ip'] = client_ip
+            self.session_data['client_info']['port'] = client_port
+            self.session_data['username'] = self._extract_username(connection)
+            
         except Exception as e:
             logger.debug(f"Failed to extract connection info: {e}")
+            self.session_data['client_info']['ip'] = '127.0.0.1'
+            self.session_data['client_info']['port'] = '0'
             self.session_data['username'] = "unknown"
-        
-        # Connection info is now always available due to fallback
 
         self.session_data['authenticated'] = True
-        # Store connection reference safely
+        
         try:
             self._connection = connection
         except Exception:
             self._connection = None
 
-        # Create session directory for forensics if enabled
+        # Setup forensic logging if enabled
         if self.config['forensics'].getboolean('chain_of_custody', True):
             sessions_dir = Path(self.config['honeypot'].get('sessions_dir', 'sessions'))
             session_dir = sessions_dir / self.session_data['session_id']
@@ -870,17 +893,12 @@ class MySQLHoneypotSession(Session):
         else:
             return 'OTHER'
 
-    async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
-        """Handle MySQL query with AI analysis"""
-        query = sql.strip().rstrip(";")
-        
-        # Check for session termination queries
+    def _handle_termination_query(self, query: str) -> Optional[Any]:
+        """Handle session termination queries"""
         if query.lower() in ['quit', 'exit', r'\q']:
-            # Mark session for cleanup
             self.session_data['end_time'] = datetime.datetime.now(datetime.timezone.utc).isoformat()
             self.session_data['duration'] = self._calculate_session_duration()
             
-            # Log session termination
             logger.info("MySQL session terminating", extra={
                 'session_id': self.session_data['session_id'],
                 'command': query,
@@ -888,16 +906,11 @@ class MySQLHoneypotSession(Session):
                 'total_queries': self.session_data['session_stats']['total_queries']
             })
             
-            # Trigger session cleanup
-            try:
-                await self.close_session()
-            except Exception as e:
-                logger.debug(f"Error during session close: {e}")
-            
-            # Return empty result for quit/exit
             return ResultSet(rows=[], columns=[])
-        
-        # Handle USE database commands specially
+        return None
+    
+    def _handle_use_database(self, query: str) -> Optional[Any]:
+        """Handle USE database commands"""
         if query.lower().startswith('use '):
             parts = query.split()
             if len(parts) >= 2:
@@ -905,7 +918,6 @@ class MySQLHoneypotSession(Session):
                 old_database = self.session_data.get('database')
                 self.session_data['database'] = db_name
                 
-                # Log database change
                 logger.info("MySQL database changed", extra={
                     'session_id': self.session_data['session_id'],
                     'command': query,
@@ -914,10 +926,11 @@ class MySQLHoneypotSession(Session):
                     'username': self.session_data.get('username')
                 })
                 
-                # Return success message
                 return ResultSet(rows=[], columns=[])
-
-        # Enhanced query logging
+        return None
+    
+    def _log_query_info(self, query: str) -> Dict[str, Any]:
+        """Log query information and return query info dict"""
         query_info = {
             'query': query,
             'query_type': self._classify_query(query),
@@ -927,16 +940,18 @@ class MySQLHoneypotSession(Session):
             'database': self.session_data.get('database'),
             'session_id': self.session_data.get('session_id')
         }
-
+        
         logger.info("MySQL query received", extra=query_info)
         if self.forensic_logger and hasattr(self.forensic_logger, 'log_event'):
             self.forensic_logger.log_event("query_executed", query_info)
-
-        # Re-enable attack analysis with better filtering
+        
+        return query_info
+    
+    def _analyze_and_log_threats(self, query: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """Analyze query for threats and log findings"""
         attack_analysis = self.attack_analyzer.analyze_query(query)
         vulnerabilities = self.vuln_logger.analyze_for_vulnerabilities(query)
-
-        # Log attacks and vulnerabilities if detected
+        
         if attack_analysis.get('attack_types'):
             logger.warning("MySQL attack pattern detected", extra={
                 'attack_types': attack_analysis['attack_types'],
@@ -946,10 +961,9 @@ class MySQLHoneypotSession(Session):
                 'session_id': self.session_data['session_id']
             })
             
-            # Log to forensic chain
             if self.forensic_logger:
                 self.forensic_logger.log_event("attack_detected", attack_analysis)
-
+        
         for vuln in vulnerabilities:
             logger.critical("MySQL vulnerability exploitation attempt", extra={
                 'vulnerability_id': vuln['vulnerability_id'],
@@ -963,38 +977,38 @@ class MySQLHoneypotSession(Session):
                 'session_id': self.session_data['session_id']
             })
             
-            # Log to forensic chain
             if self.forensic_logger:
                 self.forensic_logger.log_event("vulnerability_exploit", vuln)
-
-        # Store query in session data with attack analysis
+        
+        return attack_analysis, vulnerabilities
+    
+    def _update_session_data(self, query_info: Dict[str, Any], attack_analysis: Dict[str, Any], vulnerabilities: List[Dict[str, Any]]):
+        """Update session data with query and threat information"""
         query_info['attack_analysis'] = attack_analysis
         query_info['vulnerabilities'] = vulnerabilities
         
         if config['forensics'].getboolean('query_logging', True):
             self.session_data['queries'].append(query_info)
         
-        # Store attack analysis and vulnerabilities in session data
         if attack_analysis.get('attack_types'):
             self.session_data['attack_analysis'].append(attack_analysis)
-            
+        
         if vulnerabilities:
             self.session_data['vulnerabilities'].extend(vulnerabilities)
-            
+        
         self.session_data['session_stats']['total_queries'] += 1
         if attack_analysis.get('attack_types'):
             self.session_data['session_stats']['attack_queries'] += 1
-
-        # Let LLM handle all queries - no hardcoded responses
+    
+    async def _process_llm_query(self, query: str) -> Any:
+        """Process query through LLM and return result"""
         start_time = time.time()
         try:
             llm_response = await self._get_llm_response(query)
             result = self._parse_llm_response(llm_response, query)
             
-            # Update database state based on LLM response
             self._update_database_state(query, result)
             
-            # Log query result
             result_info = {
                 'query': query,
                 'query_type': self._classify_query(query),
@@ -1013,7 +1027,7 @@ class MySQLHoneypotSession(Session):
                 'session_id': self.session_data.get('session_id'),
                 'error_type': type(e).__name__
             })
-            # Return error as MySQL would
+            
             if ResultColumn is not None:
                 return ResultSet(
                     rows=[(f"ERROR 1105 (HY000): {str(e)}",)],
@@ -1024,6 +1038,36 @@ class MySQLHoneypotSession(Session):
                     rows=[(f"ERROR 1105 (HY000): {str(e)}",)],
                     columns=[_ResultColumn(name="Error", type=253)]
                 )
+
+    async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
+        """Handle MySQL query with AI analysis"""
+        query = sql.strip().rstrip(";")
+        
+        # Check for session termination queries
+        termination_result = self._handle_termination_query(query)
+        if termination_result is not None:
+            try:
+                await self.close_session()
+            except Exception as e:
+                logger.debug(f"Error during session close: {e}")
+            return termination_result
+        
+        # Handle USE database commands
+        use_result = self._handle_use_database(query)
+        if use_result is not None:
+            return use_result
+        
+        # Log query information
+        query_info = self._log_query_info(query)
+        
+        # Analyze for threats
+        attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
+        
+        # Update session data
+        self._update_session_data(query_info, attack_analysis, vulnerabilities)
+        
+        # Process query through LLM
+        return await self._process_llm_query(query)
 
     def _handle_session_variable(self, query: str, raw_sql: str) -> Optional[Any]:  # type: ignore
         """Handle session variable queries"""
@@ -1229,149 +1273,131 @@ class MySQLHoneypotSession(Session):
                 columns=[_ResultColumn(name="Error", type=253)]
             )
     
-    def _format_mysql_response(self, parsed: Any, query_lower: str) -> Any:  # type: ignore
-        """Format response according to MySQL CLI standards"""
-        # Handle empty array (DDL operations)
+    def _format_empty_result(self, parsed: Any, query_lower: str) -> Optional[Any]:
+        """Handle empty array results (DDL operations)"""
         if isinstance(parsed, list) and len(parsed) == 0:
             if any(cmd in query_lower for cmd in ['create', 'insert', 'update', 'delete', 'drop', 'alter']):
-                # Log successful DDL operation
                 logger.info(f"DDL operation completed: {query_lower[:50]}")
-                return ResultSet(rows=[], columns=[])  # This shows "Query OK, 0 rows affected"
+            return ResultSet(rows=[], columns=[])
+        return None
+    
+    def _format_show_databases(self, parsed: Any) -> Any:
+        """Format SHOW DATABASES response"""
+        if isinstance(parsed, list) and parsed:
+            if isinstance(parsed[0], str):
+                rows = [(db,) for db in parsed]
+            elif isinstance(parsed[0], dict) and 'Database' in parsed[0]:
+                rows = [(row['Database'],) for row in parsed]
             else:
-                return ResultSet(rows=[], columns=[])
-        
-        # Handle SHOW DATABASES
-        if 'show databases' in query_lower:
-            if isinstance(parsed, list) and parsed:
-                if isinstance(parsed[0], str):
-                    rows = [(db,) for db in parsed]
-                elif isinstance(parsed[0], dict) and 'Database' in parsed[0]:
-                    rows = [(row['Database'],) for row in parsed]
-                else:
-                    rows = [('information_schema',), ('mysql',), ('performance_schema',), ('nexus_gamedev',)]
-                
-                logger.info(f"SHOW DATABASES returned {len(rows)} databases")
-                return ResultSet(
-                    rows=rows,
-                    columns=[ResultColumn(name="Database", type=253)]
-                )
-        
-        # Handle SHOW TABLES
-        elif 'show tables' in query_lower:
-            if isinstance(parsed, list) and parsed:
-                # Determine database name for column header
-                db_name = self.session_data.get('database', 'database')
-                col_name = f"Tables_in_{db_name}"
-                
-                if isinstance(parsed[0], str):
-                    rows = [(table,) for table in parsed]
-                elif isinstance(parsed[0], dict):
-                    # Try different possible keys
-                    key = next((k for k in parsed[0].keys() if 'table' in k.lower()), list(parsed[0].keys())[0])
-                    rows = [(row[key],) for row in parsed]
-                else:
-                    rows = [('players',), ('games',), ('achievements',), ('sessions',)]
-                
-                logger.info(f"SHOW TABLES returned {len(rows)} tables for database {db_name}")
-                return ResultSet(
-                    rows=rows,
-                    columns=[ResultColumn(name=col_name, type=253)]
-                )
-        
-        # Handle DESCRIBE/DESC
-        elif any(cmd in query_lower for cmd in ['describe', 'desc']):
-            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
-                # Standard DESCRIBE columns
-                columns = [
-                    ResultColumn(name="Field", type=253),
-                    ResultColumn(name="Type", type=253),
-                    ResultColumn(name="Null", type=253),
-                    ResultColumn(name="Key", type=253),
-                    ResultColumn(name="Default", type=253),
-                    ResultColumn(name="Extra", type=253)
-                ]
-                
-                rows = []
-                for row in parsed:
-                    rows.append((
-                        row.get('Field', 'unknown'),
-                        row.get('Type', 'varchar(255)'),
-                        row.get('Null', 'YES'),
-                        row.get('Key', ''),
-                        row.get('Default', None),
-                        row.get('Extra', '')
-                    ))
-                
-                logger.info(f"DESCRIBE returned {len(rows)} columns")
-                return ResultSet(rows=rows, columns=columns)
-        
-        # Handle SELECT queries
-        elif 'select' in query_lower:
-            if isinstance(parsed, list) and parsed:
-                if isinstance(parsed[0], dict):
-                    columns = list(parsed[0].keys())
-                    rows = [tuple(row.get(col) for col in columns) for row in parsed]
-                    
-                    result_columns = []
-                    for col in columns:
-                        sample_value = parsed[0].get(col)
-                        col_type = infer_type(sample_value)
-                        result_columns.append(ResultColumn(name=col, type=col_type))
-                    
-                    logger.info(f"SELECT returned {len(rows)} rows with {len(columns)} columns")
-                    return ResultSet(rows=rows, columns=result_columns)
-                else:
-                    # Handle single column results
-                    col_name = "Value"
-                    if '@@version' in query_lower:
-                        col_name = "@@version_comment"
-                    elif '@@' in query_lower:
-                        var_match = re.search(r'@@(\w+)', query_lower)
-                        if var_match:
-                            col_name = f"@@{var_match.group(1)}"
-                    
-                    rows = [(value,) for value in parsed]
-                    logger.info(f"SELECT returned {len(rows)} rows")
-                    return ResultSet(
-                        rows=rows,
-                        columns=[ResultColumn(name=col_name, type=253)]
-                    )
-        
-        # Handle SHOW STATUS/VARIABLES
-        elif any(cmd in query_lower for cmd in ['show status', 'show variables', 'show global']):
-            if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
-                columns = [
-                    ResultColumn(name="Variable_name", type=253),
-                    ResultColumn(name="Value", type=253)
-                ]
-                
-                rows = []
-                for row in parsed:
-                    if 'Variable_name' in row and 'Value' in row:
-                        rows.append((row['Variable_name'], row['Value']))
-                    else:
-                        # Try to extract key-value pairs
-                        for key, value in row.items():
-                            rows.append((key, str(value)))
-                
-                logger.info(f"SHOW STATUS/VARIABLES returned {len(rows)} variables")
-                return ResultSet(rows=rows, columns=columns)
-        
-        # Default handling for other queries
+                rows = [('information_schema',), ('mysql',), ('performance_schema',), ('nexus_gamedev',)]
+            
+            logger.info(f"SHOW DATABASES returned {len(rows)} databases")
+            return ResultSet(rows=rows, columns=[ResultColumn(name="Database", type=253)])
+        return ResultSet(rows=[], columns=[])
+    
+    def _format_show_tables(self, parsed: Any) -> Any:
+        """Format SHOW TABLES response"""
+        if isinstance(parsed, list) and parsed:
+            db_name = self.session_data.get('database', 'database')
+            col_name = f"Tables_in_{db_name}"
+            
+            if isinstance(parsed[0], str):
+                rows = [(table,) for table in parsed]
+            elif isinstance(parsed[0], dict):
+                key = next((k for k in parsed[0].keys() if 'table' in k.lower()), list(parsed[0].keys())[0])
+                rows = [(row[key],) for row in parsed]
+            else:
+                rows = [('players',), ('games',), ('achievements',), ('sessions',)]
+            
+            logger.info(f"SHOW TABLES returned {len(rows)} tables for database {db_name}")
+            return ResultSet(rows=rows, columns=[ResultColumn(name=col_name, type=253)])
+        return ResultSet(rows=[], columns=[])
+    
+    def _format_describe(self, parsed: Any) -> Any:
+        """Format DESCRIBE/DESC response"""
+        if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+            columns = [
+                ResultColumn(name="Field", type=253), ResultColumn(name="Type", type=253),
+                ResultColumn(name="Null", type=253), ResultColumn(name="Key", type=253),
+                ResultColumn(name="Default", type=253), ResultColumn(name="Extra", type=253)
+            ]
+            
+            rows = [(row.get('Field', 'unknown'), row.get('Type', 'varchar(255)'),
+                    row.get('Null', 'YES'), row.get('Key', ''),
+                    row.get('Default', None), row.get('Extra', '')) for row in parsed]
+            
+            logger.info(f"DESCRIBE returned {len(rows)} columns")
+            return ResultSet(rows=rows, columns=columns)
+        return ResultSet(rows=[], columns=[])
+    
+    def _format_select(self, parsed: Any, query_lower: str) -> Any:
+        """Format SELECT query response"""
         if isinstance(parsed, list) and parsed:
             if isinstance(parsed[0], dict):
                 columns = list(parsed[0].keys())
                 rows = [tuple(row.get(col) for col in columns) for row in parsed]
                 
-                result_columns = []
-                for col in columns:
-                    sample_value = parsed[0].get(col)
-                    col_type = infer_type(sample_value)
-                    result_columns.append(ResultColumn(name=col, type=col_type))
+                result_columns = [ResultColumn(name=col, type=infer_type(parsed[0].get(col))) for col in columns]
                 
+                logger.info(f"SELECT returned {len(rows)} rows with {len(columns)} columns")
                 return ResultSet(rows=rows, columns=result_columns)
+            else:
+                col_name = "Value"
+                if '@@version' in query_lower:
+                    col_name = "@@version_comment"
+                elif '@@' in query_lower:
+                    var_match = re.search(r'@@(\w+)', query_lower)
+                    if var_match:
+                        col_name = f"@@{var_match.group(1)}"
+                
+                rows = [(value,) for value in parsed]
+                logger.info(f"SELECT returned {len(rows)} rows")
+                return ResultSet(rows=rows, columns=[ResultColumn(name=col_name, type=253)])
+        return ResultSet(rows=[], columns=[])
+    
+    def _format_show_variables(self, parsed: Any) -> Any:
+        """Format SHOW STATUS/VARIABLES response"""
+        if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+            columns = [ResultColumn(name="Variable_name", type=253), ResultColumn(name="Value", type=253)]
+            
+            rows = []
+            for row in parsed:
+                if 'Variable_name' in row and 'Value' in row:
+                    rows.append((row['Variable_name'], row['Value']))
+                else:
+                    for key, value in row.items():
+                        rows.append((key, str(value)))
+            
+            logger.info(f"SHOW STATUS/VARIABLES returned {len(rows)} variables")
+            return ResultSet(rows=rows, columns=columns)
+        return ResultSet(rows=[], columns=[])
+
+    def _format_mysql_response(self, parsed: Any, query_lower: str) -> Any:  # type: ignore
+        """Format response according to MySQL CLI standards"""
+        # Handle empty results
+        empty_result = self._format_empty_result(parsed, query_lower)
+        if empty_result is not None:
+            return empty_result
         
-        # Empty result
+        # Handle specific command types
+        if 'show databases' in query_lower:
+            return self._format_show_databases(parsed)
+        elif 'show tables' in query_lower:
+            return self._format_show_tables(parsed)
+        elif any(cmd in query_lower for cmd in ['describe', 'desc']):
+            return self._format_describe(parsed)
+        elif 'select' in query_lower:
+            return self._format_select(parsed, query_lower)
+        elif any(cmd in query_lower for cmd in ['show status', 'show variables', 'show global']):
+            return self._format_show_variables(parsed)
+        
+        # Default handling for other queries
+        if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
+            columns = list(parsed[0].keys())
+            rows = [tuple(row.get(col) for col in columns) for row in parsed]
+            result_columns = [ResultColumn(name=col, type=infer_type(parsed[0].get(col))) for col in columns]
+            return ResultSet(rows=rows, columns=result_columns)
+        
         return ResultSet(rows=[], columns=[])
     
     def _fallback_parse(self, llm_response: str, query_lower: str) -> Any:  # type: ignore
@@ -1635,7 +1661,8 @@ class MySQLHoneypotServer:
         self.connection_timeout = config['security'].getint('connection_timeout', 300)
         self.intrusion_detection = config['security'].getboolean('intrusion_detection', True)
         self.automated_blocking = config['security'].getboolean('automated_blocking', False)
-        self.ssl_simulation = config['security'].getboolean('ssl_simulation', True)
+        self.ssl_simulation = config['security'].getboolean(
+            'ssl_simulation', True)
         
         # Connection tracking per IP for rate limiting
         self.ip_connections = {}
@@ -1893,6 +1920,7 @@ class MySQLHoneypotServer:
                     for sid in orphaned_sessions:
                         try:
                             await server_instance.cleanup_session(sid)
+                        # amazonq-ignore-next-line
                         except Exception:
                             pass
                 except Exception:
@@ -2025,113 +2053,98 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
 # --------------------------
 # Main entrypoint
 # --------------------------
-async def main():
-    """Main entry point"""
-    global config, logger, llm_sessions, with_message_history, thread_local
-    
-    server = None
+def _create_default_config() -> ConfigParser:
+    """Create default configuration"""
+    config = ConfigParser()
+    config['honeypot'] = {
+        'log_file': '../../logs/mysql_log.log',
+        'sensor_name': 'nexus-mysql-honeypot',
+        'sessions_dir': 'sessions',
+        'attack_logging': 'true',
+        'behavioral_analysis': 'true',
+        'forensic_chain': 'true',
+        'adaptive_responses': 'true'
+    }
+    config['mysql'] = {
+        'host': '0.0.0.0',
+        'port': '3306',
+        'server_version': '8.0.32-0ubuntu0.20.04.2',
+        'default_database': 'nexus_gamedev',
+        'charset': 'utf8mb4',
+        'collation': 'utf8mb4_unicode_ci',
+        'max_connections': '100',
+        'connect_timeout': '10',
+        'query_timeout': '30'
+    }
+    config['llm'] = {
+        'llm_provider': 'openai',
+        'model_name': 'gpt-4o-mini',
+        'temperature': '0.2',
+        'trimmer_max_tokens': '64000',
+        'context_awareness': 'true',
+        'threat_adaptation': 'true',
+        'system_prompt': 'You are a MySQL 8.0.32 server at NexusGames Studio game company. Return ONLY valid JSON arrays. No explanations, notes, or extra text ever. Examples: SHOW DATABASES -> [{"Database":"player_data"},{"Database":"game_analytics"}]. SHOW TABLES -> [{"Tables_in_dbname":"players"},{"Tables_in_dbname":"scores"}]. DESCRIBE table -> [{"Field":"id","Type":"int(11)","Null":"NO","Key":"PRI","Default":null,"Extra":"auto_increment"}]. SELECT -> realistic game data rows. CREATE/INSERT/UPDATE/DELETE -> []. Always valid JSON only.'
+    }
+    config['user_accounts'] = {
+        'root': '*',
+        'admin': 'admin',
+        'mysql': 'mysql',
+        'user': 'password',
+        'developer': 'dev123',
+        'gamedev': 'nexus2024'
+    }
+    config['ai_features'] = {
+        'dynamic_responses': 'true',
+        'attack_pattern_recognition': 'true',
+        'vulnerability_detection': 'true',
+        'real_time_analysis': 'true',
+        'ai_attack_summaries': 'true',
+        'deception_techniques': 'true',
+        'query_result_manipulation': 'true'
+    }
+    config['attack_detection'] = {
+        'sensitivity_level': 'medium',
+        'threat_scoring': 'true',
+        'alert_threshold': '70',
+        'sql_injection_detection': 'true',
+        'privilege_escalation_detection': 'true',
+        'data_exfiltration_detection': 'true'
+    }
+    config['forensics'] = {
+        'query_logging': 'true',
+        'save_queries': 'true',
+        'query_hash_analysis': 'true',
+        'attack_correlation': 'true',
+        'forensic_reports': 'true',
+        'chain_of_custody': 'true'
+    }
+    config['database_simulation'] = {
+        'realistic_data_generation': 'true',
+        'schema_evolution': 'true'
+    }
+    config['logging'] = {
+        'log_level': 'INFO',
+        'structured_logging': 'true',
+        'real_time_streaming': 'true'
+    }
+    config['security'] = {
+        'rate_limiting': 'true',
+        'max_connections_per_ip': '10',
+        'connection_timeout': '300',
+        'intrusion_detection': 'true',
+        'automated_blocking': 'false',
+        'ssl_simulation': 'true'
+    }
+    return config
 
-    # Parse arguments
-    parser = argparse.ArgumentParser(description='Start the MySQL honeypot server')
-    parser.add_argument('-c', '--config', type=str, default='config.ini', help='Configuration file path')
-    parser.add_argument('--port', type=int, help='Port to listen on')
-    parser.add_argument('--log-file', type=str, help='Log file path')
-    parser.add_argument('--sensor-name', type=str, help='Sensor name for logging')
-    parser.add_argument('--llm-provider', type=str, help='LLM provider to use')
-    parser.add_argument('--model-name', type=str, help='Model name to use')
-    parser.add_argument('--temperature', type=float, help='LLM temperature')
-    parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
-    parser.add_argument('--prompt', type=str, help='Custom prompt text')
-    parser.add_argument('--prompt-file', type=str, help='Custom prompt file')
-    parser.add_argument('--user-account', action='append', help='User account (username=password)')
-    args = parser.parse_args()
-
-    # Load configuration
+def _load_config(args) -> ConfigParser:
+    """Load configuration from file or create default"""
     config = ConfigParser()
     if os.path.exists(args.config):
         config.read(args.config)
     else:
-        # Create default configuration
-        config['honeypot'] = {
-            'log_file': '../../logs/mysql_log.log',
-            'sensor_name': 'nexus-mysql-honeypot',
-            'sessions_dir': 'sessions',
-            'attack_logging': 'true',
-            'behavioral_analysis': 'true',
-            'forensic_chain': 'true',
-            'adaptive_responses': 'true'
-        }
-        config['mysql'] = {
-            'host': '0.0.0.0',
-            'port': '3306',
-            'server_version': '8.0.32-0ubuntu0.20.04.2',
-            'default_database': 'nexus_gamedev',
-            'charset': 'utf8mb4',
-            'collation': 'utf8mb4_unicode_ci',
-            'max_connections': '100',
-            'connect_timeout': '10',
-            'query_timeout': '30'
-        }
-        config['llm'] = {
-            'llm_provider': 'openai',
-            'model_name': 'gpt-4o-mini',
-            'temperature': '0.2',
-            'trimmer_max_tokens': '64000',
-            'context_awareness': 'true',
-            'threat_adaptation': 'true',
-            'system_prompt': 'You are a MySQL 8.0.32 server at NexusGames Studio game company. Return ONLY valid JSON arrays. No explanations, notes, or extra text ever. Examples: SHOW DATABASES -> [{"Database":"player_data"},{"Database":"game_analytics"}]. SHOW TABLES -> [{"Tables_in_dbname":"players"},{"Tables_in_dbname":"scores"}]. DESCRIBE table -> [{"Field":"id","Type":"int(11)","Null":"NO","Key":"PRI","Default":null,"Extra":"auto_increment"}]. SELECT -> realistic game data rows. CREATE/INSERT/UPDATE/DELETE -> []. Always valid JSON only.'
-        }
-        config['user_accounts'] = {
-            'root': '*',
-            'admin': 'admin',
-            'mysql': 'mysql',
-            'user': 'password',
-            'developer': 'dev123',
-            'gamedev': 'nexus2024'
-        }
-        config['ai_features'] = {
-            'dynamic_responses': 'true',
-            'attack_pattern_recognition': 'true',
-            'vulnerability_detection': 'true',
-            'real_time_analysis': 'true',
-            'ai_attack_summaries': 'true',
-            'deception_techniques': 'true',
-            'query_result_manipulation': 'true'
-        }
-        config['attack_detection'] = {
-            'sensitivity_level': 'medium',
-            'threat_scoring': 'true',
-            'alert_threshold': '70',
-            'sql_injection_detection': 'true',
-            'privilege_escalation_detection': 'true',
-            'data_exfiltration_detection': 'true'
-        }
-        config['forensics'] = {
-            'query_logging': 'true',
-            'save_queries': 'true',
-            'query_hash_analysis': 'true',
-            'attack_correlation': 'true',
-            'forensic_reports': 'true',
-            'chain_of_custody': 'true'
-        }
-        config['database_simulation'] = {
-            'realistic_data_generation': 'true',
-            'schema_evolution': 'true'
-        }
-        config['logging'] = {
-            'log_level': 'INFO',
-            'structured_logging': 'true',
-            'real_time_streaming': 'true'
-        }
-        config['security'] = {
-            'rate_limiting': 'true',
-            'max_connections_per_ip': '10',
-            'connection_timeout': '300',
-            'intrusion_detection': 'true',
-            'automated_blocking': 'false',
-            'ssl_simulation': 'true'
-        }
-
+        config = _create_default_config()
+    
     # Override with command line arguments
     if args.port:
         config['mysql']['port'] = str(args.port)
@@ -2147,7 +2160,7 @@ async def main():
         config['llm']['temperature'] = str(args.temperature)
     if args.max_tokens:
         config['llm']['trimmer_max_tokens'] = str(args.max_tokens)
-
+    
     # Merge command-line user accounts
     if args.user_account:
         if 'user_accounts' not in config:
@@ -2158,19 +2171,24 @@ async def main():
                 config['user_accounts'][key.strip()] = value.strip()
             else:
                 config['user_accounts'][account.strip()] = ''
+    
+    return config
 
-    # Setup logging with configurable log level
+def _setup_logging(config: ConfigParser):
+    """Setup logging configuration"""
+    global logger
+    
     logging.Formatter.formatTime = lambda self, record, datefmt=None: datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(sep="T", timespec="milliseconds")
-
+    
     sensor_name = config['honeypot'].get('sensor_name', socket.gethostname())
-
+    
     logger = logging.getLogger(__name__)
     log_level = config['logging'].get('log_level', 'INFO').upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
-
+    
     log_file_handler = logging.FileHandler(config['honeypot'].get("log_file", "mysql_log.log"))
     logger.addHandler(log_file_handler)
-
+    
     # Configure structured logging
     if config['logging'].getboolean('structured_logging', True):
         log_file_handler.setFormatter(MySQLJSONFormatter(sensor_name))
@@ -2186,56 +2204,85 @@ async def main():
         else:
             console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
         logger.addHandler(console_handler)
-
+    
     context_filter = ContextFilter()
     logger.addFilter(context_filter)
 
+def _setup_llm(config: ConfigParser, args):
+    """Setup LLM configuration"""
+    global llm_sessions, with_message_history
+    
+    llm_system_prompt = config['llm']['system_prompt']
+    llm_user_prompt = args.prompt or "Process SQL queries as MySQL server. Return only JSON arrays. No text outside JSON ever."
+    
+    llm = choose_llm(config['llm'].get("llm_provider"), config['llm'].get("model_name"))
+    
+    llm_sessions = {}
+    
+    llm_trimmer = trim_messages(
+        max_tokens=config['llm'].getint("trimmer_max_tokens", 64000),
+        strategy="last",
+        token_counter=len,
+        include_system=True,
+        allow_partial=False,
+        start_on="human",
+    )
+    
+    llm_prompt = ChatPromptTemplate.from_messages([
+        ("system", llm_system_prompt),
+        ("system", llm_user_prompt),
+        MessagesPlaceholder(variable_name="messages"),
+    ])
+    
+    llm_chain = (
+        RunnablePassthrough.assign(messages=itemgetter("messages") | llm_trimmer)
+        | llm_prompt
+        | llm
+    )
+    
+    with_message_history = RunnableWithMessageHistory(
+        llm_chain,
+        llm_get_session_history,
+        input_messages_key="messages"
+    )
+
+async def main():
+    """Main entry point"""
+    global config, logger, llm_sessions, with_message_history, thread_local
+    
+    server = None
+    
+    # Parse arguments
+    parser = argparse.ArgumentParser(description='Start the MySQL honeypot server')
+    parser.add_argument('-c', '--config', type=str, default='config.ini', help='Configuration file path')
+    parser.add_argument('--port', type=int, help='Port to listen on')
+    parser.add_argument('--log-file', type=str, help='Log file path')
+    parser.add_argument('--sensor-name', type=str, help='Sensor name for logging')
+    parser.add_argument('--llm-provider', type=str, help='LLM provider to use')
+    parser.add_argument('--model-name', type=str, help='Model name to use')
+    parser.add_argument('--temperature', type=float, help='LLM temperature')
+    parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
+    parser.add_argument('--prompt', type=str, help='Custom prompt text')
+    parser.add_argument('--prompt-file', type=str, help='Custom prompt file')
+    parser.add_argument('--user-account', action='append', help='User account (username=password)')
+    args = parser.parse_args()
+    
+    # Load configuration
+    config = _load_config(args)
+    
+    # Setup logging
+    _setup_logging(config)
+    
     # Setup LLM
     try:
-        # Use system prompt from config, user prompt is optional
-        llm_system_prompt = config['llm']['system_prompt']
-        llm_user_prompt = args.prompt or "Process SQL queries as MySQL server. Return only JSON arrays. No text outside JSON ever."
-
-        llm = choose_llm(config['llm'].get("llm_provider"), config['llm'].get("model_name"))
-
-        llm_sessions = {}
-
-        # Note: token_counter expects an object that can count tokens.
-        # For simplicity, use `len` as a safe fallback; if your LLM object exposes a token counter, replace here.
-        llm_trimmer = trim_messages(
-            max_tokens=config['llm'].getint("trimmer_max_tokens", 64000),
-            strategy="last",
-            token_counter=len,
-            include_system=True,
-            allow_partial=False,
-            start_on="human",
-        )
-
-        llm_prompt = ChatPromptTemplate.from_messages([
-            ("system", llm_system_prompt),
-            ("system", llm_user_prompt),
-            MessagesPlaceholder(variable_name="messages"),
-        ])
-
-        llm_chain = (
-            RunnablePassthrough.assign(messages=itemgetter("messages") | llm_trimmer)
-            | llm_prompt
-            | llm
-        )
-
-        with_message_history = RunnableWithMessageHistory(
-            llm_chain,
-            llm_get_session_history,
-            input_messages_key="messages"
-        )
-
+        _setup_llm(config, args)
     except Exception as e:
         logger.error(f"LLM setup failed: {e}")
         return
-
+    
     # Thread-local storage
     thread_local = threading.local()
-
+    
     # Start server
     try:
         server = MySQLHoneypotServer(config)

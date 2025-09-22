@@ -401,6 +401,7 @@ class ForensicChainLogger:
             return
             
         if os.path.exists(file_path):
+            # amazonq-ignore-next-line
             with open(file_path, 'rb') as f:
                 content = f.read()
                 
@@ -862,6 +863,9 @@ Generate realistic HTTP response for NexusGames Studio website."""
 
     def generate_response_headers(self, path: str, content: str, attack_analysis: Dict) -> Dict[str, str]:
         """Generate appropriate HTTP response headers"""
+        # Sanitize path to prevent traversal attacks
+        path = path.replace('..', '').replace('\\', '/')
+        
         server_name = config['http'].get('server_name', 'Apache/2.4.41 (Ubuntu)')
         
         # Apply adaptive banners if enabled

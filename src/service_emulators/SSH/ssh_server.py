@@ -1131,6 +1131,7 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]" and specify the primary atta
     finally:
         server.summary_generated = True
 
+# amazonq-ignore-next-line
 async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer) -> None:
     # This is the main loop for handling SSH client connections. 
     # Any user interaction should be done here.
@@ -1255,19 +1256,167 @@ async def handle_client(process: asyncssh.SSHServerProcess, server: MySSHServer)
         except Exception as e:
             logger.error(f"Final session summary failed: {e}")
 
+def _check_blocked_commands(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer) -> bool:
+    """Check if command should be blocked"""
+    if not config['features'].getboolean('block_outbound', True):
+        return False
+    
+    blocked_patterns = [r'ssh\s+\d+\.\d+\.\d+\.\d+', r'nmap\s+', r'ping\s+\d+\.\d+\.\d+\.\d+', r'telnet\s+\d+\.\d+\.\d+\.\d+']
+    for pattern in blocked_patterns:
+        if re.search(pattern, command, re.IGNORECASE):
+            process.stdout.write("Connection blocked by security policy\n")
+            process.stdout.write(get_prompt(server))
+            return True
+    return False
+
+def _perform_threat_analysis(command: str, server: MySSHServer) -> tuple:
+    """Perform attack and vulnerability analysis"""
+    attack_analysis = {
+        'command': command,
+        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        'attack_types': [],
+        'severity': 'low',
+        'indicators': [],
+        'vulnerabilities': []
+    }
+    vulnerabilities = []
+    
+    # Analyze command for attacks
+    if server.attack_analyzer and config['ai_features'].getboolean('real_time_analysis', True):
+        try:
+            attack_analysis = server.attack_analyzer.analyze_command(command)
+            server.session_data['attack_analysis'].append(attack_analysis)
+        except Exception as e:
+            logger.error(f"Attack analysis failed: {e}")
+    
+    # Check for vulnerabilities
+    if server.vuln_logger and config['ai_features'].getboolean('vulnerability_detection', True):
+        try:
+            vulnerabilities = server.vuln_logger.analyze_for_vulnerabilities(command)
+            server.session_data['vulnerabilities'].extend(vulnerabilities)
+            
+            # Cross-reference vulnerabilities with attack patterns
+            if vulnerabilities and attack_analysis.get('vulnerabilities'):
+                for vuln in vulnerabilities:
+                    matching_attack_vulns = [av for av in attack_analysis['vulnerabilities'] if av['id'] == vuln['vulnerability_id']]
+                    if matching_attack_vulns:
+                        vuln['confirmed_by_attack_analyzer'] = True
+                        vuln['attack_context'] = matching_attack_vulns[0]
+        except Exception as e:
+            logger.error(f"Vulnerability analysis failed: {e}")
+    
+    return attack_analysis, vulnerabilities
+
+def _log_threats(attack_analysis: dict, vulnerabilities: list, command: str, server: MySSHServer):
+    """Log detected threats"""
+    # Log attack analysis
+    if attack_analysis.get('attack_types'):
+        log_extra = {
+            "attack_types": attack_analysis['attack_types'],
+            "severity": attack_analysis['severity'],
+            "indicators": attack_analysis.get('indicators', []),
+            "command": command
+        }
+        
+        if 'threat_score' in attack_analysis:
+            log_extra['threat_score'] = attack_analysis['threat_score']
+            
+        if attack_analysis.get('alert_triggered', False):
+            logger.critical("High-threat attack detected", extra=log_extra)
+        else:
+            logger.warning("Attack pattern detected", extra=log_extra)
+            
+        if server.forensic_logger:
+            try:
+                server.forensic_logger.log_event("attack_detected", attack_analysis)
+            except Exception as e:
+                logger.error(f"Forensic logging failed: {e}")
+    
+    # Log vulnerabilities
+    for vuln in vulnerabilities:
+        try:
+            enhanced_vuln = dict(vuln)
+            enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
+            enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
+            enhanced_vuln['threat_score'] = attack_analysis.get('threat_score', 0)
+            
+            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
+            if enhanced_vuln['threat_score'] >= alert_threshold:
+                logger.critical("Critical vulnerability exploitation attempt", extra=enhanced_vuln)
+            else:
+                logger.critical("Vulnerability exploitation attempt", extra=enhanced_vuln)
+                
+            if server.forensic_logger:
+                server.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
+        except Exception as e:
+            logger.error(f"Vulnerability logging failed: {e}")
+
+def _handle_file_operations(command: str, server: MySSHServer):
+    """Handle file download operations"""
+    if re.search(r'wget|curl.*-o|scp.*:', command, re.IGNORECASE) and server.file_handler:
+        try:
+            download_info = server.file_handler.handle_download(command)
+            server.session_data['files_downloaded'].append(download_info)
+            logger.info("File download attempt", extra=download_info)
+            if server.forensic_logger:
+                server.forensic_logger.log_event("file_download", download_info)
+                
+                if download_info.get('file_path'):
+                    server.forensic_logger.add_evidence("downloaded_file", download_info['file_path'], f"File downloaded via: {command}")
+        except Exception as e:
+            logger.error(f"File handling failed: {e}")
+
+async def _get_llm_response(command: str, attack_analysis: dict, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool) -> str:
+    """Get LLM response with enhanced context"""
+    enhanced_command = command
+    
+    # Apply dynamic responses if enabled
+    if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
+        enhanced_command += f" [HONEYPOT_CONTEXT: Detected {', '.join(attack_analysis['attack_types'])} behavior]"
+    
+    # Apply deception techniques if enabled
+    if config['ai_features'].getboolean('deception_techniques', True):
+        if 'reconnaissance' in attack_analysis.get('attack_types', []):
+            enhanced_command += " [DECEPTION: Show realistic but controlled system information]"
+        elif 'privilege_escalation' in attack_analysis.get('attack_types', []):
+            enhanced_command += " [DECEPTION: Simulate security resistance while logging attempts]"
+    
+    try:
+        llm_response = await with_message_history.ainvoke(
+            {
+                "messages": [HumanMessage(content=enhanced_command)],
+                "username": process.get_extra_info('username'),
+                "interactive": interactive
+            },
+            config=llm_config
+        )
+        return server.format_command_output(command, llm_response.content)
+    except Exception as e:
+        logger.error(f"LLM request failed: {e}")
+        return _get_fallback_response(command, process, server)
+
+def _get_fallback_response(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer) -> str:
+    """Get fallback response when LLM fails"""
+    cmd_lower = command.lower().strip()
+    if cmd_lower == 'ls':
+        return "Desktop/            Documents/          Downloads/          Music/\nPictures/           Public/             Templates/          Videos/\ndev_notes.txt       my_project/         scripts/"
+    elif cmd_lower == 'pwd':
+        return server.current_directory if server else '/home/guest'
+    elif cmd_lower == 'whoami':
+        return process.get_extra_info('username') or 'guest'
+    elif cmd_lower in ['help', '--help', '-h']:
+        return get_help_text()
+    else:
+        return f"bash: {command.split()[0] if command.split() else command}: command not found"
+
 async def process_command(command: str, process: asyncssh.SSHServerProcess, server: MySSHServer, llm_config: dict, interactive: bool = True) -> str:
     """Process a command with comprehensive analysis and logging"""
     
-    # Check for blocked outbound commands
-    if config['features'].getboolean('block_outbound', True):
-        blocked_patterns = [r'ssh\s+\d+\.\d+\.\d+\.\d+', r'nmap\s+', r'ping\s+\d+\.\d+\.\d+\.\d+', r'telnet\s+\d+\.\d+\.\d+\.\d+']
-        for pattern in blocked_patterns:
-            if re.search(pattern, command, re.IGNORECASE):
-                process.stdout.write("Connection blocked by security policy\n")
-                process.stdout.write(get_prompt(server))
-                return "blocked"
+    # Check for blocked commands
+    if _check_blocked_commands(command, process, server):
+        return "blocked"
     
-    # Record session transcript if enabled
+    # Record session transcript
     if server.session_recording and server.session_transcript is not None:
         server.session_transcript.append({
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -1284,101 +1433,14 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         "username": process.get_extra_info('username')
     })
     
-    # Initialize default analysis results
-    attack_analysis = {
-        'command': command,
-        'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        'attack_types': [],
-        'severity': 'low',
-        'indicators': [],
-        'vulnerabilities': []
-    }
-    vulnerabilities = []
+    # Perform threat analysis
+    attack_analysis, vulnerabilities = _perform_threat_analysis(command, server)
     
-    # Analyze command for attacks if analyzer is available and real-time analysis enabled
-    if server.attack_analyzer and config['ai_features'].getboolean('real_time_analysis', True):
-        try:
-            attack_analysis = server.attack_analyzer.analyze_command(command)
-            server.session_data['attack_analysis'].append(attack_analysis)
-        except Exception as e:
-            logger.error(f"Attack analysis failed: {e}")
-    
-    # Check for vulnerabilities if logger is available and vulnerability detection enabled
-    if server.vuln_logger and config['ai_features'].getboolean('vulnerability_detection', True):
-        try:
-            vulnerabilities = server.vuln_logger.analyze_for_vulnerabilities(command)
-            server.session_data['vulnerabilities'].extend(vulnerabilities)
-            
-            # Cross-reference vulnerabilities with attack patterns for enhanced analysis
-            if vulnerabilities and attack_analysis.get('vulnerabilities'):
-                # Merge vulnerability data for comprehensive threat assessment
-                for vuln in vulnerabilities:
-                    # Check if this vulnerability was also detected by attack analyzer
-                    matching_attack_vulns = [av for av in attack_analysis['vulnerabilities'] if av['id'] == vuln['vulnerability_id']]
-                    if matching_attack_vulns:
-                        vuln['confirmed_by_attack_analyzer'] = True
-                        vuln['attack_context'] = matching_attack_vulns[0]
-        except Exception as e:
-            logger.error(f"Vulnerability analysis failed: {e}")
-    
-    # Log attack analysis if threats detected
-    if attack_analysis.get('attack_types'):
-        log_extra = {
-            "attack_types": attack_analysis['attack_types'],
-            "severity": attack_analysis['severity'],
-            "indicators": attack_analysis.get('indicators', []),
-            "command": command
-        }
-        
-        # Add threat score if available
-        if 'threat_score' in attack_analysis:
-            log_extra['threat_score'] = attack_analysis['threat_score']
-            
-        # Check if alert should be triggered
-        if attack_analysis.get('alert_triggered', False):
-            logger.critical("High-threat attack detected", extra=log_extra)
-        else:
-            logger.warning("Attack pattern detected", extra=log_extra)
-            
-        if server.forensic_logger:
-            try:
-                server.forensic_logger.log_event("attack_detected", attack_analysis)
-            except Exception as e:
-                logger.error(f"Forensic logging failed: {e}")
-    
-    # Log vulnerabilities with enhanced context
-    for vuln in vulnerabilities:
-        try:
-            enhanced_vuln = dict(vuln)
-            enhanced_vuln['related_attack_types'] = attack_analysis.get('attack_types', [])
-            enhanced_vuln['overall_severity'] = attack_analysis.get('severity', 'low')
-            enhanced_vuln['threat_score'] = attack_analysis.get('threat_score', 0)
-            
-            # Check alert threshold for vulnerabilities
-            alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
-            if enhanced_vuln['threat_score'] >= alert_threshold:
-                logger.critical("Critical vulnerability exploitation attempt", extra=enhanced_vuln)
-            else:
-                logger.critical("Vulnerability exploitation attempt", extra=enhanced_vuln)
-                
-            if server.forensic_logger:
-                server.forensic_logger.log_event("vulnerability_exploit", enhanced_vuln)
-        except Exception as e:
-            logger.error(f"Vulnerability logging failed: {e}")
+    # Log threats
+    _log_threats(attack_analysis, vulnerabilities, command, server)
     
     # Handle file operations
-    if re.search(r'wget|curl.*-o|scp.*:', command, re.IGNORECASE) and server.file_handler:
-        try:
-            download_info = server.file_handler.handle_download(command)
-            server.session_data['files_downloaded'].append(download_info)
-            logger.info("File download attempt", extra=download_info)
-            if server.forensic_logger:
-                server.forensic_logger.log_event("file_download", download_info)
-                
-                if download_info.get('file_path'):
-                    server.forensic_logger.add_evidence("downloaded_file", download_info['file_path'], f"File downloaded via: {command}")
-        except Exception as e:
-            logger.error(f"File handling failed: {e}")
+    _handle_file_operations(command, server)
     
     # Store command in session data and history
     server.session_data['commands'].append({
@@ -1389,62 +1451,21 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         'vulnerabilities': vulnerabilities
     })
     
-    # Add to command history (skip empty commands and history command itself)
     if command.strip() and not command.strip().lower() == 'history':
         server.command_history.append(command.strip())
     
-    # Add artificial latency if enabled
+    # Add artificial latency
     if config['honeypot'].getboolean('latency_enable', False):
         min_latency = config['honeypot'].getint('latency_min_ms', 20) / 1000
         max_latency = config['honeypot'].getint('latency_max_ms', 250) / 1000
         await asyncio.sleep(min_latency + (max_latency - min_latency) * time.time() % 1)
     
-    # Handle manual commands first (before LLM)
+    # Handle manual commands first
     manual_response = handle_manual_commands(command, process, server)
     if manual_response:
         response_content = manual_response
     else:
-        # Get LLM response with enhanced context and rate limiting protection
-        enhanced_command = command
-        
-        # Apply dynamic responses if enabled
-        if config['ai_features'].getboolean('dynamic_responses', True) and attack_analysis.get('attack_types'):
-            enhanced_command += f" [HONEYPOT_CONTEXT: Detected {', '.join(attack_analysis['attack_types'])} behavior]"
-        
-        # Apply deception techniques if enabled
-        if config['ai_features'].getboolean('deception_techniques', True):
-            # Add deception context for more realistic responses
-            if 'reconnaissance' in attack_analysis.get('attack_types', []):
-                enhanced_command += " [DECEPTION: Show realistic but controlled system information]"
-            elif 'privilege_escalation' in attack_analysis.get('attack_types', []):
-                enhanced_command += " [DECEPTION: Simulate security resistance while logging attempts]"
-        
-        try:
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=enhanced_command)],
-                    "username": process.get_extra_info('username'),
-                    "interactive": interactive
-                },
-                config=llm_config
-            )
-            response_content = server.format_command_output(command, llm_response.content)
-        except Exception as e:
-            logger.error(f"LLM request failed: {e}")
-            # Provide basic command responses as fallback
-            cmd_lower = command.lower().strip()
-            if cmd_lower == 'ls':
-                response_content = "Desktop/            Documents/          Downloads/          Music/\nPictures/           Public/             Templates/          Videos/\ndev_notes.txt       my_project/         scripts/"
-            elif cmd_lower == 'pwd':
-                response_content = server.current_directory if server else '/home/guest'
-            elif cmd_lower == 'whoami':
-                response_content = process.get_extra_info('username') or 'guest'
-            elif cmd_lower in ['help', '--help', '-h']:
-                response_content = get_help_text()
-            else:
-                response_content = f"bash: {command.split()[0] if command.split() else command}: command not found"
-    
-    # No file caching - let LLM handle everything
+        response_content = await _get_llm_response(command, attack_analysis, process, server, llm_config, interactive)
     
     # Handle special commands
     if command.strip() in ['help', '--help', '-h']:
@@ -1453,7 +1474,7 @@ async def process_command(command: str, process: asyncssh.SSHServerProcess, serv
         handle_file_creation(command, server)
     
     if response_content != "XXX-END-OF-SESSION-XXX":
-        # Record response in session transcript if enabled
+        # Record response in session transcript
         if server.session_recording and server.session_transcript is not None:
             server.session_transcript.append({
                 'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),

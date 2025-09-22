@@ -111,17 +111,8 @@ class HTTPHoneypotReportGenerator:
                 'duration_days': (max(session_times) - min(session_times)).days
             }
     
-    def generate_visualizations(self, output_dir: Path):
-        """Generate visualization charts"""
-        viz_dir = output_dir / "visualizations"
-        viz_dir.mkdir(exist_ok=True)
-        
-        stats = self.report_data['statistics']
-        
-        # Set style
-        plt.style.use('seaborn-v0_8')
-        
-        # Attack types distribution
+    def _create_attack_types_chart(self, stats: Dict, viz_dir: Path):
+        """Create attack types distribution chart"""
         if stats['attack_types']:
             plt.figure(figsize=(12, 6))
             attack_data = dict(stats['attack_types'].most_common(10))
@@ -133,8 +124,9 @@ class HTTPHoneypotReportGenerator:
             plt.tight_layout()
             plt.savefig(viz_dir / "attack_types.png", dpi=300, bbox_inches='tight')
             plt.close()
-        
-        # Severity distribution pie chart
+    
+    def _create_severity_chart(self, stats: Dict, viz_dir: Path):
+        """Create severity distribution pie chart"""
         if stats['severity_distribution']:
             plt.figure(figsize=(8, 8))
             severity_data = dict(stats['severity_distribution'])
@@ -144,8 +136,9 @@ class HTTPHoneypotReportGenerator:
             plt.title('Attack Severity Distribution')
             plt.savefig(viz_dir / "severity_distribution.png", dpi=300, bbox_inches='tight')
             plt.close()
-        
-        # HTTP methods distribution
+    
+    def _create_http_methods_chart(self, stats: Dict, viz_dir: Path):
+        """Create HTTP methods distribution chart"""
         if stats['http_methods']:
             plt.figure(figsize=(10, 6))
             method_data = dict(stats['http_methods'])
@@ -156,12 +149,12 @@ class HTTPHoneypotReportGenerator:
             plt.tight_layout()
             plt.savefig(viz_dir / "http_methods.png", dpi=300, bbox_inches='tight')
             plt.close()
-        
-        # Top user agents
+    
+    def _create_user_agents_chart(self, stats: Dict, viz_dir: Path):
+        """Create top user agents chart"""
         if stats['user_agents']:
             plt.figure(figsize=(14, 8))
             ua_data = dict(stats['user_agents'].most_common(10))
-            # Truncate long user agent strings
             ua_labels = [ua[:50] + '...' if len(ua) > 50 else ua for ua in ua_data.keys()]
             plt.barh(ua_labels, list(ua_data.values()))
             plt.title('Top 10 User Agents')
@@ -169,6 +162,19 @@ class HTTPHoneypotReportGenerator:
             plt.tight_layout()
             plt.savefig(viz_dir / "user_agents.png", dpi=300, bbox_inches='tight')
             plt.close()
+
+    def generate_visualizations(self, output_dir: Path):
+        """Generate visualization charts"""
+        viz_dir = output_dir / "visualizations"
+        viz_dir.mkdir(exist_ok=True)
+        
+        stats = self.report_data['statistics']
+        plt.style.use('seaborn-v0_8')
+        
+        self._create_attack_types_chart(stats, viz_dir)
+        self._create_severity_chart(stats, viz_dir)
+        self._create_http_methods_chart(stats, viz_dir)
+        self._create_user_agents_chart(stats, viz_dir)
         
         return viz_dir
     
@@ -217,13 +223,9 @@ class HTTPHoneypotReportGenerator:
             
         return report_file
     
-    def generate_html_report(self, output_dir: Path) -> Path:
-        """Generate HTML format report"""
-        report_file = output_dir / f"http_security_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
-        
-        stats = self.report_data['statistics']
-        
-        html_content = f"""
+    def _generate_html_header(self, stats: Dict) -> str:
+        """Generate HTML header and summary section"""
+        return f"""
 <!DOCTYPE html>
 <html>
 <head>
@@ -276,65 +278,47 @@ class HTTPHoneypotReportGenerator:
                 <div class="metric-label">Files Uploaded</div>
             </div>
         </div>
-        
-        <h2>🎯 Attack Analysis</h2>
-        <h3>Top Attack Types</h3>
-        <table>
-            <tr><th>Attack Type</th><th>Count</th><th>Percentage</th></tr>
         """
+    
+    def _generate_attack_analysis(self, stats: Dict) -> str:
+        """Generate attack analysis section"""
+        html = "<h2>🎯 Attack Analysis</h2><h3>Top Attack Types</h3><table><tr><th>Attack Type</th><th>Count</th><th>Percentage</th></tr>"
         
         total_attacks = sum(stats['attack_types'].values()) if stats['attack_types'] else 1
         for attack_type, count in stats['attack_types'].most_common(10):
             percentage = (count / total_attacks) * 100
-            html_content += f"<tr><td>{attack_type}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>"
+            html += f"<tr><td>{attack_type}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>"
         
-        html_content += """
-        </table>
-        
-        <h3>Severity Distribution</h3>
-        <table>
-            <tr><th>Severity</th><th>Count</th><th>Percentage</th></tr>
-        """
+        html += "</table><h3>Severity Distribution</h3><table><tr><th>Severity</th><th>Count</th><th>Percentage</th></tr>"
         
         total_severity = sum(stats['severity_distribution'].values()) if stats['severity_distribution'] else 1
         for severity, count in stats['severity_distribution'].most_common():
             percentage = (count / total_severity) * 100
             css_class = f"severity-{severity}"
-            html_content += f'<tr><td class="{css_class}">{severity.upper()}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>'
+            html += f'<tr><td class="{css_class}">{severity.upper()}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>'
         
-        html_content += f"""
-        </table>
-        
-        <h2>🌐 HTTP Traffic Analysis</h2>
-        <h3>HTTP Methods</h3>
-        <table>
-            <tr><th>Method</th><th>Count</th><th>Percentage</th></tr>
-        """
+        return html + "</table>"
+    
+    def _generate_traffic_analysis(self, stats: Dict) -> str:
+        """Generate HTTP traffic analysis section"""
+        html = "<h2>🌐 HTTP Traffic Analysis</h2><h3>HTTP Methods</h3><table><tr><th>Method</th><th>Count</th><th>Percentage</th></tr>"
         
         total_methods = sum(stats['http_methods'].values()) if stats['http_methods'] else 1
         for method, count in stats['http_methods'].most_common():
             percentage = (count / total_methods) * 100
-            html_content += f"<tr><td>{method}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>"
+            html += f"<tr><td>{method}</td><td>{count}</td><td>{percentage:.1f}%</td></tr>"
         
-        html_content += """
-        </table>
-        
-        <h3>Top User Agents</h3>
-        <table>
-            <tr><th>User Agent</th><th>Count</th></tr>
-        """
+        html += "</table><h3>Top User Agents</h3><table><tr><th>User Agent</th><th>Count</th></tr>"
         
         for ua, count in stats['user_agents'].most_common(10):
             ua_display = ua[:100] + '...' if len(ua) > 100 else ua
-            html_content += f"<tr><td>{ua_display}</td><td>{count}</td></tr>"
+            html += f"<tr><td>{ua_display}</td><td>{count}</td></tr>"
         
-        html_content += f"""
-        </table>
-        
-        <h2>🔍 Vulnerability Analysis</h2>
-        <table>
-            <tr><th>Vulnerability Type</th><th>Count</th><th>Severity</th></tr>
-        """
+        return html + "</table>"
+    
+    def _generate_vulnerability_analysis(self) -> str:
+        """Generate vulnerability analysis section"""
+        html = "<h2>🔍 Vulnerability Analysis</h2><table><tr><th>Vulnerability Type</th><th>Count</th><th>Severity</th></tr>"
         
         vuln_details = defaultdict(lambda: {'count': 0, 'severity': 'unknown'})
         for vuln in self.report_data['vulnerabilities']:
@@ -344,11 +328,45 @@ class HTTPHoneypotReportGenerator:
         
         for vuln_id, details in sorted(vuln_details.items(), key=lambda x: x[1]['count'], reverse=True):
             css_class = f"severity-{details['severity']}"
-            html_content += f'<tr><td>{vuln_id}</td><td>{details["count"]}</td><td class="{css_class}">{details["severity"].upper()}</td></tr>'
+            html += f'<tr><td>{vuln_id}</td><td>{details["count"]}</td><td class="{css_class}">{details["severity"].upper()}</td></tr>'
         
+        return html + "</table>"
+    
+    def _generate_recommendations(self, stats: Dict) -> str:
+        """Generate recommendations section"""
+        recommendations = []
+        
+        if stats['total_attacks'] > 100:
+            recommendations.append("High attack volume detected. Consider implementing rate limiting and IP blocking.")
+        if any(severity == 'critical' for severity in stats['severity_distribution']):
+            recommendations.append("Critical severity attacks detected. Immediate security review recommended.")
+        if 'sql_injection' in stats['attack_types']:
+            recommendations.append("SQL injection attempts detected. Review database security and input validation.")
+        if 'xss' in stats['attack_types']:
+            recommendations.append("XSS attacks detected. Implement proper output encoding and CSP headers.")
+        if stats['total_files_uploaded'] > 0:
+            recommendations.append("File uploads detected. Review uploaded files for malware and implement file type restrictions.")
+        if not recommendations:
+            recommendations.append("No immediate security concerns identified. Continue monitoring.")
+        
+        html = "<h2>📋 Recommendations</h2><ul>"
+        for rec in recommendations:
+            html += f"<li>{rec}</li>"
+        
+        return html + "</ul>"
+
+    def generate_html_report(self, output_dir: Path) -> Path:
+        """Generate HTML format report"""
+        report_file = output_dir / f"http_security_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
+        stats = self.report_data['statistics']
+        
+        html_content = self._generate_html_header(stats)
+        html_content += self._generate_attack_analysis(stats)
+        html_content += self._generate_traffic_analysis(stats)
+        html_content += self._generate_vulnerability_analysis()
+        
+        # Add visualizations section
         html_content += """
-        </table>
-        
         <h2>📈 Visualizations</h2>
         <div class="chart-container">
             <h3>Attack Types Distribution</h3>
@@ -366,44 +384,10 @@ class HTTPHoneypotReportGenerator:
             <h3>Top User Agents</h3>
             <img src="visualizations/user_agents.png" alt="User Agents Chart">
         </div>
-        
-        <h2>📋 Recommendations</h2>
-        <ul>
         """
         
-        # Generate recommendations based on data
-        recommendations = []
-        
-        if stats['total_attacks'] > 100:
-            recommendations.append("High attack volume detected. Consider implementing rate limiting and IP blocking.")
-        
-        if any(severity == 'critical' for severity in stats['severity_distribution']):
-            recommendations.append("Critical severity attacks detected. Immediate security review recommended.")
-        
-        if 'sql_injection' in stats['attack_types']:
-            recommendations.append("SQL injection attempts detected. Review database security and input validation.")
-        
-        if 'xss' in stats['attack_types']:
-            recommendations.append("XSS attacks detected. Implement proper output encoding and CSP headers.")
-        
-        if stats['total_files_uploaded'] > 0:
-            recommendations.append("File uploads detected. Review uploaded files for malware and implement file type restrictions.")
-        
-        if not recommendations:
-            recommendations.append("No immediate security concerns identified. Continue monitoring.")
-        
-        for rec in recommendations:
-            html_content += f"<li>{rec}</li>"
-        
-        html_content += """
-        </ul>
-        
-        <hr>
-        <p><small>Report generated by NEXUS HTTP Honeypot Security Analysis System</small></p>
-    </div>
-</body>
-</html>
-        """
+        html_content += self._generate_recommendations(stats)
+        html_content += "<hr><p><small>Report generated by NEXUS HTTP Honeypot Security Analysis System</small></p></div></body></html>"
         
         with open(report_file, 'w', encoding='utf-8') as f:
             f.write(html_content)

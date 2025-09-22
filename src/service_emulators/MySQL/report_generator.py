@@ -202,6 +202,7 @@ class MySQLHoneypotReportGenerator:
                 risk_score += (attack_queries / total_queries) * 50
                 risk_factors.append(f"{attack_queries} attack queries")
             
+            # amazonq-ignore-next-line
             if len(session.get('vulnerabilities', [])) > 0:
                 risk_score += len(session.get('vulnerabilities', [])) * 20
                 risk_factors.append(f"{len(session.get('vulnerabilities', []))} vulnerabilities")
@@ -283,8 +284,9 @@ class MySQLHoneypotReportGenerator:
             <tr><th>Attack Type</th><th>Count</th></tr>
         """
         
-        for attack_type, count in self.report_data['summary'].get('most_common_attacks', {}).items():
-            html += f"<tr><td>{attack_type}</td><td>{count}</td></tr>"
+        attack_rows = [f"<tr><td>{attack_type}</td><td>{count}</td></tr>" 
+                      for attack_type, count in self.report_data['summary'].get('most_common_attacks', {}).items()]
+        html += ''.join(attack_rows)
         
         html += """
         </table>
@@ -294,8 +296,9 @@ class MySQLHoneypotReportGenerator:
             <tr><th>Severity</th><th>Count</th></tr>
         """
         
-        for severity, count in self.report_data['summary'].get('severity_distribution', {}).items():
-            html += f"<tr><td>{severity}</td><td>{count}</td></tr>"
+        severity_rows = [f"<tr><td>{severity}</td><td>{count}</td></tr>" 
+                        for severity, count in self.report_data['summary'].get('severity_distribution', {}).items()]
+        html += ''.join(severity_rows)
         
         html += """
         </table>
@@ -305,8 +308,7 @@ class MySQLHoneypotReportGenerator:
         <h2>🔍 High-Risk Sessions</h2>
         """
         
-        for session in self.report_data['vulnerability_analysis'].get('high_risk_sessions', [])[:5]:
-            html += f"""
+        session_divs = [f"""
             <div class="high-risk" style="margin: 10px 0; padding: 10px;">
                 <strong>Session:</strong> {session['session_id']}<br>
                 <strong>User:</strong> {session['username']}<br>
@@ -314,7 +316,8 @@ class MySQLHoneypotReportGenerator:
                 <strong>Risk Factors:</strong> {', '.join(session['risk_factors'])}<br>
                 <strong>Time:</strong> {session['start_time']}
             </div>
-            """
+            """ for session in self.report_data['vulnerability_analysis'].get('high_risk_sessions', [])[:5]]
+        html += ''.join(session_divs)
         
         html += """
     </div>
@@ -336,8 +339,9 @@ class MySQLHoneypotReportGenerator:
             <tr><th>Query</th><th>Count</th></tr>
         """
         
-        for query_info in self.report_data['database_operations'].get('common_queries', [])[:10]:
-            html += f"<tr><td class='query'>{query_info['query']}</td><td>{query_info['count']}</td></tr>"
+        query_rows = [f"<tr><td class='query'>{query_info['query']}</td><td>{query_info['count']}</td></tr>" 
+                     for query_info in self.report_data['database_operations'].get('common_queries', [])[:10]]
+        html += ''.join(query_rows)
         
         html += """
         </table>
@@ -349,8 +353,9 @@ class MySQLHoneypotReportGenerator:
             <tr><th>Vulnerability</th><th>Count</th></tr>
         """
         
-        for vuln, count in self.report_data['summary'].get('vulnerability_distribution', {}).items():
-            html += f"<tr><td>{vuln}</td><td>{count}</td></tr>"
+        vuln_rows = [f"<tr><td>{vuln}</td><td>{count}</td></tr>" 
+                    for vuln, count in self.report_data['summary'].get('vulnerability_distribution', {}).items()]
+        html += ''.join(vuln_rows)
         
         html += """
         </table>

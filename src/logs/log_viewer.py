@@ -233,6 +233,85 @@ class LogViewer:
         
         return conversations
     
+    def _format_user_input(self, entry: Dict[str, Any], timestamp: str) -> List[str]:
+        """Format user input entries"""
+        output = []
+        if 'decoded_details' in entry:
+            output.append(f"\n[{timestamp}] 👤 USER COMMAND:")
+            output.append(f"   {entry['decoded_details']}")
+        elif 'query' in entry['raw'] and entry['raw']['query']:
+            output.append(f"\n[{timestamp}] 👤 SQL QUERY:")
+            output.append(f"   {entry['raw']['query']}")
+        elif 'command' in entry['raw'] and entry['raw']['command']:
+            output.append(f"\n[{timestamp}] 👤 COMMAND:")
+            output.append(f"   {entry['raw']['command']}")
+        else:
+            output.append(f"\n[{timestamp}] 👤 USER INPUT: {entry['message']}")
+        return output
+    
+    def _format_ai_response(self, entry: Dict[str, Any], timestamp: str) -> List[str]:
+        """Format AI response entries"""
+        output = []
+        message = entry['message']
+        
+        if 'decoded_details' in entry:
+            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
+            output.append(f"   {entry['decoded_details']}")
+        elif 'LLM raw response' in message and 'llm_response' in entry['raw']:
+            llm_response = entry['raw']['llm_response']
+            if llm_response.startswith('```'):
+                lines = llm_response.split('\n')
+                if lines[0].strip().startswith('```'):
+                    lines = lines[1:]
+                if lines and lines[-1].strip() == '```':
+                    lines = lines[:-1]
+                llm_response = '\n'.join(lines)
+            
+            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
+            for line in llm_response.split('\n'):
+                output.append(f"   {line}")
+        elif 'LLM raw response' in message:
+            response_start = message.find("': ") + 3
+            if response_start > 2:
+                response = message[response_start:]
+                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
+                for line in response.split('\n'):
+                    output.append(f"   {line}")
+            else:
+                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
+        else:
+            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
+        return output
+    
+    def _format_entry(self, entry: Dict[str, Any]) -> List[str]:
+        """Format a single log entry"""
+        timestamp = entry['timestamp'][:19] if entry['timestamp'] else 'Unknown'
+        message = entry['message']
+        
+        # Check entry type and format accordingly
+        if any(keyword in message for keyword in ['User input', 'FTP command', 'HTTP request', 'MySQL query received']):
+            return self._format_user_input(entry, timestamp)
+        elif any(keyword in message for keyword in ['LLM response', 'LLM raw response', 'FTP response', 'HTTP response', 'MySQL response']):
+            return self._format_ai_response(entry, timestamp)
+        elif 'attack' in message.lower():
+            output = [f"\n[{timestamp}] ⚠️ ATTACK: {message}"]
+            if 'attack_types' in entry['raw']:
+                output.append(f"   Types: {entry['raw']['attack_types']}")
+            if 'severity' in entry['raw']:
+                output.append(f"   Severity: {entry['raw']['severity']}")
+            return output
+        elif 'vulnerability exploitation attempt' in message.lower():
+            output = [f"\n[{timestamp}] 🚨 CRITICAL: {message}"]
+            if 'vulnerability_id' in entry['raw']:
+                output.append(f"   Vulnerability: {entry['raw']['vulnerability_id']}")
+            if 'cvss_score' in entry['raw']:
+                output.append(f"   CVSS Score: {entry['raw']['cvss_score']}")
+            return output
+        elif entry['level'] in ['WARNING', 'ERROR', 'CRITICAL']:
+            emoji = {'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🚨'}.get(entry['level'], 'ℹ️')
+            return [f"\n[{timestamp}] {emoji} {entry['level']}: {message}"]
+        return []
+
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False) -> str:
         """Format conversations for display"""
@@ -253,77 +332,10 @@ class LogViewer:
             
             if show_full:
                 for entry in conv['entries']:
-                    timestamp = entry['timestamp'][:19] if entry['timestamp'] else 'Unknown'
-                    message = entry['message']
-                    
-                    if 'User input' in message or 'FTP command' in message or 'HTTP request' in message or 'MySQL query received' in message:
-                        if 'decoded_details' in entry:
-                            output.append(f"\n[{timestamp}] 👤 USER COMMAND:")
-                            output.append(f"   {entry['decoded_details']}")
-                        elif 'query' in entry['raw'] and entry['raw']['query']:
-                            output.append(f"\n[{timestamp}] 👤 SQL QUERY:")
-                            output.append(f"   {entry['raw']['query']}")
-                        elif 'command' in entry['raw'] and entry['raw']['command']:
-                            output.append(f"\n[{timestamp}] 👤 COMMAND:")
-                            output.append(f"   {entry['raw']['command']}")
-                        else:
-                            output.append(f"\n[{timestamp}] 👤 USER INPUT: {message}")
-                    
-                    elif 'LLM response' in message or 'LLM raw response' in message or 'FTP response' in message or 'HTTP response' in message or 'MySQL response' in message:
-                        if 'decoded_details' in entry:
-                            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
-                            output.append(f"   {entry['decoded_details']}")
-                        elif 'LLM raw response' in message and 'llm_response' in entry['raw']:
-                            # Extract actual LLM response from log data
-                            llm_response = entry['raw']['llm_response']
-                            # Clean up markdown formatting
-                            if llm_response.startswith('```'):
-                                lines = llm_response.split('\n')
-                                # Remove first and last lines if they contain ```
-                                if lines[0].strip().startswith('```'):
-                                    lines = lines[1:]
-                                if lines and lines[-1].strip() == '```':
-                                    lines = lines[:-1]
-                                llm_response = '\n'.join(lines)
-                            
-                            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
-                            # Format multi-line responses properly
-                            for line in llm_response.split('\n'):
-                                output.append(f"   {line}")
-                        elif 'LLM raw response' in message:
-                            # Fallback: Extract complete LLM response from message
-                            response_start = message.find("': ") + 3
-                            if response_start > 2:
-                                response = message[response_start:]
-                                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE:")
-                                # Format multi-line responses properly
-                                for line in response.split('\n'):
-                                    output.append(f"   {line}")
-                            else:
-                                output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
-                        else:
-                            output.append(f"\n[{timestamp}] 🤖 AI RESPONSE: {message}")
-                    
-                    elif 'attack' in message.lower():
-                        output.append(f"\n[{timestamp}] ⚠️ ATTACK: {message}")
-                        if 'attack_types' in entry['raw']:
-                            output.append(f"   Types: {entry['raw']['attack_types']}")
-                        if 'severity' in entry['raw']:
-                            output.append(f"   Severity: {entry['raw']['severity']}")
-                    
-                    elif 'vulnerability exploitation attempt' in message.lower():
-                        output.append(f"\n[{timestamp}] 🚨 CRITICAL: {message}")
-                        if 'vulnerability_id' in entry['raw']:
-                            output.append(f"   Vulnerability: {entry['raw']['vulnerability_id']}")
-                        if 'cvss_score' in entry['raw']:
-                            output.append(f"   CVSS Score: {entry['raw']['cvss_score']}")
-                    
-                    elif entry['level'] in ['WARNING', 'ERROR', 'CRITICAL']:
-                        emoji = {'WARNING': '⚠️', 'ERROR': '❌', 'CRITICAL': '🚨'}.get(entry['level'], 'ℹ️')
-                        output.append(f"\n[{timestamp}] {emoji} {entry['level']}: {message}")
+                    output.extend(self._format_entry(entry))
             else:
-                commands = [e for e in conv['entries'] if 'User input' in e['message'] or 'FTP command' in e['message'] or 'HTTP request' in e['message'] or 'MySQL query received' in e['message']]
-                responses = [e for e in conv['entries'] if 'LLM response' in e['message'] or 'LLM raw response' in e['message'] or 'FTP response' in e['message'] or 'HTTP response' in e['message'] or 'MySQL response' in e['message']]
+                commands = [e for e in conv['entries'] if any(keyword in e['message'] for keyword in ['User input', 'FTP command', 'HTTP request', 'MySQL query received'])]
+                responses = [e for e in conv['entries'] if any(keyword in e['message'] for keyword in ['LLM response', 'LLM raw response', 'FTP response', 'HTTP response', 'MySQL response'])]
                 attacks = [e for e in conv['entries'] if 'attack' in e['message'].lower() or 'vulnerability exploitation' in e['message'].lower()]
                 
                 output.append(f"   Commands: {len(commands)}")
