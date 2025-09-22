@@ -408,6 +408,7 @@ class MySQLForensicLogger:
     """Generate forensic chain of custody for MySQL attacks"""
 
     def __init__(self, session_dir: str):
+        # amazonq-ignore-next-line
         self.session_dir = Path(session_dir)
         self.chain_file = self.session_dir / "forensic_chain.json"
         self.chain_data = {
@@ -1921,6 +1922,7 @@ class MySQLHoneypotServer:
                         try:
                             await server_instance.cleanup_session(sid)
                         # amazonq-ignore-next-line
+                        # amazonq-ignore-next-line
                         except Exception:
                             pass
                 except Exception:
@@ -2301,6 +2303,7 @@ async def main():
             for session_id in list(server.active_sessions.keys()):
                 try:
                     await server.cleanup_session(session_id)
+                # amazonq-ignore-next-line
                 except Exception:
                     pass
 

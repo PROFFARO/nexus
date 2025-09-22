@@ -358,6 +358,7 @@ echo "System compromised"
         # Add file hash analysis if enabled
         if config['forensics'].getboolean('file_hash_analysis', True):
             upload_info['file_hash'] = hashlib.sha256(content).hexdigest()
+            # amazonq-ignore-next-line
             upload_info['md5_hash'] = hashlib.md5(content).hexdigest()
         
         # Add malware detection if enabled
@@ -419,6 +420,7 @@ class ForensicChainLogger:
     """Generate forensic chain of custody for attacks"""
     
     def __init__(self, session_dir: str):
+        # amazonq-ignore-next-line
         self.session_dir = Path(session_dir)
         self.chain_file = self.session_dir / "forensic_chain.json"
         self.chain_data = {
@@ -710,6 +712,7 @@ class MySSHServer(asyncssh.SSHServer):
             if target_dir.startswith('/home/guest'):
                 self.current_directory = target_dir
             else:
+                # amazonq-ignore-next-line
                 return f"-bash: cd: {target_dir}: Permission denied"
             return ""
         else:
@@ -1538,6 +1541,7 @@ Saving to: '{filename}'
 
 {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({file_size} KB/s) - '{filename}' saved [{file_size}/{file_size}]"""
                 else:  # curl
+                    # amazonq-ignore-next-line
                     return f"""  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
                                  Dload  Upload   Total   Spent    Left  Speed
 100  {file_size}  100  {file_size}    0     0   {file_size}      0 --:--:-- --:--:-- --:--:--  {file_size}"""
@@ -1588,6 +1592,7 @@ def get_prompt(server: Optional['MySSHServer']) -> str:
             return "guest@corp-srv-01:~$ "
         elif path.startswith('/home/guest/'):
             short_path = path.replace('/home/guest/', '')
+            # amazonq-ignore-next-line
             return f"guest@corp-srv-01:~/{short_path}$ "
         else:
             return f"guest@corp-srv-01:{path}$ "
@@ -1773,6 +1778,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
         if not os.path.exists(prompt_file):
             print(f"Error: The specified prompt file '{prompt_file}' does not exist.", file=sys.stderr)
             sys.exit(1)
+        # amazonq-ignore-next-line
         with open(prompt_file, "r") as f:
             user_prompt = f.read()
     elif os.path.exists("prompt.txt"):

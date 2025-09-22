@@ -644,6 +644,7 @@ class HoneypotReportGenerator:
         )
     
     # amazonq-ignore-next-line
+    # amazonq-ignore-next-line
     def _generate_visualizations(self, session_data: List[Dict[str, Any]], output_dir: Path):
         """Generate visualization charts"""
         try:

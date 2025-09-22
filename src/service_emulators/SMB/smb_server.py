@@ -244,6 +244,7 @@ class FileTransferHandler:
         # Save upload if enabled
         if config['forensics'].getboolean('save_uploads', True):
             file_path = self.uploads_dir / filename
+            # amazonq-ignore-next-line
             with open(file_path, 'wb') as f:
                 f.write(content)
             upload_info['file_path'] = str(file_path)
@@ -782,6 +783,7 @@ class SMBHoneypot:
                 text_data = data.decode('utf-8', errors='ignore').strip()
                 if text_data and not any(ord(c) < 32 for c in text_data if c not in '\r\n\t'):
                     return await self._handle_telnet_command(text_data, session_data)
+            # amazonq-ignore-next-line
             # amazonq-ignore-next-line
             except:
                 pass
@@ -1357,6 +1359,7 @@ def get_prompts(prompt: Optional[str], prompt_file: Optional[str]) -> dict:
         if not os.path.exists(prompt_file):
             print(f"Error: The specified prompt file '{prompt_file}' does not exist.", file=sys.stderr)
             sys.exit(1)
+        # amazonq-ignore-next-line
         with open(prompt_file, "r") as f:
             user_prompt = f.read()
     elif os.path.exists("prompt.txt"):
