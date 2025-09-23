@@ -855,8 +855,321 @@ class SMBHoneypotReportGenerator:
         else:
             return "attack pattern analysis"
         
+    def _load_conversation_logs(self) -> List[Dict[str, Any]]:
+        """Load conversation logs from session replay data and log files"""
+        conversations = []
+        
+        for session in self.sessions_data:
+            session_id = session.get('session_id', 'unknown')
+            
+            # Load from session replay if available
+            session_dir = session.get('session_directory', '')
+            if session_dir:
+                replay_file = self.sessions_dir / session_dir / "session_replay.json"
+                if replay_file.exists():
+                    try:
+                        with open(replay_file, 'r', encoding='utf-8') as f:
+                            replay_data = json.load(f)
+                            
+                        conversation = {
+                            'session_id': session_id,
+                            'client_ip': session.get('client_info', {}).get('ip', 'unknown'),
+                            'start_time': replay_data.get('start_time', ''),
+                            'end_time': replay_data.get('end_time', ''),
+                            'transcript': replay_data.get('transcript', [])
+                        }
+                        conversations.append(conversation)
+                    except Exception as e:
+                        print(f"Error loading replay data for {session_id}: {e}")
+        
+        # Also try to load from SMB log files
+        possible_paths = [
+            Path("src/logs/smb_log.log"),
+            Path("../../../logs/smb_log.log"),
+            Path("C:/Users/Dayab/Documents/GitHub/nexus-development/src/logs/smb_log.log"),
+            Path(__file__).parent.parent.parent / "logs" / "smb_log.log"
+        ]
+        
+        for log_file in possible_paths:
+            if log_file.exists():
+                try:
+                    with open(log_file, 'r', encoding='utf-8') as f:
+                        log_content = f.read()
+                        # Parse SMB log format and extract conversations
+                        # This would need to be customized based on actual log format
+                    break
+                except Exception as e:
+                    print(f"Error loading SMB log file: {e}")
+        
+        return conversations
+    
+    def _generate_conversations_content(self, conversations: List[Dict[str, Any]]) -> str:
+        """Generate HTML content for conversations tab"""
+        if not conversations:
+            return """
+            <div class="conversation-container">
+                <div class="conversation-header">
+                    <div class="conversation-info">
+                        <h3><i class="fas fa-info-circle"></i> No Conversations Available</h3>
+                        <p>No session replay data found for detailed conversation analysis.</p>
+                    </div>
+                </div>
+            </div>
+            """
+        
+        conversations_content = ""
+        for conv in conversations:
+            duration = "Unknown"
+            if conv['start_time'] and conv['end_time']:
+                try:
+                    start = datetime.datetime.fromisoformat(conv['start_time'].replace('Z', '+00:00'))
+                    end = datetime.datetime.fromisoformat(conv['end_time'].replace('Z', '+00:00'))
+                    duration_secs = (end - start).total_seconds()
+                    if duration_secs < 60:
+                        duration = f"{int(duration_secs)}s"
+                    else:
+                        duration = f"{int(duration_secs // 60)}m {int(duration_secs % 60)}s"
+                except:
+                    pass
+            
+            conversations_content += f"""
+            <div class="conversation-container">
+                <div class="conversation-header">
+                    <div class="conversation-info">
+                        <h3><i class="fas fa-terminal"></i> Session {conv['session_id'][:12]}...</h3>
+                        <p><i class="fas fa-globe"></i> Client: {conv['client_ip']} | <i class="fas fa-clock"></i> Duration: {duration}</p>
+                    </div>
+                    <div class="conversation-meta">
+                        <p><strong>Commands:</strong> {len([t for t in conv['transcript'] if t.get('type') == 'input'])}</p>
+                        <p><strong>Responses:</strong> {len([t for t in conv['transcript'] if t.get('type') == 'output'])}</p>
+                    </div>
+                </div>
+                <div class="conversation-transcript">
+            """
+            
+            for entry in conv['transcript']:
+                timestamp = entry.get('timestamp', '')[:19] if entry.get('timestamp') else ''
+                entry_type = entry.get('type', 'unknown')
+                content = entry.get('content', '')
+                
+                # Format content based on type
+                if entry_type == 'input':
+                    command = entry.get('command', '')
+                    args = entry.get('args', '')
+                    formatted_content = f"<span class='transcript-command'>{command}</span>"
+                    if args:
+                        formatted_content += f" <span class='transcript-args'>{args}</span>"
+                elif entry_type == 'output':
+                    formatted_content = f"<span class='transcript-response'>{content}</span>"
+                elif entry_type == 'alert':
+                    formatted_content = f"<span class='transcript-alert'>{content}</span>"
+                elif entry_type == 'success':
+                    formatted_content = f"<span class='transcript-success'>{content}</span>"
+                elif entry_type == 'warning':
+                    formatted_content = f"<span class='transcript-warning'>{content}</span>"
+                else:
+                    formatted_content = f"<span class='transcript-response'>{content}</span>"
+                
+                # Determine display type and icon
+                if entry_type == 'input':
+                    display_type = '→ CMD'
+                    type_class = 'input'
+                elif entry_type == 'output':
+                    display_type = '← RSP'
+                    type_class = 'output'
+                elif entry_type == 'alert':
+                    display_type = '⚠ ALERT'
+                    type_class = 'alert'
+                elif entry_type == 'success':
+                    display_type = '✓ AUTH'
+                    type_class = 'success'
+                elif entry_type == 'warning':
+                    display_type = '✗ FAIL'
+                    type_class = 'warning'
+                else:
+                    display_type = '• INFO'
+                    type_class = 'info'
+                
+                conversations_content += f"""
+                    <div class="transcript-entry {type_class}">
+                        <div class="transcript-timestamp">{timestamp[11:19] if len(timestamp) > 10 else timestamp}</div>
+                        <div class="transcript-type {type_class}">{display_type}</div>
+                        <div class="transcript-content">{formatted_content}</div>
+                    </div>
+                """
+            
+            conversations_content += """
+                </div>
+            </div>
+            """
+        
+        return conversations_content
+    
+    def _generate_enhanced_timeline_items(self, report_data: Dict[str, Any]) -> str:
+        """Generate enhanced timeline items from report data"""
+        timeline_items = ""
+        for item in report_data.get('attack_timeline', [])[:20]:
+            severity_class = self._get_severity_class(item.get('severity', 'low'))
+            timeline_items += f"""
+            <div class="timeline-item {severity_class}" data-severity="{severity_class}">
+                <div class="timeline-marker {severity_class}">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="timeline-title">{item.get('attack_type', 'Unknown Attack')}</span>
+                        <span class="timeline-time">{item.get('timestamp', '')[:19]}</span>
+                    </div>
+                    <div class="timeline-description">
+                        <strong>Source:</strong> {item.get('source_ip', 'Unknown')} | 
+                        <strong>Target:</strong> {item.get('target', 'Unknown')}
+                    </div>
+                    <div class="timeline-meta">
+                        <span class="timeline-level">{item.get('severity', 'Low').upper()}</span>
+                    </div>
+                </div>
+            </div>
+            """
+        return timeline_items
+    
+    def _load_smb_logs_timeline(self) -> str:
+        """Load SMB logs and generate timeline items"""
+        timeline_items = ""
+        # Try multiple possible paths for the log file
+        possible_paths = [
+            Path("src/logs/smb_log.log"),
+            Path("../../../logs/smb_log.log"),
+            Path("C:/Users/Dayab/Documents/GitHub/nexus-development/src/logs/smb_log.log"),
+            Path(__file__).parent.parent.parent / "logs" / "smb_log.log"
+        ]
+        
+        log_file = None
+        for path in possible_paths:
+            if path.exists():
+                log_file = path
+                break
+        
+        if log_file is None:
+            return """
+            <div class="timeline-item info" data-severity="info">
+                <div class="timeline-marker info">
+                    <i class="fas fa-info-circle"></i>
+                </div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="timeline-title">No Log File Found</span>
+                        <span class="timeline-time">N/A</span>
+                    </div>
+                    <div class="timeline-description">
+                        SMB log file not found. Tried paths: {', '.join(str(p) for p in possible_paths)}
+                    </div>
+                </div>
+            </div>
+            """
+        
+        try:
+            with open(log_file, 'r', encoding='utf-8') as f:
+                log_entries = []
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    
+                    try:
+                        log_entry = json.loads(line)
+                        log_entries.append(log_entry)
+                    except json.JSONDecodeError:
+                        continue
+                
+                # Sort by timestamp (newest first) and limit to 50 entries
+                log_entries.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
+                log_entries = log_entries[:50]
+                
+                for entry in log_entries:
+                    timestamp = entry.get('timestamp', '')
+                    level = entry.get('level', 'INFO').lower()
+                    message = entry.get('message', '')
+                    src_ip = entry.get('src_ip', '')
+                    
+                    # Determine severity class
+                    if level == 'critical':
+                        severity_class = 'critical'
+                        icon = 'fas fa-exclamation-triangle'
+                    elif level == 'error':
+                        severity_class = 'error'
+                        icon = 'fas fa-times-circle'
+                    elif level == 'warning':
+                        severity_class = 'warning'
+                        icon = 'fas fa-exclamation-circle'
+                    else:
+                        severity_class = 'info'
+                        icon = 'fas fa-info-circle'
+                    
+                    # Format timestamp
+                    try:
+                        dt = datetime.datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
+                        formatted_time = dt.strftime('%H:%M:%S')
+                        formatted_date = dt.strftime('%Y-%m-%d')
+                    except:
+                        formatted_time = timestamp[:8] if len(timestamp) > 8 else timestamp
+                        formatted_date = timestamp[:10] if len(timestamp) > 10 else 'Unknown'
+                    
+                    # Create title based on message type
+                    if 'connection' in message.lower():
+                        title = f"SMB Connection from {src_ip}"
+                    elif 'command' in message.lower():
+                        title = f"SMB Command Executed"
+                    elif 'attack' in message.lower():
+                        title = f"Attack Detected"
+                    elif 'authentication' in message.lower():
+                        title = f"Authentication Event"
+                    else:
+                        title = message[:50] + '...' if len(message) > 50 else message
+                    
+                    timeline_items += f"""
+                    <div class="timeline-item {severity_class}" data-severity="{severity_class}" data-message="{message.lower()}" data-ip="{src_ip}">
+                        <div class="timeline-marker {severity_class}">
+                            <i class="{icon}"></i>
+                        </div>
+                        <div class="timeline-content">
+                            <div class="timeline-header">
+                                <span class="timeline-title">{title}</span>
+                                <span class="timeline-time">{formatted_time}</span>
+                            </div>
+                            <div class="timeline-description">{message}</div>
+                            <div class="timeline-meta">
+                                <span class="timeline-date">{formatted_date}</span>
+                                <span class="timeline-level">{level.upper()}</span>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                
+        except Exception as e:
+            timeline_items = f"""
+            <div class="timeline-item error" data-severity="error">
+                <div class="timeline-marker error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div class="timeline-content">
+                    <div class="timeline-header">
+                        <span class="timeline-title">Error Loading SMB Logs</span>
+                        <span class="timeline-time">N/A</span>
+                    </div>
+                    <div class="timeline-description">
+                        Failed to load SMB logs: {str(e)}
+                    </div>
+                </div>
+            </div>
+            """
+        
+        return timeline_items
+    
     def _generate_html_report(self, report_data: Dict[str, Any]) -> str:
         """Generate modern, professional HTML report"""
+        # Load conversation logs
+        conversations = self._load_conversation_logs()
+        
         html_template = """
 <!DOCTYPE html>
 <html lang="en">
@@ -1405,6 +1718,9 @@ class SMBHoneypotReportGenerator:
                 <button class="nav-tab" onclick="showTab('logs')">
                     <i class="fas fa-file-alt"></i> Logs
                 </button>
+                <button class="nav-tab" onclick="showTab('conversations')">
+                    <i class="fas fa-comments"></i> Conversations
+                </button>
                 <button class="nav-tab" onclick="showTab('recommendations')">
                     <i class="fas fa-lightbulb"></i> Recommendations
                 </button>
@@ -1670,6 +1986,15 @@ class SMBHoneypotReportGenerator:
                 </div>
             </div>
             
+            <!-- Conversations Tab -->
+            <div id="conversations" class="tab-content">
+                <h2 class="section-title">
+                    <i class="fas fa-comments"></i>
+                    Full Session Conversations
+                </h2>
+                {conversations_content}
+            </div>
+            
             <!-- Recommendations Tab -->
             <div id="recommendations" class="tab-content">
                 <h2 class="section-title">
@@ -1902,23 +2227,11 @@ class SMBHoneypotReportGenerator:
             </tr>
             """
             
-        enhanced_timeline_items = ""
-        for item in report_data['attack_timeline'][:20]:
-            severity_class = self._get_severity_class(item.get('severity', 'low'))
-            enhanced_timeline_items += f"""
-            <div class="timeline-item">
-                <div class="timeline-time">
-                    <i class="fas fa-clock"></i> {item['timestamp'][:19]} | 
-                    <i class="fas fa-map-marker-alt"></i> {item['client_ip']} |
-                    <span class="severity-badge severity-{severity_class}">{item.get('severity', 'low').upper()}</span>
-                </div>
-                <div class="timeline-content">
-                    <strong>Command:</strong> <span class="command-code">{item['command'][:80]}</span><br>
-                    <strong>Attack Types:</strong> {', '.join(item['attack_types'])}<br>
-                    <strong>Threat Score:</strong> {item.get('threat_score', 0):.2f}/10
-                </div>
-            </div>
-            """
+        enhanced_timeline_items = self._generate_enhanced_timeline_items(report_data)
+        
+        # If no timeline items from attack data, load from log files
+        if not enhanced_timeline_items.strip():
+            enhanced_timeline_items = self._load_smb_logs_timeline()
             
         enhanced_sessions_rows = ""
         for session in report_data['detailed_sessions']:
@@ -2029,7 +2342,8 @@ class SMBHoneypotReportGenerator:
             enhanced_sessions_rows=enhanced_sessions_rows,
             enhanced_recommendations_list=enhanced_recommendations_list,
             geographic_rows=geographic_rows,
-            file_transfer_rows=file_transfer_rows
+            file_transfer_rows=file_transfer_rows,
+            conversations_content=self._generate_conversations_content(conversations)
         )
 
 def main():
