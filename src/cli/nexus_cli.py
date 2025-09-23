@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+    #!/usr/bin/env python3
 """
 NEXUS Honeypot CLI - Centralized command-line interface for all service emulators
 """
@@ -567,10 +567,13 @@ from pathlib import Path
 sys.path.insert(0, r"{ssh_dir_escaped}")
 
 try:
-    from report_generator import HoneypotReportGenerator
+    from report_generator import SSHHoneypotReportGenerator
     
-    generator = HoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
+    # Set logs directory to the main logs directory
+    logs_dir = Path(r"{ssh_dir_escaped}").parent.parent / "logs"
+    
+    generator = SSHHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}", logs_dir=str(logs_dir))
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -728,7 +731,7 @@ try:
     from report_generator import HTTPHoneypotReportGenerator
     
     generator = HTTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -805,7 +808,9 @@ sys.path.insert(0, r"{mysql_dir_escaped}")
 try:
     from report_generator import MySQLHoneypotReportGenerator
     
-    generator = MySQLHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
+    # Set logs directory to the main logs directory
+    logs_dir = Path(r"{mysql_dir_escaped}").parent.parent / "logs"
+    generator = MySQLHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}", logs_dir=str(logs_dir))
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
