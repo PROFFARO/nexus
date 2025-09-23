@@ -196,6 +196,7 @@ session_summary.json
 # Honeypot Specific Files
 downloads/
 uploads/
+created_files/
 research-papers/
 nexus-components-aarch.jpg
 report_overview.pdf
