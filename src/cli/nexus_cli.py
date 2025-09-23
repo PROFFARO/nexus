@@ -581,7 +581,6 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -650,7 +649,7 @@ try:
     from report_generator import FTPHoneypotReportGenerator
     
     generator = FTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -661,7 +660,6 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -741,7 +739,6 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
@@ -820,7 +817,6 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
     # Verify HTML file was created and has content
     html_file = report_files.get('html')
@@ -904,7 +900,7 @@ try:
     from report_generator import SMBHoneypotReportGenerator
     
     generator = SMBHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
+    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
         print(f"Error: {{report_files['error']}}")
@@ -915,7 +911,6 @@ try:
         print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
         print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
-    print(f"Visualizations: {output_dir_escaped}/visualizations/")
     
 except Exception as e:
     print(f"Error: {{e}}")
