@@ -6,14 +6,36 @@ NEXUS Honeypot Log Viewer - Parse and display session conversations
 import json
 import os
 import argparse
+import datetime
 from base64 import b64decode
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
+
+# Import ML components
+try:
+    from ..ai.detectors import MLDetector
+    from ..ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    print("Warning: ML components not available. Install dependencies or check ai module.")
 
 class LogViewer:
     def __init__(self, service: str):
         self.service = service
         self.base_dir = Path(__file__).parent.parent
+        
+        # Initialize ML detector if available
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig(service)
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector(service, ml_config)
+                    print(f"✅ ML detector initialized for {service.upper()} log analysis")
+            except Exception as e:
+                print(f"⚠️ Failed to initialize ML detector: {e}")
+                self.ml_detector = None
         
     def parse_ssh_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
                       filter_type: str = 'all') -> Dict[str, Any]:
@@ -233,6 +255,307 @@ class LogViewer:
         
         return conversations
     
+    def parse_smb_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
+                      filter_type: str = 'all') -> Dict[str, Any]:
+        """Parse SMB log file and extract conversations"""
+        conversations = {}
+        
+        if not os.path.exists(log_file):
+            raise FileNotFoundError(f"Log file not found: {log_file}")
+        
+        with open(log_file, 'r', encoding='utf-8') as f:
+            for line in f:
+                try:
+                    log_entry = json.loads(line.strip())
+                    task_name = log_entry.get('task_name', 'unknown')
+                    message = log_entry.get('message', '')
+                    
+                    if session_id and session_id not in task_name:
+                        continue
+                    
+                    if task_name not in conversations:
+                        conversations[task_name] = {
+                            'session_id': task_name,
+                            'src_ip': log_entry.get('src_ip', 'unknown'),
+                            'entries': []
+                        }
+                    
+                    entry = {
+                        'timestamp': log_entry.get('timestamp', ''),
+                        'message': message,
+                        'level': log_entry.get('level', 'INFO'),
+                        'raw': log_entry
+                    }
+                    
+                    # Decode base64 details
+                    if decode and 'details' in log_entry:
+                        try:
+                            decoded = b64decode(log_entry['details']).decode('utf-8')
+                            entry['decoded_details'] = decoded
+                        except:
+                            entry['decoded_details'] = 'Failed to decode'
+                    
+                    # Apply filters
+                    if filter_type == 'commands' and 'SMB command' not in message:
+                        continue
+                    elif filter_type == 'responses' and 'SMB response' not in message:
+                        continue
+                    elif filter_type == 'attacks' and 'attack' not in message.lower():
+                        continue
+                    
+                    conversations[task_name]['entries'].append(entry)
+                    
+                except (json.JSONDecodeError, Exception):
+                    continue
+        
+        return conversations
+    
+    def analyze_log_entry_ml(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        """Analyze a single log entry using ML"""
+        if not self.ml_detector:
+            return {}
+        
+        try:
+            # Extract relevant data based on service type
+            ml_data = self._extract_ml_features_from_entry(entry)
+            if not ml_data:
+                return {}
+            
+            # Get ML analysis
+            ml_results = self.ml_detector.score(ml_data)
+            
+            # Add timestamp for tracking
+            ml_results['ml_analysis_timestamp'] = datetime.datetime.now().isoformat()
+            
+            return ml_results
+            
+        except Exception as e:
+            print(f"⚠️ ML analysis failed for entry: {e}")
+            return {}
+    
+    def _extract_ml_features_from_entry(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Extract ML features from log entry based on service type"""
+        raw_data = entry.get('raw', {})
+        message = entry.get('message', '')
+        
+        if self.service == 'ssh':
+            # Extract SSH command data
+            if 'command' in raw_data:
+                return {
+                    'command': raw_data['command'],
+                    'session_data': {
+                        'command_count': 1,
+                        'failed_commands': 0,
+                        'bytes_transferred': len(raw_data['command'])
+                    }
+                }
+            elif 'User input' in message and 'decoded_details' in entry:
+                return {
+                    'command': entry['decoded_details'],
+                    'session_data': {
+                        'command_count': 1,
+                        'failed_commands': 0,
+                        'bytes_transferred': len(entry['decoded_details'])
+                    }
+                }
+        
+        elif self.service == 'http':
+            # Extract HTTP request data
+            if 'url' in raw_data or 'path' in raw_data:
+                return {
+                    'url': raw_data.get('url', raw_data.get('path', '')),
+                    'method': raw_data.get('method', 'GET'),
+                    'session_data': {
+                        'request_count': 1,
+                        'failed_requests': 0,
+                        'bytes_transferred': len(message)
+                    }
+                }
+            elif 'HTTP request' in message:
+                # Try to extract URL from message
+                url_start = message.find('URL: ')
+                if url_start != -1:
+                    url = message[url_start + 5:].split()[0]
+                    return {
+                        'url': url,
+                        'method': 'GET',
+                        'session_data': {
+                            'request_count': 1,
+                            'failed_requests': 0,
+                            'bytes_transferred': len(url)
+                        }
+                    }
+        
+        elif self.service == 'mysql':
+            # Extract MySQL query data
+            if 'query' in raw_data:
+                return {
+                    'query': raw_data['query'],
+                    'session_data': {
+                        'query_count': 1,
+                        'failed_queries': 0,
+                        'bytes_transferred': len(raw_data['query'])
+                    }
+                }
+            elif 'MySQL query received' in message:
+                # Try to extract query from message
+                query_start = message.find('Query: ')
+                if query_start != -1:
+                    query = message[query_start + 7:]
+                    return {
+                        'query': query,
+                        'session_data': {
+                            'query_count': 1,
+                            'failed_queries': 0,
+                            'bytes_transferred': len(query)
+                        }
+                    }
+        
+        elif self.service == 'ftp':
+            # Extract FTP command data
+            if 'command' in raw_data:
+                return {
+                    'command': raw_data['command'],
+                    'path': raw_data.get('path', ''),
+                    'session_data': {
+                        'read_ops': 1 if raw_data['command'].upper() in ['RETR', 'LIST', 'NLST'] else 0,
+                        'write_ops': 1 if raw_data['command'].upper() in ['STOR', 'PUT'] else 0,
+                        'delete_ops': 1 if raw_data['command'].upper() in ['DELE', 'RMD'] else 0,
+                        'bytes_read': 0,
+                        'bytes_written': 0,
+                        'failed_ops': 0
+                    }
+                }
+            elif 'FTP command' in message:
+                # Try to extract command from message
+                cmd_start = message.find('Command: ')
+                if cmd_start != -1:
+                    command = message[cmd_start + 9:].split()[0]
+                    return {
+                        'command': command,
+                        'path': '',
+                        'session_data': {
+                            'read_ops': 1 if command.upper() in ['RETR', 'LIST', 'NLST'] else 0,
+                            'write_ops': 1 if command.upper() in ['STOR', 'PUT'] else 0,
+                            'delete_ops': 1 if command.upper() in ['DELE', 'RMD'] else 0,
+                            'bytes_read': 0,
+                            'bytes_written': 0,
+                            'failed_ops': 0
+                        }
+                    }
+        
+        elif self.service == 'smb':
+            # Extract SMB operation data
+            if 'operation' in raw_data:
+                return {
+                    'operation': raw_data['operation'],
+                    'path': raw_data.get('path', ''),
+                    'session_data': {
+                        'read_ops': 1 if raw_data['operation'].upper() in ['READ', 'QUERY_INFO', 'FIND'] else 0,
+                        'write_ops': 1 if raw_data['operation'].upper() in ['WRITE', 'CREATE'] else 0,
+                        'delete_ops': 1 if raw_data['operation'].upper() in ['DELETE'] else 0,
+                        'bytes_read': 0,
+                        'bytes_written': 0,
+                        'failed_ops': 0
+                    }
+                }
+            elif 'SMB command' in message:
+                # Try to extract operation from message
+                op_start = message.find('Operation: ')
+                if op_start != -1:
+                    operation = message[op_start + 11:].split()[0]
+                    return {
+                        'operation': operation,
+                        'path': '',
+                        'session_data': {
+                            'read_ops': 1 if operation.upper() in ['READ', 'QUERY_INFO', 'FIND'] else 0,
+                            'write_ops': 1 if operation.upper() in ['WRITE', 'CREATE'] else 0,
+                            'delete_ops': 1 if operation.upper() in ['DELETE'] else 0,
+                            'bytes_read': 0,
+                            'bytes_written': 0,
+                            'failed_ops': 0
+                        }
+                    }
+        
+        return None
+    
+    def get_ml_insights(self, conversations: Dict[str, Any]) -> Dict[str, Any]:
+        """Generate comprehensive ML insights from conversations"""
+        if not self.ml_detector:
+            return {'ml_available': False, 'message': 'ML analysis not available'}
+        
+        insights = {
+            'ml_available': True,
+            'service': self.service,
+            'analysis_timestamp': datetime.datetime.now().isoformat(),
+            'total_sessions': len(conversations),
+            'anomalies': [],
+            'risk_summary': {'high': 0, 'medium': 0, 'low': 0},
+            'attack_patterns': {},
+            'ml_metrics': {
+                'entries_analyzed': 0,
+                'anomalies_detected': 0,
+                'avg_anomaly_score': 0.0,
+                'max_anomaly_score': 0.0
+            }
+        }
+        
+        all_anomaly_scores = []
+        
+        # Analyze each conversation
+        for session_id, conv in conversations.items():
+            session_anomalies = []
+            
+            for entry in conv['entries']:
+                ml_result = self.analyze_log_entry_ml(entry)
+                insights['ml_metrics']['entries_analyzed'] += 1
+                
+                if ml_result and 'ml_anomaly_score' in ml_result:
+                    anomaly_score = ml_result['ml_anomaly_score']
+                    all_anomaly_scores.append(anomaly_score)
+                    
+                    # Consider entries with anomaly score > 0.7 as anomalies
+                    if anomaly_score > 0.7:
+                        risk_level = 'high' if anomaly_score > 0.9 else 'medium'
+                        insights['risk_summary'][risk_level] += 1
+                        insights['ml_metrics']['anomalies_detected'] += 1
+                        
+                        anomaly_data = {
+                            'session_id': session_id,
+                            'timestamp': entry.get('timestamp', ''),
+                            'message': entry.get('message', '')[:100] + '...' if len(entry.get('message', '')) > 100 else entry.get('message', ''),
+                            'anomaly_score': anomaly_score,
+                            'risk_level': risk_level,
+                            'ml_labels': ml_result.get('ml_labels', []),
+                            'confidence': ml_result.get('ml_confidence', 0)
+                        }
+                        
+                        session_anomalies.append(anomaly_data)
+                        insights['anomalies'].append(anomaly_data)
+                        
+                        # Track attack patterns
+                        for label in ml_result.get('ml_labels', []):
+                            if label not in insights['attack_patterns']:
+                                insights['attack_patterns'][label] = 0
+                            insights['attack_patterns'][label] += 1
+            
+            # Add session-level insights
+            conv['ml_anomalies'] = session_anomalies
+            conv['ml_risk_score'] = max([a['anomaly_score'] for a in session_anomalies], default=0.0)
+        
+        # Calculate summary statistics
+        if all_anomaly_scores:
+            insights['ml_metrics']['avg_anomaly_score'] = sum(all_anomaly_scores) / len(all_anomaly_scores)
+            insights['ml_metrics']['max_anomaly_score'] = max(all_anomaly_scores)
+        
+        # Sort anomalies by score (highest first)
+        insights['anomalies'].sort(key=lambda x: x['anomaly_score'], reverse=True)
+        
+        # Limit to top 20 anomalies for display
+        insights['anomalies'] = insights['anomalies'][:20]
+        
+        return insights
+    
     def _format_user_input(self, entry: Dict[str, Any], timestamp: str) -> List[str]:
         """Format user input entries"""
         output = []
@@ -313,21 +636,64 @@ class LogViewer:
         return []
 
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
-                          show_full: bool = False) -> str:
+                          show_full: bool = False, include_ml: bool = False) -> str:
         """Format conversations for display"""
         if format_type == 'json':
+            # Add ML insights to JSON output if requested
+            if include_ml:
+                ml_insights = self.get_ml_insights(conversations)
+                return json.dumps({
+                    'conversations': conversations,
+                    'ml_insights': ml_insights
+                }, indent=2, default=str)
             return json.dumps(conversations, indent=2, default=str)
         
         output = []
         output.append("=" * 80)
-        service_name = {"ssh": "SSH", "ftp": "FTP", "http": "HTTP", "mysql": "MySQL"}.get(self.service, self.service.upper())
+        service_name = {"ssh": "SSH", "ftp": "FTP", "http": "HTTP", "mysql": "MySQL", "smb": "SMB"}.get(self.service, self.service.upper())
         output.append(f"NEXUS {service_name} HONEYPOT - SESSION CONVERSATIONS")
+        if include_ml and self.ml_detector:
+            output.append("🧠 ML-ENHANCED ANALYSIS ENABLED")
         output.append("=" * 80)
+        
+        # Add ML insights summary if requested
+        if include_ml:
+            ml_insights = self.get_ml_insights(conversations)
+            if ml_insights.get('ml_available'):
+                output.append("\n🧠 ML ANALYSIS SUMMARY:")
+                output.append(f"   📊 Entries Analyzed: {ml_insights['ml_metrics']['entries_analyzed']}")
+                output.append(f"   🚨 Anomalies Detected: {ml_insights['ml_metrics']['anomalies_detected']}")
+                output.append(f"   📈 Avg Anomaly Score: {ml_insights['ml_metrics']['avg_anomaly_score']:.3f}")
+                output.append(f"   ⚠️ Max Anomaly Score: {ml_insights['ml_metrics']['max_anomaly_score']:.3f}")
+                
+                # Risk summary
+                risk_summary = ml_insights['risk_summary']
+                output.append(f"   🔴 High Risk: {risk_summary['high']} | 🟡 Medium Risk: {risk_summary['medium']} | 🟢 Low Risk: {risk_summary['low']}")
+                
+                # Top attack patterns
+                if ml_insights['attack_patterns']:
+                    top_patterns = sorted(ml_insights['attack_patterns'].items(), key=lambda x: x[1], reverse=True)[:3]
+                    patterns_str = ", ".join([f"{pattern} ({count})" for pattern, count in top_patterns])
+                    output.append(f"   🎯 Top Attack Patterns: {patterns_str}")
+                
+                output.append("-" * 80)
         
         for session_id, conv in conversations.items():
             output.append(f"\n🖥️ SESSION: {session_id}")
             output.append(f"🌐 SOURCE IP: {conv['src_ip']}")
             output.append(f"📊 TOTAL ENTRIES: {len(conv['entries'])}")
+            
+            # Add ML risk score if available
+            if include_ml and 'ml_risk_score' in conv:
+                risk_score = conv['ml_risk_score']
+                risk_emoji = "🔴" if risk_score > 0.9 else "🟡" if risk_score > 0.7 else "🟢"
+                output.append(f"🧠 ML RISK SCORE: {risk_emoji} {risk_score:.3f}")
+                
+                # Show session anomalies count
+                anomaly_count = len(conv.get('ml_anomalies', []))
+                if anomaly_count > 0:
+                    output.append(f"⚠️ ANOMALIES DETECTED: {anomaly_count}")
+            
             output.append("-" * 60)
             
             if show_full:
@@ -362,7 +728,7 @@ class LogViewer:
         return str(output_path.resolve())
 
 def main():
-    parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer')
+    parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer with ML Analysis')
     parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql', 'smb'],
                        help='Service to view logs for')
     parser.add_argument('--log-file', '-f', help='Log file path')
@@ -371,12 +737,22 @@ def main():
     parser.add_argument('--conversation', '-c', action='store_true', help='Show full conversation')
     parser.add_argument('--save', '-s', help='Save to file')
     parser.add_argument('--format', choices=['text', 'json'], default='text', help='Output format')
-    parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks'],
+    parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks', 'anomalies'],
                        default='all', help='Filter entries')
+    
+    # ML Analysis options
+    parser.add_argument('--ml-analysis', '--ml', action='store_true', 
+                       help='Enable ML-based anomaly detection and analysis')
+    parser.add_argument('--anomaly-threshold', type=float, default=0.7,
+                       help='Anomaly detection threshold (0.0-1.0, default: 0.7)')
+    parser.add_argument('--ml-insights', action='store_true',
+                       help='Show detailed ML insights and statistics')
+    parser.add_argument('--high-risk-only', action='store_true',
+                       help='Show only high-risk sessions (anomaly score > 0.9)')
     
     args = parser.parse_args()
     
-    if args.service not in ['ssh', 'ftp', 'http', 'mysql']:
+    if args.service not in ['ssh', 'ftp', 'http', 'mysql', 'smb']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
@@ -397,6 +773,9 @@ def main():
         elif args.service == 'mysql':
             new_log_path = base_dir / 'logs' / 'mysql_log.log'
             old_log_path = base_dir / 'service_emulators' / 'MySQL' / 'mysql_log.log'
+        elif args.service == 'smb':
+            new_log_path = base_dir / 'logs' / 'smb_log.log'
+            old_log_path = base_dir / 'service_emulators' / 'SMB' / 'smb_log.log'
         
         if new_log_path and new_log_path.exists():
             args.log_file = str(new_log_path)
@@ -424,12 +803,93 @@ def main():
             conversations = viewer.parse_mysql_logs(
                 args.log_file, args.session_id, args.decode, args.filter
             )
+        elif args.service == 'smb':
+            conversations = viewer.parse_smb_logs(
+                args.log_file, args.session_id, args.decode, args.filter
+            )
         
         if not conversations:
             print("No conversations found")
             return 1
         
-        output = viewer.format_conversation(conversations, args.format, args.conversation)
+        # Apply ML filtering if requested
+        if args.ml_analysis or args.ml_insights:
+            if not ML_AVAILABLE:
+                print("❌ Error: ML analysis requested but ML components not available")
+                return 1
+            
+            # Get ML insights first
+            ml_insights = viewer.get_ml_insights(conversations)
+            
+            # Filter high-risk sessions if requested
+            if args.high_risk_only:
+                high_risk_sessions = {}
+                for session_id, conv in conversations.items():
+                    if conv.get('ml_risk_score', 0) > 0.9:
+                        high_risk_sessions[session_id] = conv
+                conversations = high_risk_sessions
+                
+                if not conversations:
+                    print("No high-risk sessions found")
+                    return 1
+            
+            # Filter anomalies if requested
+            if args.filter == 'anomalies':
+                anomaly_sessions = {}
+                for session_id, conv in conversations.items():
+                    if conv.get('ml_anomalies', []):
+                        anomaly_sessions[session_id] = conv
+                conversations = anomaly_sessions
+                
+                if not conversations:
+                    print("No sessions with anomalies found")
+                    return 1
+            
+            # Show detailed ML insights if requested
+            if args.ml_insights:
+                print("\n" + "=" * 80)
+                print("🧠 DETAILED ML INSIGHTS")
+                print("=" * 80)
+                
+                if ml_insights.get('ml_available'):
+                    print(f"🔍 Service: {ml_insights['service'].upper()}")
+                    print(f"📅 Analysis Time: {ml_insights['analysis_timestamp']}")
+                    print(f"📊 Total Sessions: {ml_insights['total_sessions']}")
+                    print(f"📈 Entries Analyzed: {ml_insights['ml_metrics']['entries_analyzed']}")
+                    print(f"🚨 Anomalies Detected: {ml_insights['ml_metrics']['anomalies_detected']}")
+                    print(f"📊 Average Anomaly Score: {ml_insights['ml_metrics']['avg_anomaly_score']:.3f}")
+                    print(f"⚠️ Maximum Anomaly Score: {ml_insights['ml_metrics']['max_anomaly_score']:.3f}")
+                    
+                    # Risk breakdown
+                    risk_summary = ml_insights['risk_summary']
+                    print(f"\n🎯 RISK BREAKDOWN:")
+                    print(f"   🔴 High Risk: {risk_summary['high']}")
+                    print(f"   🟡 Medium Risk: {risk_summary['medium']}")
+                    print(f"   🟢 Low Risk: {risk_summary['low']}")
+                    
+                    # Attack patterns
+                    if ml_insights['attack_patterns']:
+                        print(f"\n🎯 ATTACK PATTERNS DETECTED:")
+                        for pattern, count in sorted(ml_insights['attack_patterns'].items(), key=lambda x: x[1], reverse=True):
+                            print(f"   • {pattern}: {count} occurrences")
+                    
+                    # Top anomalies
+                    if ml_insights['anomalies']:
+                        print(f"\n🚨 TOP ANOMALIES:")
+                        for i, anomaly in enumerate(ml_insights['anomalies'][:5], 1):
+                            risk_emoji = "🔴" if anomaly['risk_level'] == 'high' else "🟡"
+                            print(f"   {i}. {risk_emoji} Score: {anomaly['anomaly_score']:.3f} | Session: {anomaly['session_id']}")
+                            print(f"      📝 {anomaly['message']}")
+                            if anomaly['ml_labels']:
+                                print(f"      🏷️ Labels: {', '.join(anomaly['ml_labels'])}")
+                else:
+                    print("❌ ML analysis not available")
+                
+                print("=" * 80)
+        
+        # Enable ML analysis in output if requested
+        include_ml = args.ml_analysis or args.ml_insights
+        output = viewer.format_conversation(conversations, args.format, args.conversation, include_ml)
         
         if args.save:
             saved_path = viewer.save_conversation(output, args.save)

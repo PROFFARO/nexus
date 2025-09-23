@@ -105,6 +105,47 @@ Examples:
         smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot')
         self._add_smb_arguments(smb_parser)
         
+        # ML commands
+        ml_parser = subparsers.add_parser('ml', help='Machine Learning operations')
+        ml_subparsers = ml_parser.add_subparsers(dest='ml_command', help='ML commands')
+        
+        # ML extract command
+        extract_parser = ml_subparsers.add_parser('extract', help='Extract features from datasets')
+        extract_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+                                  help='Service to extract features for')
+        extract_parser.add_argument('--datasets-dir', default='datasets', help='Datasets directory')
+        extract_parser.add_argument('--output', '-o', help='Output file path')
+        
+        # ML train command
+        train_parser = ml_subparsers.add_parser('train', help='Train ML models')
+        train_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+                                help='Service to train models for')
+        train_parser.add_argument('--algorithm', choices=['isolation_forest', 'one_class_svm', 'lof', 'hdbscan', 'kmeans', 'xgboost', 'all'],
+                                default='all', help='ML algorithm to train')
+        train_parser.add_argument('--data', help='Training data file path')
+        train_parser.add_argument('--test-size', type=float, default=0.2, help='Test set size (0.0-1.0)')
+        
+        # ML evaluate command
+        eval_parser = ml_subparsers.add_parser('eval', help='Evaluate trained models')
+        eval_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb'],
+                               help='Service to evaluate models for')
+        eval_parser.add_argument('--test-data', help='Test data file path')
+        eval_parser.add_argument('--model', help='Specific model to evaluate')
+        
+        # ML predict command
+        predict_parser = ml_subparsers.add_parser('predict', help='Make predictions with trained models')
+        predict_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb'],
+                                  help='Service to make predictions for')
+        predict_parser.add_argument('--input', required=True, help='Input data file or single command/query')
+        predict_parser.add_argument('--output', help='Output file for predictions')
+        
+        # ML update-models command
+        update_parser = ml_subparsers.add_parser('update-models', help='Update/retrain models')
+        update_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+                                 help='Service to update models for')
+        update_parser.add_argument('--model-path', help='Path to new model files')
+        update_parser.add_argument('--force', action='store_true', help='Force model update')
+        
         # Management commands
         status_parser = subparsers.add_parser('status', help='Check service status')
         status_parser.add_argument('service', nargs='?', help='Specific service to check (optional)')
@@ -1082,6 +1123,8 @@ except Exception as e:
             return self.stop_all(args)
         elif args.command == 'start-all':
             return self.start_all(args)
+        elif args.command == 'ml':
+            return self.handle_ml_command(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
@@ -1381,6 +1424,333 @@ except Exception as e:
                 cmd.extend(['-u', account])
         
         return cmd
+
+    def handle_ml_command(self, args):
+        """Handle ML subcommands"""
+        if not args.ml_command:
+            print("Error: ML subcommand required")
+            return 1
+        
+        try:
+            # Import ML modules with proper path handling
+            sys.path.insert(0, str(self.base_dir))
+            sys.path.insert(0, str(self.base_dir.parent))  # Add parent directory for 'src' imports
+            
+            from ai.data_processor import DataProcessor
+            from ai.training import ModelTrainer
+            from ai.detectors import MLDetector
+            from ai.config import MLConfig
+            
+            if args.ml_command == 'extract':
+                return self._ml_extract_features(args)
+            elif args.ml_command == 'train':
+                return self._ml_train_models(args)
+            elif args.ml_command == 'eval':
+                return self._ml_evaluate_models(args)
+            elif args.ml_command == 'predict':
+                return self._ml_predict(args)
+            elif args.ml_command == 'update-models':
+                return self._ml_update_models(args)
+            else:
+                print(f"Unknown ML command: {args.ml_command}")
+                return 1
+                
+        except ImportError as e:
+            print(f"Error: ML modules not available: {e}")
+            print("Please ensure all ML dependencies are installed.")
+            return 1
+        except Exception as e:
+            print(f"Error executing ML command: {e}")
+            return 1
+    
+    def _ml_extract_features(self, args):
+        """Extract features from datasets"""
+        print(f"🔍 Extracting features for {args.service}...")
+        
+        datasets_dir = Path(args.datasets_dir)
+        if not datasets_dir.exists():
+            print(f"Error: Datasets directory not found: {datasets_dir}")
+            return 1
+        
+        from ai.data_processor import DataProcessor
+        processor = DataProcessor(str(datasets_dir))
+        
+        if args.service == 'all':
+            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+        else:
+            services = [args.service]
+        
+        for service in services:
+            print(f"\n Processing {service.upper()} data...")
+            try:
+                data = processor.get_processed_data(service)
+                service_data = data.get(service, [])
+                
+                if service_data:
+                    print(f" Extracted {len(service_data)} samples for {service}")
+                    
+                    if args.output:
+                        output_file = Path(args.output) / f"{service}_features.json"
+                        output_file.parent.mkdir(parents=True, exist_ok=True)
+                        
+                        import json
+                        with open(output_file, 'w') as f:
+                            json.dump(service_data, f, indent=2)
+                        print(f" Saved to {output_file}")
+                else:
+                    print(f"  No data found for {service}")
+                    
+            except Exception as e:
+                print(f" Error processing {service}: {e}")
+        
+        return 0
+    
+    def _ml_train_models(self, args):
+        """Train ML models"""
+        print(f"🚀 Training ML models for {args.service}...")
+        
+        from ai.training import ModelTrainer
+        from ai.data_processor import DataProcessor
+        
+        if args.service == 'all':
+            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+        else:
+            services = [args.service]
+        
+        processor = DataProcessor()
+        
+        for service in services:
+            print(f"\n Training models for {service.upper()}...")
+            
+            try:
+                trainer = ModelTrainer(service)
+                
+                # Get training data
+                if args.data:
+                    # Load from file
+                    import json
+                    import numpy as np
+                    with open(args.data, 'r') as f:
+                        all_data = json.load(f)
+                        # Split data
+                        np.random.shuffle(all_data)
+                        split_idx = int(len(all_data) * (1 - args.test_size))
+                        train_data = all_data[:split_idx]
+                        test_data = all_data[split_idx:]
+                else:
+                    # Use processed datasets and split
+                    train_data, test_data = processor.get_training_data(service, args.test_size)
+
+                if not train_data:
+                    print(f"  No training data available for {service}")
+                    continue
+
+                print(f" Training with {len(train_data)} samples...")
+                
+                if args.algorithm == 'all':
+                    results = trainer.train_all_models(train_data)
+                else:
+                    if args.algorithm in ['isolation_forest', 'one_class_svm', 'lof']:
+                        results = {args.algorithm: trainer.train_anomaly_detector(train_data, args.algorithm)}
+                    elif args.algorithm == 'xgboost':
+                        results = {args.algorithm: trainer.train_supervised_classifier(train_data)}
+                    elif args.algorithm in ['hdbscan', 'kmeans']:
+                        results = {args.algorithm: trainer.train_clustering_model(train_data, args.algorithm)}
+                    else:
+                        print(f" Unknown algorithm: {args.algorithm}")
+                        continue
+                
+                # Save models
+                trainer.save_models()
+                
+                # Print results
+                for algo, result in results.items():
+                    print(f" {algo}: {result.get('accuracy', 'N/A'):.3f} accuracy")
+                
+            except Exception as e:
+                print(f" Error training {service}: {e}")
+                import traceback
+                traceback.print_exc()
+        
+        return 0
+    
+    def _ml_evaluate_models(self, args):
+        """Evaluate trained models"""
+        print(f"📊 Evaluating ML models for {args.service}...")
+        
+        from ai.training import ModelTrainer
+        from ai.data_processor import DataProcessor
+        
+        try:
+            trainer = ModelTrainer(args.service)
+            processor = DataProcessor()
+            
+            # Get test data
+            if args.test_data:
+                import json
+                with open(args.test_data, 'r') as f:
+                    test_data = json.load(f)
+            else:
+                _, test_data = processor.get_training_data(args.service, 0.2)
+            
+            if not test_data:
+                print(f"  No test data available for {args.service}")
+                return 1
+            
+            print(f" Evaluating with {len(test_data)} test samples...")
+            
+            # Evaluate models
+            if args.model:
+                results = trainer.evaluate_model(args.model, test_data)
+                print(f" {args.model} Results:")
+                for metric, value in results.items():
+                    if isinstance(value, float):
+                        print(f"  {metric}: {value:.3f}")
+                    else:
+                        print(f"  {metric}: {value}")
+            else:
+                # Evaluate all available models
+                for model_name in trainer.models.keys():
+                    try:
+                        results = trainer.evaluate_model(model_name, test_data)
+                        print(f" {model_name} Results:")
+                        for metric, value in results.items():
+                            if isinstance(value, float):
+                                print(f"  {metric}: {value:.3f}")
+                            else:
+                                print(f"  {metric}: {value}")
+                        print()
+                    except Exception as e:
+                        print(f" Error evaluating {model_name}: {e}")
+            
+        except Exception as e:
+            print(f" Error during evaluation: {e}")
+            return 1
+        
+        return 0
+    
+    def _ml_predict(self, args):
+        """Make predictions with trained models"""
+        print(f"🔮 Making predictions for {args.service}...")
+        
+        from ai.detectors import MLDetector
+        from ai.config import MLConfig
+        
+        try:
+            config = MLConfig(args.service)
+            detector = MLDetector(args.service, config)
+            
+            if not detector.is_trained:
+                print(f" No trained models found for {args.service}")
+                print("Please train models first using: nexus_cli.py ml train")
+                return 1
+            
+            # Prepare input data
+            if Path(args.input).exists():
+                # Input is a file
+                import json
+                with open(args.input, 'r') as f:
+                    input_data = json.load(f)
+                
+                if isinstance(input_data, list):
+                    predictions = []
+                    for item in input_data:
+                        result = detector.score(item)
+                        predictions.append(result)
+                        print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}")
+                else:
+                    result = detector.score(input_data)
+                    predictions = [result]
+                    print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}")
+            else:
+                # Input is a single command/query
+                if args.service == 'ssh':
+                    data = {'command': args.input}
+                elif args.service == 'http':
+                    data = {'request': args.input, 'method': 'GET', 'url': args.input}
+                elif args.service == 'mysql':
+                    data = {'query': args.input}
+                elif args.service == 'ftp':
+                    data = {'command': args.input}
+                elif args.service == 'smb':
+                    data = {'command': args.input, 'path': args.input}
+                else:
+                    data = {'text': args.input}
+                
+                result = detector.score(data)
+                predictions = [result]
+                print(f" Input: {args.input}")
+                print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}")
+                print(f" Labels: {result['ml_labels']}")
+                print(f" Reason: {result['ml_reason']}")
+            
+            # Save predictions if output specified
+            if args.output:
+                import json
+                with open(args.output, 'w') as f:
+                    json.dump(predictions, f, indent=2)
+                print(f" Predictions saved to {args.output}")
+            
+        except Exception as e:
+            print(f" Error during prediction: {e}")
+            return 1
+        
+        return 0
+    
+    def _ml_update_models(self, args):
+        """Update/retrain models"""
+        print(f"🔄 Updating ML models for {args.service}...")
+        
+        if args.service == 'all':
+            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+        else:
+            services = [args.service]
+        
+        for service in services:
+            print(f"\n Updating models for {service.upper()}...")
+            
+            try:
+                from ai.config import MLConfig
+                config = MLConfig(service)
+                
+                if args.model_path:
+                    # Copy new models from specified path
+                    import shutil
+                    import os
+                    source_path = os.path.join(args.model_path, service)
+                    target_path = config.models_dir / service
+                    
+                    if source_path.exists():
+                        if args.force or input(f"Replace existing models for {service}? (y/N): ").lower() == 'y':
+                            shutil.copytree(source_path, target_path, dirs_exist_ok=True)
+                            print(f" Models updated for {service}")
+                        else:
+                            print(f"  Skipped {service}")
+                    else:
+                        print(f" Model path not found: {source_path}")
+                else:
+                    # Retrain models
+                    from ai.training import ModelTrainer
+                    from ai.data_processor import DataProcessor
+                    
+                    trainer = ModelTrainer(service)
+                    processor = DataProcessor()
+                    
+                    data = processor.get_processed_data(service)
+                    training_data = data.get(service, [])
+                    
+                    if training_data:
+                        train_data, _ = processor.get_training_data(service, 0.2)
+                        results = trainer.train_all_models(train_data)
+                        trainer.save_models()
+                        print(f" Retrained models for {service}")
+                    else:
+                        print(f"  No training data available for {service}")
+                
+            except Exception as e:
+                print(f" Error updating {service}: {e}")
+        
+        return 0
 
     def run_smb_service(self, args):
         """Run SMB honeypot with provided arguments"""

@@ -44,14 +44,35 @@ except ImportError:
     print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
     print("Environment variables will be loaded from system environment only.")
 
+# Import ML components
+try:
+    from ...ai.detectors import MLDetector
+    from ...ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError:
+    ML_AVAILABLE = False
+    print("Warning: ML components not available. Install dependencies or check ai module.")
+
 class AttackAnalyzer:
-    """AI-based attack behavior analyzer with integrated JSON patterns"""
+    """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
     
     def __init__(self):
         # Load attack patterns from JSON file
         self.attack_patterns = self._load_attack_patterns()
         # Load vulnerability signatures from JSON file  
         self.vulnerability_signatures = self._load_vulnerability_signatures()
+        
+        # Initialize ML detector if available
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('smb')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('smb', ml_config)
+                    logging.info("ML detector initialized for SMB service")
+            except Exception as e:
+                logging.warning(f"Failed to initialize ML detector: {e}")
+                self.ml_detector = None
         
     def _load_attack_patterns(self) -> Dict[str, Any]:
         """Load attack patterns from JSON configuration"""
@@ -151,6 +172,35 @@ class AttackAnalyzer:
             # Check alert threshold
             alert_threshold = config['attack_detection'].getint('alert_threshold', 70)
             analysis['alert_triggered'] = threat_score >= alert_threshold
+        
+        # Add ML-based analysis if available
+        if self.ml_detector:
+            try:
+                ml_data = {
+                    'command': command,
+                    'path': '',  # Will be updated with actual path if available
+                    'session_data': {
+                        'read_ops': 1,
+                        'write_ops': 0,
+                        'delete_ops': 0,
+                        'bytes_read': 0,
+                        'bytes_written': 0,
+                        'failed_ops': 0
+                    }
+                }
+                ml_results = self.ml_detector.score(ml_data)
+                analysis.update(ml_results)
+                
+                # Enhance severity based on ML anomaly score
+                if ml_results.get('ml_anomaly_score', 0) > 0.8:
+                    if analysis['severity'] in ['low', 'medium']:
+                        analysis['severity'] = 'high'
+                        analysis['attack_types'].append('ml_anomaly')
+                        
+            except Exception as e:
+                logging.error(f"ML analysis failed: {e}")
+                if not config.get('ml', {}).get('fallback_on_error', True):
+                    raise
         
         return analysis
     

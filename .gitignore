@@ -188,6 +188,7 @@ sessions/
 *.log
 forensic_chain.json
 session_summary.json
+training_report.json
 *_report_*.json
 *_security_*.json
 *.xlsx
@@ -200,6 +201,10 @@ created_files/
 research-papers/
 nexus-components-aarch.jpg
 report_overview.pdf
+datasets/
+cowrie.*
+*.csv
+ml_prompt.txt
 
 # API Keys and Secrets
 *api_key*
