@@ -60,8 +60,13 @@ class MLDetector:
             if vectorizer_path.exists():
                 self.feature_extractor.vectorizer = joblib.load(vectorizer_path)
                 logging.info(f"Loaded vectorizer for {self.service_type}")
+            
+            scaler_path = self.config.get_scaler_path(self.service_type)
+            if scaler_path.exists():
+                self.feature_extractor.scaler = joblib.load(scaler_path)
+                logging.info(f"Loaded scaler for {self.service_type}")
                 
-            self.is_trained = self.anomaly_detector is not None
+            self.is_trained = self.anomaly_detector is not None and self.feature_extractor.vectorizer is not None
             
         except Exception as e:
             logging.error(f"Failed to load models for {self.service_type}: {e}")

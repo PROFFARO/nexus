@@ -41,19 +41,21 @@ from urllib.parse import urlparse, parse_qs, unquote
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
-    load_dotenv()
 except ImportError:
     print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
     print("Environment variables will be loaded from system environment only.")
 
 # Import ML components
 try:
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent.parent))
     from ai.detectors import MLDetector
     from ai.config import MLConfig
     ML_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     ML_AVAILABLE = False
-    print("Warning: ML components not available. Install dependencies or check ai module.")
+    print(f"Warning: ML components not available: {e}")
 
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
@@ -184,27 +186,54 @@ class AttackAnalyzer:
         # Add ML-based analysis if available
         if self.ml_detector:
             try:
+                # Prepare comprehensive ML data
                 ml_data = {
-                    'request': request_data,
                     'method': method,
                     'url': path,
-                    'headers': headers,
-                    'session_data': {
-                        'request_count': 1,
-                        'bytes_transferred': len(body)
-                    }
+                    'headers': str(headers),
+                    'body': body,
+                    'timestamp': analysis['timestamp'],
+                    'attack_types': analysis['attack_types'],
+                    'severity': analysis['severity'],
+                    'indicators': analysis['indicators'],
+                    'vulnerabilities': analysis['vulnerabilities'],
+                    'pattern_matches': analysis['pattern_matches']
                 }
+                
+                # Get ML scoring results
                 ml_results = self.ml_detector.score(ml_data)
-                analysis.update(ml_results)
+                
+                # Integrate ML results into analysis
+                analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
+                analysis['ml_labels'] = ml_results.get('ml_labels', [])
+                analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
+                analysis['ml_reason'] = ml_results.get('ml_reason', 'No ML analysis')
+                analysis['ml_confidence'] = ml_results.get('ml_confidence', 0.0)
+                analysis['ml_inference_time_ms'] = ml_results.get('ml_inference_time_ms', 0)
                 
                 # Enhance severity based on ML anomaly score
-                if ml_results.get('ml_anomaly_score', 0) > 0.8:
+                ml_score = ml_results.get('ml_anomaly_score', 0)
+                if ml_score > 0.8:
                     if analysis['severity'] in ['low', 'medium']:
                         analysis['severity'] = 'high'
-                        analysis['attack_types'].append('ml_anomaly')
+                        analysis['attack_types'].append('ml_anomaly_high')
+                elif ml_score > 0.6:
+                    if analysis['severity'] == 'low':
+                        analysis['severity'] = 'medium'
+                        analysis['attack_types'].append('ml_anomaly_medium')
+                
+                # Add ML-specific indicators
+                if 'anomaly' in ml_results.get('ml_labels', []):
+                    analysis['indicators'].append(f"ML Anomaly Detection: {ml_results.get('ml_reason', 'Unknown')}")
+                
+                logging.info(f"HTTP ML Analysis: Score={ml_score:.3f}, Labels={ml_results.get('ml_labels', [])}, Confidence={ml_results.get('ml_confidence', 0):.3f}")
                         
             except Exception as e:
                 logging.error(f"ML analysis failed: {e}")
+                # Add ML error information to analysis
+                analysis['ml_error'] = str(e)
+                analysis['ml_anomaly_score'] = 0.0
+                analysis['ml_labels'] = ['ml_error']
                 if not config.get('ml', {}).get('fallback_on_error', True):
                     raise
         
@@ -223,6 +252,18 @@ class AttackAnalyzer:
         
         # Add points for vulnerabilities
         score += len(analysis['vulnerabilities']) * 15
+        
+        # Add ML-based scoring
+        ml_score = analysis.get('ml_anomaly_score', 0)
+        if ml_score > 0:
+            # ML score contributes up to 30 points
+            ml_contribution = int(ml_score * 30)
+            score += ml_contribution
+            
+            # Bonus for high confidence ML detection
+            ml_confidence = analysis.get('ml_confidence', 0)
+            if ml_confidence > 0.8 and ml_score > 0.7:
+                score += 10  # High confidence bonus
         
         return min(score, 100)  # Cap at 100
 

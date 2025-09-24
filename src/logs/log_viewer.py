@@ -5,6 +5,7 @@ NEXUS Honeypot Log Viewer - Parse and display session conversations
 
 import json
 import os
+import sys
 import argparse
 import datetime
 from base64 import b64decode
@@ -13,12 +14,14 @@ from typing import Dict, List, Any, Optional
 
 # Import ML components
 try:
-    from ..ai.detectors import MLDetector
-    from ..ai.config import MLConfig
+    sys.path.append(str(Path(__file__).parent.parent))
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
     ML_AVAILABLE = True
-except ImportError:
+except ImportError as e:
     ML_AVAILABLE = False
-    print("Warning: ML components not available. Install dependencies or check ai module.")
+    print(f"Warning: ML components not available. Install dependencies or check ai module: {e}")
+
 
 class LogViewer:
     def __init__(self, service: str):

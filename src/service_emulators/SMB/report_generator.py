@@ -8,7 +8,6 @@ import json
 import os
 import sys
 import datetime
-from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
 from collections import defaultdict, Counter
@@ -16,6 +15,16 @@ import base64
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import ML components
+try:
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available for SMB report generation: {e}")
+
 
 class SMBHoneypotReportGenerator:
     """Generate comprehensive reports from SMB honeypot sessions"""
@@ -29,6 +38,19 @@ class SMBHoneypotReportGenerator:
         self.command_stats = defaultdict(int)
         
         # Load session data
+        
+        # Initialize ML detector for enhanced analysis
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('smb')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('smb', ml_config)
+                    print("ML detector initialized for SMB report generation")
+            except Exception as e:
+                print(f"Warning: Failed to initialize ML detector for SMB reports: {e}")
+                self.ml_detector = None
+
         self._load_sessions()
         
     def _load_sessions(self):

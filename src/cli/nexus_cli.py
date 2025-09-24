@@ -46,11 +46,29 @@ class NexusCLI:
             formatter_class=argparse.RawDescriptionHelpFormatter,
             epilog="""
 Examples:
+  # Start services
   nexus_cli.py ssh --port 2222 --llm-provider ollama
   nexus_cli.py ssh --config custom.ini --log-file ssh.log
+  
+  # Generate reports
   nexus_cli.py report ssh --output reports/ --format html
+  nexus_cli.py report ssh --ml-enhanced --include-ml-insights
   nexus_cli.py report ssh --sessions-dir custom/sessions --severity high
+  
+  # Analyze logs with ML
+  nexus_cli.py logs ssh --ml-analysis --ml-insights
+  nexus_cli.py logs http --high-risk-only --anomaly-threshold 0.8
+  nexus_cli.py logs mysql --filter anomalies --ml-analysis
+  
+  # ML operations
+  nexus_cli.py ml train ssh --algorithm all
+  nexus_cli.py ml predict ssh --input "rm -rf /"
+  nexus_cli.py ml eval ssh --test-data test.json
+  
+  # Management
   nexus_cli.py list
+  nexus_cli.py status
+  nexus_cli.py start-all --llm-provider ollama
             """
         )
         
@@ -71,6 +89,14 @@ Examples:
         report_parser.add_argument('--severity', choices=['all', 'low', 'medium', 'high', 'critical'], 
                                  default='all', help='Minimum severity level')
         
+        # ML Analysis options for reports
+        report_parser.add_argument('--ml-enhanced', action='store_true',
+                                 help='Generate ML-enhanced reports with anomaly detection')
+        report_parser.add_argument('--include-ml-insights', action='store_true',
+                                 help='Include detailed ML insights in reports')
+        report_parser.add_argument('--anomaly-threshold', type=float, default=0.7,
+                                 help='Anomaly detection threshold for reports (0.0-1.0, default: 0.7)')
+        
         # Logs command for viewing session conversations
         logs_parser = subparsers.add_parser('logs', help='View and analyze session logs')
         logs_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql', 'smb'],
@@ -84,13 +110,22 @@ Examples:
         logs_parser.add_argument('--save', '-s', help='Save analysis to file (absolute or relative path)')
         logs_parser.add_argument('--format', choices=['text', 'json'], default='text',
                                help='Output format (text or json)')
-        logs_parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks'],
+        logs_parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks', 'anomalies'],
                                default='all', help='Filter log entries')
+        
+        # ML Analysis options for logs
+        logs_parser.add_argument('--ml-analysis', '--ml', action='store_true', 
+                               help='Enable ML-based anomaly detection and analysis')
+        logs_parser.add_argument('--anomaly-threshold', type=float, default=0.7,
+                               help='Anomaly detection threshold (0.0-1.0, default: 0.7)')
+        logs_parser.add_argument('--ml-insights', action='store_true',
+                               help='Show detailed ML insights and statistics')
+        logs_parser.add_argument('--high-risk-only', action='store_true',
+                               help='Show only high-risk sessions (anomaly score > 0.9)')
         
         # SSH service parser
         ssh_parser = subparsers.add_parser('ssh', help='Start SSH honeypot')
         self._add_ssh_arguments(ssh_parser)
-        
         # FTP service parser
         ftp_parser = subparsers.add_parser('ftp', help='Start FTP honeypot')
         self._add_ftp_arguments(ftp_parser)
@@ -1072,6 +1107,16 @@ except Exception as e:
             cmd.extend(['--format', args.format])
         if args.filter:
             cmd.extend(['--filter', args.filter])
+        
+        # Add ML analysis options
+        if hasattr(args, 'ml_analysis') and args.ml_analysis:
+            cmd.append('--ml-analysis')
+        if hasattr(args, 'anomaly_threshold') and args.anomaly_threshold != 0.7:
+            cmd.extend(['--anomaly-threshold', str(args.anomaly_threshold)])
+        if hasattr(args, 'ml_insights') and args.ml_insights:
+            cmd.append('--ml-insights')
+        if hasattr(args, 'high_risk_only') and args.high_risk_only:
+            cmd.append('--high-risk-only')
         
         try:
             result = subprocess.run(cmd, capture_output=True, text=True, encoding='utf-8')

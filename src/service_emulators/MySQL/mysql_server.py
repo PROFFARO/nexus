@@ -154,6 +154,206 @@ try:
 except ImportError:
     logger.debug("python-dotenv not installed; skipping loading .env")
 
+# Import ML components
+try:
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent.parent))
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available: {e}")
+
+class AttackAnalyzer:
+    """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
+    
+    def __init__(self):
+        # Load attack patterns from JSON file
+        self.attack_patterns = self._load_attack_patterns()
+        # Load vulnerability signatures from JSON file  
+        self.vulnerability_signatures = self._load_vulnerability_signatures()
+        
+        # Initialize ML detector if available
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('mysql')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('mysql', ml_config)
+                    logging.info("ML detector initialized for MySQL service")
+            except Exception as e:
+                logging.warning(f"Failed to initialize ML detector: {e}")
+                self.ml_detector = None
+        
+    def _load_attack_patterns(self) -> Dict[str, Any]:
+        """Load attack patterns from JSON configuration"""
+        try:
+            patterns_file = Path(__file__).parent / "attack_patterns.json"
+            with open(patterns_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load attack patterns: {e}")
+            # Fallback to basic patterns
+            return {
+                'sql_injection': {'patterns': [r'union.*select', r'or.*1=1', r'drop.*table', r'insert.*into'], 'severity': 'critical'},
+                'privilege_escalation': {'patterns': [r'grant.*all', r'create.*user', r'alter.*user'], 'severity': 'high'},
+                'data_exfiltration': {'patterns': [r'select.*from.*information_schema', r'show.*tables', r'describe.*'], 'severity': 'medium'},
+                'reconnaissance': {'patterns': [r'show.*databases', r'show.*users', r'version\(\)'], 'severity': 'medium'}
+            }
+            
+    def _load_vulnerability_signatures(self) -> Dict[str, Any]:
+        """Load vulnerability signatures from JSON configuration"""
+        try:
+            vuln_file = Path(__file__).parent / "vulnerability_signatures.json"
+            with open(vuln_file, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            logging.error(f"Failed to load vulnerability signatures: {e}")
+            return {}
+        
+    def analyze_query(self, query: str, username: str = "", database: str = "") -> Dict[str, Any]:
+        """Analyze MySQL query for attack patterns with ML integration"""
+        analysis = {
+            'query': query,
+            'username': username,
+            'database': database,
+            'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            'attack_types': [],
+            'severity': 'low',
+            'indicators': [],
+            'vulnerabilities': [],
+            'pattern_matches': []
+        }
+        
+        # Check attack patterns from JSON
+        for attack_type, attack_data in self.attack_patterns.items():
+            patterns = attack_data.get('patterns', [])
+            for pattern in patterns:
+                if re.search(pattern, query, re.IGNORECASE):
+                    analysis['attack_types'].append(attack_type)
+                    analysis['indicators'].extend(attack_data.get('indicators', []))
+                    analysis['pattern_matches'].append({
+                        'type': attack_type,
+                        'pattern': pattern,
+                        'severity': attack_data.get('severity', 'medium')
+                    })
+                    
+        # Check vulnerability signatures
+        for vuln_id, vuln_data in self.vulnerability_signatures.items():
+            patterns = vuln_data.get('patterns', [])
+            for pattern in patterns:
+                if re.search(pattern, query, re.IGNORECASE):
+                    analysis['vulnerabilities'].append({
+                        'id': vuln_id,
+                        'name': vuln_data.get('name', vuln_id),
+                        'severity': vuln_data.get('severity', 'medium'),
+                        'cvss_score': vuln_data.get('cvss_score', 0.0),
+                        'pattern_matched': pattern
+                    })
+                    
+        # Determine overall severity based on patterns and vulnerabilities
+        severity_scores = {'low': 1, 'medium': 2, 'high': 3, 'critical': 4}
+        max_severity = 'low'
+        
+        # Check attack pattern severities
+        for match in analysis['pattern_matches']:
+            if severity_scores.get(match['severity'], 1) > severity_scores[max_severity]:
+                max_severity = match['severity']
+                
+        # Check vulnerability severities
+        for vuln in analysis['vulnerabilities']:
+            if severity_scores.get(vuln['severity'], 1) > severity_scores[max_severity]:
+                max_severity = vuln['severity']
+        
+        analysis['severity'] = max_severity
+        
+        # Calculate threat score
+        threat_score = self._calculate_threat_score(analysis)
+        analysis['threat_score'] = threat_score
+        
+        # Add ML-based analysis if available
+        if self.ml_detector:
+            try:
+                # Prepare comprehensive ML data
+                ml_data = {
+                    'query': query,
+                    'username': username,
+                    'database': database,
+                    'timestamp': analysis['timestamp'],
+                    'attack_types': analysis['attack_types'],
+                    'severity': analysis['severity'],
+                    'indicators': analysis['indicators'],
+                    'vulnerabilities': analysis['vulnerabilities'],
+                    'pattern_matches': analysis['pattern_matches']
+                }
+                
+                # Get ML scoring results
+                ml_results = self.ml_detector.score(ml_data)
+                
+                # Integrate ML results into analysis
+                analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
+                analysis['ml_labels'] = ml_results.get('ml_labels', [])
+                analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
+                analysis['ml_reason'] = ml_results.get('ml_reason', 'No ML analysis')
+                analysis['ml_confidence'] = ml_results.get('ml_confidence', 0.0)
+                analysis['ml_inference_time_ms'] = ml_results.get('ml_inference_time_ms', 0)
+                
+                # Enhance severity based on ML anomaly score
+                ml_score = ml_results.get('ml_anomaly_score', 0)
+                if ml_score > 0.8:
+                    if analysis['severity'] in ['low', 'medium']:
+                        analysis['severity'] = 'high'
+                        analysis['attack_types'].append('ml_anomaly_high')
+                elif ml_score > 0.6:
+                    if analysis['severity'] == 'low':
+                        analysis['severity'] = 'medium'
+                        analysis['attack_types'].append('ml_anomaly_medium')
+                
+                # Add ML-specific indicators
+                if 'anomaly' in ml_results.get('ml_labels', []):
+                    analysis['indicators'].append(f"ML Anomaly Detection: {ml_results.get('ml_reason', 'Unknown')}")
+                
+                logging.info(f"MySQL ML Analysis: Score={ml_score:.3f}, Labels={ml_results.get('ml_labels', [])}, Confidence={ml_results.get('ml_confidence', 0):.3f}")
+                        
+            except Exception as e:
+                logging.error(f"ML analysis failed: {e}")
+                # Add ML error information to analysis
+                analysis['ml_error'] = str(e)
+                analysis['ml_anomaly_score'] = 0.0
+                analysis['ml_labels'] = ['ml_error']
+        
+        return analysis
+    
+    def _calculate_threat_score(self, analysis: Dict[str, Any]) -> int:
+        """Calculate threat score based on analysis including ML insights"""
+        score = 0
+        severity_scores = {'low': 10, 'medium': 30, 'high': 60, 'critical': 90}
+        
+        # Base score from severity
+        score += severity_scores.get(analysis['severity'], 0)
+        
+        # Add points for multiple attack types
+        score += len(analysis['attack_types']) * 5
+        
+        # Add points for vulnerabilities
+        score += len(analysis['vulnerabilities']) * 15
+        
+        # Add ML-based scoring
+        ml_score = analysis.get('ml_anomaly_score', 0)
+        if ml_score > 0:
+            # ML score contributes up to 30 points
+            ml_contribution = int(ml_score * 30)
+            score += ml_contribution
+            
+            # Bonus for high confidence ML detection
+            ml_confidence = analysis.get('ml_confidence', 0)
+            if ml_confidence > 0.8 and ml_score > 0.7:
+                score += 10  # High confidence bonus
+        
+        return min(score, 100)  # Cap at 100
+
 # --------------------------
 # Utility: patch mysql_mimic callback to avoid noisy logs when protocol errors happen
 # --------------------------

@@ -193,6 +193,45 @@ class MLConfig:
             with open(config_path, 'w') as f:
                 parser.write(f)
     
+    def get_model_path(self, model_type: str, service: str) -> Path:
+        """Get path to a specific model file"""
+        service_dir = self.models_dir / service
+        
+        # Map model types to actual filenames
+        model_files = {
+            'anomaly_detector': 'isolation_forest_anomaly.pkl',
+            'cluster_model': 'hdbscan_clustering.pkl',
+            'supervised_classifier': 'supervised_classifier.pkl',
+            'one_class_svm': 'one_class_svm_anomaly.pkl'
+        }
+        
+        filename = model_files.get(model_type, f"{model_type}.pkl")
+        return service_dir / filename
+    
+    def get_vectorizer_path(self, service: str) -> Path:
+        """Get path to vectorizer file"""
+        return self.models_dir / service / "vectorizer.pkl"
+    
+    def get_scaler_path(self, service: str) -> Path:
+        """Get path to scaler file"""
+        return self.models_dir / service / "scaler.pkl"
+    
+    def get_label_encoder_path(self, service: str) -> Path:
+        """Get path to label encoder file"""
+        return self.models_dir / service / "label_encoder.pkl"
+    
+    def get_embedding_cache_path(self) -> Path:
+        """Get path to embeddings cache"""
+        if self.service_name:
+            return self.models_dir / self.service_name / "embeddings.cache"
+        return self.models_dir / "embeddings.cache"
+    
+    def get_faiss_index_path(self) -> Path:
+        """Get path to FAISS index"""
+        if self.service_name:
+            return self.models_dir / self.service_name / "faiss.index"
+        return self.models_dir / "faiss.index"
+    
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to dictionary"""
         return self.config.copy()

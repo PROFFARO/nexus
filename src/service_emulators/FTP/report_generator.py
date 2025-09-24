@@ -8,14 +8,23 @@ import json
 import os
 import sys
 import datetime
-from pathlib import Path
 from typing import Dict, List, Any, Optional
 import logging
 from collections import defaultdict, Counter
 import base64
+from pathlib import Path
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import ML components
+try:
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available for FTP report generation: {e}")
 
 class FTPHoneypotReportGenerator:
     """Generate comprehensive reports from FTP honeypot sessions"""
@@ -27,6 +36,18 @@ class FTPHoneypotReportGenerator:
         self.vulnerability_stats = defaultdict(int)
         self.ip_stats = defaultdict(int)
         self.command_stats = defaultdict(int)
+        
+        # Initialize ML detector for enhanced analysis
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('ftp')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('ftp', ml_config)
+                    print("ML detector initialized for FTP report generation")
+            except Exception as e:
+                print(f"Warning: Failed to initialize ML detector for FTP reports: {e}")
+                self.ml_detector = None
         
         # Load session data
         self._load_sessions()
@@ -205,6 +226,16 @@ class FTPHoneypotReportGenerator:
                 'total_commands': sum(self.command_stats.values()),
                 'most_common_attack': max(self.attack_stats.items(), key=lambda x: x[1])[0] if self.attack_stats else 'none',
                 'most_targeted_vulnerability': max(self.vulnerability_stats.items(), key=lambda x: x[1])[0] if self.vulnerability_stats else 'none'
+            },
+            'ml_analysis': {
+                'enabled': ML_AVAILABLE and hasattr(self, 'ml_detector') and self.ml_detector is not None,
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'confidence_scores': {},
+                'ml_insights': [],
+                'total_ml_analyzed': 0,
+                'high_anomaly_sessions': 0,
+                'ml_detected_threats': []
             },
             'attack_statistics': {
                 'top_attackers': top_attackers,

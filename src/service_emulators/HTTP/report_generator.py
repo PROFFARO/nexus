@@ -6,7 +6,6 @@ Generates comprehensive security reports from HTTP honeypot session data
 
 import json
 import os
-import sys
 import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
@@ -14,6 +13,16 @@ from collections import defaultdict, Counter
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
+
+# Import ML components
+try:
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available for HTTP report generation: {e}")
+
 
 class HTTPHoneypotReportGenerator:
     """Generate comprehensive reports from HTTP honeypot sessions"""
@@ -28,6 +37,18 @@ class HTTPHoneypotReportGenerator:
         self.path_stats = defaultdict(int)
         self.user_agent_stats = defaultdict(int)
         self.log_entries = []
+        
+        # Initialize ML detector for enhanced analysis
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('http')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('http', ml_config)
+                    print("ML detector initialized for HTTP report generation")
+            except Exception as e:
+                print(f"Warning: Failed to initialize ML detector for HTTP reports: {e}")
+                self.ml_detector = None
         
         # Load session data and logs
         self._load_sessions()

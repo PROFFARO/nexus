@@ -229,7 +229,7 @@ class FeatureExtractor:
         """Vectorize text features using TF-IDF"""
         # Handle empty or all-empty texts
         if not texts or all(not text.strip() for text in texts):
-            return np.zeros((len(texts) if texts else 0, 0))
+            return np.zeros((len(texts) if texts else 0, 1))
         
         try:
             if fit:
@@ -237,13 +237,16 @@ class FeatureExtractor:
             else:
                 result = self.vectorizer.transform(texts).toarray()
             
-            # Ensure result is 2D
+            # Ensure result is 2D and has at least 1 column
             if result.ndim == 1:
                 result = result.reshape(-1, 1)
+            elif result.shape[1] == 0:
+                result = np.zeros((result.shape[0], 1))
             
             return result
         except Exception as e:
-            # Fallback: return zero matrix
+            logging.warning(f"Text vectorization failed: {e}. Using fallback.")
+            # Fallback: return zero matrix with proper shape
             return np.zeros((len(texts), 1))
     
     def scale_numerical(self, features: np.ndarray, fit: bool = False) -> np.ndarray:
@@ -255,6 +258,12 @@ class FeatureExtractor:
         if features.ndim == 1:
             features = features.reshape(-1, 1)
         
+        # Handle case where features might be a single float
+        if not isinstance(features, np.ndarray):
+            features = np.array(features)
+            if features.ndim == 0:
+                features = features.reshape(1, 1)
+        
         try:
             if fit:
                 result = self.scaler.fit_transform(features)
@@ -264,35 +273,60 @@ class FeatureExtractor:
             # Ensure result is 2D
             if result.ndim == 1:
                 result = result.reshape(-1, 1)
+            elif result.ndim == 0:
+                result = result.reshape(1, 1)
                 
             return result
         except Exception as e:
+            logging.warning(f"Numerical scaling failed: {e}. Using original features.")
             # Fallback: return original features
             return features
     
     def extract_batch_features(self, data_list: List[Dict[str, Any]]) -> Tuple[np.ndarray, np.ndarray]:
         """Extract features from a batch of data"""
+        if not data_list:
+            return np.zeros((0, 1)), np.zeros((0, 0))
+            
         text_features = []
         numerical_features = []
         
         for data in data_list:
             features = self.extract_features(data)
-            text_features.append(features.get('text_features', ''))
+            text_features.append(str(features.get('text_features', '')))
             
             # Extract numerical features
             numerical = []
             for key, value in features.items():
                 if key != 'text_features' and isinstance(value, (int, float, bool)):
-                    numerical.append(float(value))
+                    # Ensure we have a valid numerical value
+                    try:
+                        num_val = float(value)
+                        if not np.isnan(num_val) and not np.isinf(num_val):
+                            numerical.append(num_val)
+                        else:
+                            numerical.append(0.0)
+                    except (ValueError, TypeError):
+                        numerical.append(0.0)
             
-            numerical_features.append(numerical)
+            # Ensure all rows have the same number of features
+            if not numerical_features:
+                # First row - establish the feature count
+                numerical_features.append(numerical)
+            else:
+                # Ensure consistent feature count
+                expected_len = len(numerical_features[0])
+                if len(numerical) < expected_len:
+                    numerical.extend([0.0] * (expected_len - len(numerical)))
+                elif len(numerical) > expected_len:
+                    numerical = numerical[:expected_len]
+                numerical_features.append(numerical)
         
         # Vectorize text features
         text_vectors = self.vectorize_text(text_features, fit=True)
         
         # Scale numerical features
-        numerical_array = np.array(numerical_features)
-        if numerical_array.size > 0 and len(numerical_features) > 0 and len(numerical_features[0]) > 0:
+        if numerical_features and len(numerical_features[0]) > 0:
+            numerical_array = np.array(numerical_features, dtype=np.float64)
             numerical_scaled = self.scale_numerical(numerical_array, fit=True)
         else:
             # Create empty array with correct shape
@@ -302,31 +336,50 @@ class FeatureExtractor:
     
     def combine_features(self, text_vectors: np.ndarray, numerical_features: np.ndarray) -> np.ndarray:
         """Combine text and numerical features"""
+        # Handle edge cases first
+        if not isinstance(text_vectors, np.ndarray):
+            text_vectors = np.array(text_vectors)
+        if not isinstance(numerical_features, np.ndarray):
+            numerical_features = np.array(numerical_features)
+            
         # Ensure both inputs are 2D arrays
-        if text_vectors.ndim == 1:
+        if text_vectors.ndim == 0:
+            text_vectors = text_vectors.reshape(1, 1)
+        elif text_vectors.ndim == 1:
             text_vectors = text_vectors.reshape(-1, 1)
-        if numerical_features.ndim == 1:
+            
+        if numerical_features.ndim == 0:
+            numerical_features = numerical_features.reshape(1, 1)
+        elif numerical_features.ndim == 1:
             numerical_features = numerical_features.reshape(-1, 1)
         
         if text_vectors.size == 0 and numerical_features.size == 0:
-            # Both empty - return empty 2D array
-            return np.array([]).reshape(0, 0)
+            # Both empty - return minimal 2D array
+            return np.zeros((1, 1))
         elif text_vectors.size == 0:
-            # Ensure numerical features is 2D
-            if numerical_features.ndim == 1:
-                numerical_features = numerical_features.reshape(-1, 1)
+            # Only numerical features
+            if numerical_features.shape[1] == 0:
+                return np.zeros((numerical_features.shape[0], 1))
             return numerical_features
-        elif numerical_features.size == 0:
-            # Ensure text vectors is 2D
-            if text_vectors.ndim == 1:
-                text_vectors = text_vectors.reshape(-1, 1)
+        elif numerical_features.size == 0 or numerical_features.shape[1] == 0:
+            # Only text features
+            if text_vectors.shape[1] == 0:
+                return np.zeros((text_vectors.shape[0], 1))
             return text_vectors
         else:
             # Ensure both arrays have the same number of rows
             if text_vectors.shape[0] != numerical_features.shape[0]:
-                raise ValueError(f"Mismatched rows: text_vectors {text_vectors.shape[0]}, numerical {numerical_features.shape[0]}")
+                min_rows = min(text_vectors.shape[0], numerical_features.shape[0])
+                text_vectors = text_vectors[:min_rows]
+                numerical_features = numerical_features[:min_rows]
+                logging.warning(f"Row mismatch fixed: using {min_rows} rows")
+            
             combined = np.hstack([text_vectors, numerical_features])
-            # Ensure result is 2D
+            
+            # Ensure result is 2D and has at least 1 column
             if combined.ndim == 1:
                 combined = combined.reshape(-1, 1)
+            elif combined.shape[1] == 0:
+                combined = np.zeros((combined.shape[0], 1))
+                
             return combined

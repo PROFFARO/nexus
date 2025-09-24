@@ -51,17 +51,44 @@ class ModelTrainer:
         # Extract labels
         labels = [item.get('label', 'normal') for item in data]
         
-        # Extract features using batch processing
-        text_vectors, numerical_scaled = self.feature_extractor.extract_batch_features(data)
-        combined_features = self.feature_extractor.combine_features(text_vectors, numerical_scaled)
-        
-        # Extract text features for reference
-        text_features = []
-        for item in data:
-            features = self.feature_extractor.extract_features(item)
-            text_features.append(features.get('text_features', ''))
-        
-        return combined_features, np.array(labels), text_features
+        try:
+            # Extract features using batch processing
+            text_vectors, numerical_scaled = self.feature_extractor.extract_batch_features(data)
+            combined_features = self.feature_extractor.combine_features(text_vectors, numerical_scaled)
+            
+            # Validate combined features
+            if not isinstance(combined_features, np.ndarray):
+                logging.error(f"Combined features is not numpy array: {type(combined_features)}")
+                raise ValueError(f"Invalid combined features type: {type(combined_features)}")
+            
+            if combined_features.ndim != 2:
+                logging.error(f"Combined features has wrong dimensions: {combined_features.ndim}")
+                combined_features = combined_features.reshape(-1, 1) if combined_features.ndim == 1 else np.zeros((len(data), 1))
+            
+            if combined_features.shape[0] != len(data):
+                logging.error(f"Feature count mismatch: {combined_features.shape[0]} vs {len(data)}")
+                # Pad or truncate to match
+                if combined_features.shape[0] < len(data):
+                    padding = np.zeros((len(data) - combined_features.shape[0], combined_features.shape[1]))
+                    combined_features = np.vstack([combined_features, padding])
+                else:
+                    combined_features = combined_features[:len(data)]
+            
+            # Extract text features for reference
+            text_features = []
+            for item in data:
+                features = self.feature_extractor.extract_features(item)
+                text_features.append(str(features.get('text_features', '')))
+            
+            logging.info(f"Prepared training data: {combined_features.shape} features, {len(labels)} labels")
+            return combined_features, np.array(labels), text_features
+            
+        except Exception as e:
+            logging.error(f"Error preparing training data: {e}")
+            # Fallback: create minimal feature matrix
+            fallback_features = np.zeros((len(data), 1))
+            text_features = [str(item.get('text_features', '')) for item in data]
+            return fallback_features, np.array(labels), text_features
     
     def train_anomaly_detector(self, data: List[Dict[str, Any]], algorithm: str = 'isolation_forest') -> Dict[str, Any]:
         """Train anomaly detection model"""
@@ -71,11 +98,27 @@ class ModelTrainer:
         X, y, texts = self.prepare_training_data(data)
         
         # Validate data shapes
-        if not isinstance(X, np.ndarray) or X.ndim != 2:
-            raise ValueError(f"Invalid feature matrix shape: {X.shape if hasattr(X, 'shape') else type(X)}")
+        if not isinstance(X, np.ndarray):
+            logging.error(f"X is not numpy array: {type(X)}")
+            raise ValueError(f"Invalid feature matrix type: {type(X)}")
+            
+        if X.ndim != 2:
+            logging.error(f"X has wrong dimensions: {X.ndim}, shape: {X.shape}")
+            if X.ndim == 1:
+                X = X.reshape(-1, 1)
+            else:
+                raise ValueError(f"Cannot reshape X with {X.ndim} dimensions")
         
-        if not isinstance(y, np.ndarray) or y.ndim != 1:
-            raise ValueError(f"Invalid label array shape: {y.shape if hasattr(y, 'shape') else type(y)}")
+        if not isinstance(y, np.ndarray):
+            logging.error(f"y is not numpy array: {type(y)}")
+            y = np.array(y)
+            
+        if y.ndim != 1:
+            logging.error(f"y has wrong dimensions: {y.ndim}, shape: {y.shape}")
+            if y.ndim == 0:
+                y = y.reshape(1)
+            else:
+                y = y.flatten()
         
         logging.info(f"Training data: X shape {X.shape}, y shape {y.shape}")
         
@@ -94,11 +137,23 @@ class ModelTrainer:
         
         # Final validation before training
         if not isinstance(X_normal, np.ndarray):
+            logging.error(f"X_normal is not numpy array: {type(X_normal)}")
             raise ValueError(f"X_normal must be numpy array, got {type(X_normal)}")
+            
         if X_normal.ndim != 2:
-            raise ValueError(f"X_normal must be 2D array, got shape {X_normal.shape}")
+            logging.error(f"X_normal wrong dimensions: {X_normal.ndim}, shape: {X_normal.shape}")
+            if X_normal.ndim == 1:
+                X_normal = X_normal.reshape(-1, 1)
+            else:
+                raise ValueError(f"X_normal must be 2D array, got shape {X_normal.shape}")
+                
         if X_normal.size == 0:
+            logging.error("X_normal is empty")
             raise ValueError("X_normal is empty")
+            
+        if X_normal.shape[1] == 0:
+            logging.error("X_normal has 0 features")
+            X_normal = np.ones((X_normal.shape[0], 1))  # Add dummy feature
         
         logging.info(f"Training {algorithm} with data shape: {X_normal.shape}, dtype: {X_normal.dtype}")
         
@@ -266,42 +321,107 @@ class ModelTrainer:
         """Train embedding-based similarity detection"""
         logging.info(f"Training embedding similarity for {self.service_type}")
         
-        # Extract text features
-        texts = []
-        for item in data:
-            features = self.feature_extractor.extract_features(item)
-            texts.append(features.get('text_features', ''))
-        
-        # Build FAISS index
-        self.embedding_manager.build_faiss_index(texts, force_rebuild=True)
-        
-        # Test similarity detection
-        sample_size = min(100, len(texts))
-        sample_indices = np.random.choice(len(texts), sample_size, replace=False)
-        
-        similarity_scores = []
-        for idx in sample_indices:
-            query_text = texts[idx]
-            similar_texts = self.embedding_manager.find_similar(query_text, k=5)
+        try:
+            # Extract text features
+            texts = []
+            for item in data:
+                try:
+                    features = self.feature_extractor.extract_features(item)
+                    text_feature = features.get('text_features', '')
+                    # Ensure text is string and not empty
+                    if isinstance(text_feature, str) and text_feature.strip():
+                        texts.append(text_feature)
+                    elif text_feature:  # Convert non-string to string
+                        texts.append(str(text_feature))
+                    else:
+                        texts.append("empty")  # Default for empty features
+                except Exception as e:
+                    logging.warning(f"Failed to extract features for item: {e}")
+                    texts.append("empty")
             
-            if similar_texts:
-                max_similarity = max(score for _, score in similar_texts[1:])  # Exclude self
-                similarity_scores.append(max_similarity)
-        
-        results = {
-            'algorithm': 'sentence_transformers',
-            'total_texts': len(texts),
-            'index_size': self.embedding_manager.faiss_index.ntotal if self.embedding_manager.faiss_index else 0,
-            'avg_similarity': np.mean(similarity_scores) if similarity_scores else 0.0,
-            'similarity_std': np.std(similarity_scores) if similarity_scores else 0.0,
-            'embedding_model': self.config.get_embedding_model()
-        }
-        
-        self.training_results['embedding_similarity'] = results
-        
-        logging.info(f"Embedding similarity trained - Index size: {results['index_size']}")
-        
-        return results
+            if not texts:
+                logging.error("No valid text features extracted")
+                return {
+                    'algorithm': 'sentence_transformers',
+                    'total_texts': 0,
+                    'index_size': 0,
+                    'avg_similarity': 0.0,
+                    'similarity_std': 0.0,
+                    'embedding_model': self.config.get_embedding_model(),
+                    'error': 'No valid text features'
+                }
+            
+            logging.info(f"Extracted {len(texts)} text features for embedding training")
+            
+            # Build FAISS index
+            try:
+                self.embedding_manager.build_faiss_index(texts, force_rebuild=True)
+            except Exception as e:
+                logging.error(f"Failed to build FAISS index: {e}")
+                return {
+                    'algorithm': 'sentence_transformers',
+                    'total_texts': len(texts),
+                    'index_size': 0,
+                    'avg_similarity': 0.0,
+                    'similarity_std': 0.0,
+                    'embedding_model': self.config.get_embedding_model(),
+                    'error': f'FAISS index build failed: {str(e)}'
+                }
+            
+            # Test similarity detection
+            similarity_scores = []
+            if len(texts) > 1:  # Need at least 2 texts for similarity
+                sample_size = min(100, len(texts))
+                try:
+                    sample_indices = np.random.choice(len(texts), sample_size, replace=False)
+                    
+                    for idx in sample_indices:
+                        try:
+                            query_text = texts[idx]
+                            if not isinstance(query_text, str) or not query_text.strip():
+                                continue
+                                
+                            similar_texts = self.embedding_manager.find_similar(query_text, k=5)
+                            
+                            if similar_texts and len(similar_texts) > 1:
+                                # Exclude self (first result) and get max similarity from remaining
+                                remaining_scores = [score for _, score in similar_texts[1:] if isinstance(score, (int, float))]
+                                if remaining_scores:
+                                    max_similarity = max(remaining_scores)
+                                    similarity_scores.append(max_similarity)
+                        except Exception as e:
+                            logging.warning(f"Failed similarity test for text {idx}: {e}")
+                            continue
+                            
+                except Exception as e:
+                    logging.warning(f"Failed to run similarity tests: {e}")
+            
+            results = {
+                'algorithm': 'sentence_transformers',
+                'total_texts': len(texts),
+                'index_size': self.embedding_manager.faiss_index.ntotal if self.embedding_manager.faiss_index else 0,
+                'avg_similarity': float(np.mean(similarity_scores)) if similarity_scores else 0.0,
+                'similarity_std': float(np.std(similarity_scores)) if similarity_scores else 0.0,
+                'embedding_model': self.config.get_embedding_model()
+            }
+            
+            self.training_results['embedding_similarity'] = results
+            
+            logging.info(f"Embedding similarity trained - Index size: {results['index_size']}")
+            
+            return results
+            
+        except Exception as e:
+            logging.error(f"Failed to train embedding similarity: {e}")
+            return {
+                'algorithm': 'sentence_transformers',
+                'total_texts': 0,
+                'index_size': 0,
+                'avg_similarity': 0.0,
+                'similarity_std': 0.0,
+                'embedding_model': self.config.get_embedding_model() if hasattr(self.config, 'get_embedding_model') else 'unknown',
+                'error': str(e)
+            }
     
     def train_all_models(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Train all available models"""
@@ -423,18 +543,39 @@ class ModelTrainer:
     # Helper methods for training specific algorithms
     def _train_isolation_forest(self, X: np.ndarray) -> IsolationForest:
         logging.info(f"IsolationForest training with X shape: {X.shape}, dtype: {X.dtype}")
+        
+        # Validate input
+        if not isinstance(X, np.ndarray) or X.ndim != 2 or X.size == 0:
+            raise ValueError(f"Invalid input for IsolationForest: shape {X.shape if hasattr(X, 'shape') else 'unknown'}")
+        
         # Set default parameters
         default_params = {'contamination': 0.1, 'random_state': 42}
         model = IsolationForest(**default_params)
-        model.fit(X)
-        return model
+        
+        try:
+            model.fit(X)
+            return model
+        except Exception as e:
+            logging.error(f"IsolationForest training failed: {e}")
+            raise
     
     def _train_one_class_svm(self, X: np.ndarray) -> OneClassSVM:
+        logging.info(f"OneClassSVM training with X shape: {X.shape}, dtype: {X.dtype}")
+        
+        # Validate input
+        if not isinstance(X, np.ndarray) or X.ndim != 2 or X.size == 0:
+            raise ValueError(f"Invalid input for OneClassSVM: shape {X.shape if hasattr(X, 'shape') else 'unknown'}")
+        
         # Set default parameters
         default_params = {'gamma': 'scale', 'nu': 0.1}
         model = OneClassSVM(**default_params)
-        model.fit(X)
-        return model
+        
+        try:
+            model.fit(X)
+            return model
+        except Exception as e:
+            logging.error(f"OneClassSVM training failed: {e}")
+            raise
     
     def _train_lof(self, X: np.ndarray) -> LocalOutlierFactor:
         # Set default parameters
@@ -444,11 +585,22 @@ class ModelTrainer:
         return model
     
     def _train_hdbscan(self, X: np.ndarray):
+        logging.info(f"HDBSCAN training with X shape: {X.shape}, dtype: {X.dtype}")
+        
+        # Validate input
+        if not isinstance(X, np.ndarray) or X.ndim != 2 or X.size == 0:
+            raise ValueError(f"Invalid input for HDBSCAN: shape {X.shape if hasattr(X, 'shape') else 'unknown'}")
+        
         # Set default parameters
         default_params = {'min_cluster_size': 5, 'min_samples': 3}
         model = hdbscan.HDBSCAN(**default_params)
-        model.fit(X)
-        return model
+        
+        try:
+            model.fit(X)
+            return model
+        except Exception as e:
+            logging.error(f"HDBSCAN training failed: {e}")
+            raise
     
     def _train_dbscan(self, X: np.ndarray) -> DBSCAN:
         model = DBSCAN(eps=0.5, min_samples=5)

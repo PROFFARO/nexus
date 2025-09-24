@@ -2,11 +2,23 @@
 
 import json
 import os
+import sys
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from collections import defaultdict, Counter
 import re
+
+# Import ML components
+try:
+    sys.path.append(str(Path(__file__).parent.parent.parent))
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available for MYSQL report generation: {e}")
+
 
 class MySQLHoneypotReportGenerator:
     """Generate comprehensive security reports for MySQL honeypot with modern UI/UX"""
@@ -14,6 +26,18 @@ class MySQLHoneypotReportGenerator:
     def __init__(self, sessions_dir: str, logs_dir: str = None):
         self.sessions_dir = Path(sessions_dir)
         self.logs_dir = Path(logs_dir) if logs_dir else None
+        
+        # Initialize ML detector for enhanced analysis
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('mysql')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('mysql', ml_config)
+                    print("ML detector initialized for MySQL report generation")
+            except Exception as e:
+                print(f"Warning: Failed to initialize ML detector for MySQL reports: {e}")
+                self.ml_detector = None
         self.report_data = {
             'metadata': {
                 'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -25,6 +49,16 @@ class MySQLHoneypotReportGenerator:
                 'log_entries_processed': 0
             },
             'executive_summary': {},
+            'ml_analysis': {
+                'enabled': ML_AVAILABLE and hasattr(self, 'ml_detector') and self.ml_detector is not None,
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'confidence_scores': {},
+                'ml_insights': [],
+                'total_ml_analyzed': 0,
+                'high_anomaly_sessions': 0,
+                'ml_detected_threats': []
+            },
             'threat_intelligence': {},
             'attack_analysis': {},
             'vulnerability_analysis': {},

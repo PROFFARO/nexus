@@ -11,6 +11,17 @@ from datetime import datetime, timezone
 from typing import Dict, List, Any, Optional
 from collections import defaultdict, Counter
 import re
+import sys
+
+# Import ML components
+try:
+    sys.path.append(str(Path(__file__).parent.parent.parent))
+    from ai.detectors import MLDetector
+    from ai.config import MLConfig
+    ML_AVAILABLE = True
+except ImportError as e:
+    ML_AVAILABLE = False
+    print(f"Warning: ML components not available for report generation: {e}")
 
 class SSHHoneypotReportGenerator:
     """Generate comprehensive security reports for SSH honeypot with modern UI/UX"""
@@ -18,6 +29,18 @@ class SSHHoneypotReportGenerator:
     def __init__(self, sessions_dir: str, logs_dir: Optional[str] = None):
         self.sessions_dir = Path(sessions_dir)
         self.logs_dir = Path(logs_dir) if logs_dir is not None else None
+        
+        # Initialize ML detector for enhanced analysis
+        self.ml_detector = None
+        if ML_AVAILABLE:
+            try:
+                ml_config = MLConfig('ssh')
+                if ml_config.is_enabled():
+                    self.ml_detector = MLDetector('ssh', ml_config)
+                    print("ML detector initialized for SSH report generation")
+            except Exception as e:
+                print(f"Warning: Failed to initialize ML detector for reports: {e}")
+                self.ml_detector = None
         self.report_data = {
             'metadata': {
                 'generated_at': datetime.now(timezone.utc).isoformat(),
@@ -32,6 +55,13 @@ class SSHHoneypotReportGenerator:
             'threat_intelligence': {},
             'attack_analysis': {},
             'vulnerability_analysis': {},
+            'ml_analysis': {
+                'enabled': ML_AVAILABLE and self.ml_detector is not None,
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'confidence_scores': {},
+                'ml_insights': []
+            },
             'command_operations': {},
             'forensic_timeline': [],
             'session_details': [],

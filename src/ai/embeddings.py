@@ -119,15 +119,28 @@ class EmbeddingManager:
         if not self.model:
             return None
         
+        # Ensure text is string and not empty
+        if not isinstance(text, str):
+            text = str(text)
+        if not text.strip():
+            text = "empty"
+        
         text_hash = self._get_text_hash(text)
         
         # Check cache first
         if use_cache and text_hash in self.embeddings_cache:
-            return self.embeddings_cache[text_hash]
+            cached_embedding = self.embeddings_cache[text_hash]
+            if isinstance(cached_embedding, np.ndarray) and cached_embedding.size > 0:
+                return cached_embedding
         
         try:
             # Generate embedding
             embedding = self.model.encode([text])[0]
+            
+            # Validate embedding
+            if not isinstance(embedding, np.ndarray) or embedding.size == 0:
+                logging.warning(f"Invalid embedding generated for text: {text[:50]}...")
+                return None
             
             # Cache if enabled
             if use_cache and self.config.get('ml', 'cache_embeddings', True):
@@ -140,7 +153,7 @@ class EmbeddingManager:
             return embedding
             
         except Exception as e:
-            logging.error(f"Failed to encode text: {e}")
+            logging.error(f"Failed to encode text '{text[:50]}...': {e}")
             return None
     
     def encode_batch(self, texts: List[str], use_cache: bool = True) -> List[Optional[np.ndarray]]:
@@ -148,35 +161,62 @@ class EmbeddingManager:
         if not self.model:
             return [None] * len(texts)
         
+        if not texts:
+            return []
+        
+        # Sanitize texts
+        sanitized_texts = []
+        for text in texts:
+            if not isinstance(text, str):
+                text = str(text)
+            if not text.strip():
+                text = "empty"
+            sanitized_texts.append(text)
+        
         # Check cache for existing embeddings
         cached_embeddings = {}
         uncached_texts = []
         uncached_indices = []
         
         if use_cache:
-            for i, text in enumerate(texts):
+            for i, text in enumerate(sanitized_texts):
                 text_hash = self._get_text_hash(text)
                 if text_hash in self.embeddings_cache:
-                    cached_embeddings[i] = self.embeddings_cache[text_hash]
+                    cached_emb = self.embeddings_cache[text_hash]
+                    if isinstance(cached_emb, np.ndarray) and cached_emb.size > 0:
+                        cached_embeddings[i] = cached_emb
+                    else:
+                        uncached_texts.append(text)
+                        uncached_indices.append(i)
                 else:
                     uncached_texts.append(text)
                     uncached_indices.append(i)
         else:
-            uncached_texts = texts
-            uncached_indices = list(range(len(texts)))
+            uncached_texts = sanitized_texts
+            uncached_indices = list(range(len(sanitized_texts)))
         
         # Generate embeddings for uncached texts
         new_embeddings = {}
         if uncached_texts:
             try:
                 batch_embeddings = self.model.encode(uncached_texts)
+                
+                # Validate batch embeddings
+                if not isinstance(batch_embeddings, np.ndarray) or batch_embeddings.size == 0:
+                    logging.error("Invalid batch embeddings generated")
+                    return [None] * len(texts)
+                
                 for i, embedding in zip(uncached_indices, batch_embeddings):
-                    new_embeddings[i] = embedding
-                    
-                    # Cache if enabled
-                    if use_cache and self.config.get('ml', 'cache_embeddings', True):
-                        text_hash = self._get_text_hash(texts[i])
-                        self.embeddings_cache[text_hash] = embedding
+                    if isinstance(embedding, np.ndarray) and embedding.size > 0:
+                        new_embeddings[i] = embedding
+                        
+                        # Cache if enabled
+                        if use_cache and self.config.get('ml', 'cache_embeddings', True):
+                            text_hash = self._get_text_hash(sanitized_texts[i])
+                            self.embeddings_cache[text_hash] = embedding
+                    else:
+                        logging.warning(f"Invalid embedding at index {i}")
+                        new_embeddings[i] = None
                         
             except Exception as e:
                 logging.error(f"Failed to encode batch: {e}")
@@ -184,7 +224,7 @@ class EmbeddingManager:
         
         # Combine cached and new embeddings
         result = []
-        for i in range(len(texts)):
+        for i in range(len(sanitized_texts)):
             if i in cached_embeddings:
                 result.append(cached_embeddings[i])
             elif i in new_embeddings:
@@ -204,43 +244,72 @@ class EmbeddingManager:
             logging.warning("FAISS not available, cannot build index")
             return
         
+        if not texts:
+            logging.warning("No texts provided for FAISS index")
+            return
+        
         if self.faiss_index is not None and not force_rebuild:
             logging.info("FAISS index already exists, use force_rebuild=True to rebuild")
             return
         
-        # Generate embeddings
-        embeddings = self.encode_batch(texts)
-        valid_embeddings = []
-        valid_texts = []
-        
-        for i, (text, embedding) in enumerate(zip(texts, embeddings)):
-            if embedding is not None:
-                valid_embeddings.append(embedding)
-                valid_texts.append(text)
-                self.text_to_id[text] = self.next_id
-                self.id_to_text[self.next_id] = text
-                self.next_id += 1
-        
-        if not valid_embeddings:
-            logging.error("No valid embeddings generated")
-            return
-        
-        # Build FAISS index
-        embeddings_array = np.array(valid_embeddings).astype('float32')
-        dimension = embeddings_array.shape[1]
-        
-        # Use IndexFlatIP for cosine similarity
-        self.faiss_index = faiss.IndexFlatIP(dimension)
-        
-        # Normalize vectors for cosine similarity
-        faiss.normalize_L2(embeddings_array)
-        self.faiss_index.add(embeddings_array)
-        
-        logging.info(f"Built FAISS index with {len(valid_embeddings)} vectors")
-        
-        # Save index and cache
-        self._save_faiss_index()
-        self._save_cache()
+        try:
+            # Generate embeddings
+            embeddings = self.encode_batch(texts)
+            valid_embeddings = []
+            valid_texts = []
+            
+            for i, (text, embedding) in enumerate(zip(texts, embeddings)):
+                if embedding is not None and isinstance(embedding, np.ndarray) and embedding.size > 0:
+                    # Ensure embedding is finite
+                    if np.all(np.isfinite(embedding)):
+                        valid_embeddings.append(embedding)
+                        valid_texts.append(text)
+                        self.text_to_id[text] = self.next_id
+                        self.id_to_text[self.next_id] = text
+                        self.next_id += 1
+                    else:
+                        logging.warning(f"Non-finite embedding at index {i}")
+            
+            if not valid_embeddings:
+                logging.error("No valid embeddings generated for FAISS index")
+                return
+            
+            # Build FAISS index
+            embeddings_array = np.array(valid_embeddings, dtype=np.float32)
+            
+            # Validate embeddings array
+            if embeddings_array.size == 0 or embeddings_array.ndim != 2:
+                logging.error(f"Invalid embeddings array shape: {embeddings_array.shape}")
+                return
+            
+            dimension = embeddings_array.shape[1]
+            
+            if dimension == 0:
+                logging.error("Embeddings have 0 dimensions")
+                return
+            
+            # Use IndexFlatIP for cosine similarity
+            self.faiss_index = faiss.IndexFlatIP(dimension)
+            
+            # Normalize vectors for cosine similarity
+            faiss.normalize_L2(embeddings_array)
+            
+            # Check for any NaN or inf values after normalization
+            if not np.all(np.isfinite(embeddings_array)):
+                logging.error("Embeddings contain NaN or inf values after normalization")
+                return
+            
+            self.faiss_index.add(embeddings_array)
+            
+            logging.info(f"Built FAISS index with {len(valid_embeddings)} vectors")
+            
+            # Save index and cache
+            self._save_faiss_index()
+            self._save_cache()
+            
+        except Exception as e:
+            logging.error(f"Failed to build FAISS index: {e}")
+            self.faiss_index = None
     
     def find_similar(self, query_text: str, k: int = 5) -> List[Tuple[str, float]]:
         """Find k most similar texts to query"""
