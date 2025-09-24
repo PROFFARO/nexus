@@ -1,4 +1,4 @@
-- These configs are global configs which are intended for all services to run parallelly and used to manage the ml models and settings for all services so don't tweak these configurations.
+- These configs are global configs which are intended for all services to run parallelly specifically using the start-all action and use to manage the ml models and settings for all services so don't tweak these configurations.
 
 - Don't edit these configs unless you know what you are doing.
 
