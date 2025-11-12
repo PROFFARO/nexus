@@ -51,6 +51,29 @@ class SMBHoneypotReportGenerator:
                 print(f"Warning: Failed to initialize ML detector for SMB reports: {e}")
                 self.ml_detector = None
 
+        # Initialize report data structure
+        self.report_data = {
+            'metadata': {
+                'generated_at': datetime.now().isoformat(),
+                'service_type': 'SMB',
+                'total_sessions': 0,
+                'analysis_period': {},
+                'report_version': '2.0'
+            },
+            'summary': {},
+            'attack_analysis': {},
+            'vulnerability_analysis': {},
+            'ml_analysis': {
+                'enabled': ML_AVAILABLE and self.ml_detector is not None,
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'confidence_scores': {},
+                'risk_assessment': {}
+            },
+            'threat_intelligence': {},
+            'recommendations': []
+        }
+
         self._load_sessions()
         
     def _load_sessions(self):

@@ -292,7 +292,7 @@ models/
 |----------|--------|------|------------------|----------------|
 | **OpenAI** | GPT-4o, GPT-4o-mini, GPT-3.5-turbo | $$$ | Easy | Production, high-quality responses |
 | **Google Gemini** | Gemini-2.0-flash-exp, Gemini-1.5-pro | $$ | Easy | Cost-effective, fast responses |
-| **Ollama** | Llama3.2, CodeLlama, Mistral | Free | Medium | Local deployment, privacy |
+| **Ollama** | llama3.2, CodeLlama, Mistral | Free | Medium | Local deployment, privacy |
 | **Azure OpenAI** | GPT-4o, GPT-3.5-turbo | $$$ | Medium | Enterprise, compliance |
 | **AWS Bedrock** | Claude-3.5-Sonnet, Titan | $$$ | Hard | AWS ecosystem integration |
 

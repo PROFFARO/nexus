@@ -38,6 +38,15 @@ class FeatureExtractor:
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
     
+    def is_vectorizer_fitted(self) -> bool:
+        """Check if the TF-IDF vectorizer is fitted"""
+        try:
+            return (hasattr(self.vectorizer, 'vocabulary_') and 
+                   self.vectorizer.vocabulary_ is not None and 
+                   len(self.vectorizer.vocabulary_) > 0)
+        except:
+            return False
+    
     def extract_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract features based on service type"""
         if self.service_type == 'ssh':
@@ -79,6 +88,25 @@ class FeatureExtractor:
     
     def _extract_http_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract HTTP-specific features"""
+        # Validate input data type
+        if not isinstance(data, dict):
+            logging.warning(f"HTTP feature extractor received non-dict data: {type(data)}")
+            return {
+                'text_features': str(data) if data else '',
+                'url_length': len(str(data)) if data else 0,
+                'query_params': 0,
+                'path_segments': 0,
+                'suspicious_keywords': 0,
+                'sql_injection_patterns': 0,
+                'xss_patterns': 0,
+                'path_traversal': 0,
+                'user_agent_length': 0,
+                'has_referer': False,
+                'content_length': 0,
+                'header_count': 0,
+                'suspicious_extensions': 0
+            }
+        
         request = data.get('request', '')
         headers = data.get('headers', {})
         url = data.get('url', '')

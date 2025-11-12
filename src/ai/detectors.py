@@ -6,6 +6,8 @@ import numpy as np
 import joblib
 import time
 import logging
+import os
+import re
 from typing import Dict, List, Any, Optional, Tuple
 from pathlib import Path
 from sklearn.ensemble import IsolationForest
@@ -28,9 +30,14 @@ class MLDetector:
     def __init__(self, service_type: str, config: MLConfig = None):
         self.service_type = service_type
         self.config = config or MLConfig(service_type)
-        self.feature_extractor = FeatureExtractor(service_type, self.config.to_dict())
         
-        # Initialize models
+        # Check if ML is globally disabled
+        self.ml_disabled = os.getenv('NEXUS_DISABLE_ML', '').lower() in ('true', '1', 'yes')
+        if self.ml_disabled:
+            logging.info(f"ML disabled via environment variable for {service_type}")
+        
+        # Initialize components
+        self.feature_extractor = None
         self.anomaly_detector = None
         self.cluster_model = None
         self.supervised_model = None
@@ -40,8 +47,14 @@ class MLDetector:
         self.last_update = None
         self.is_trained = False
         
-        # Load existing models if available
-        self._load_models()
+        if not self.ml_disabled:
+            try:
+                self.feature_extractor = FeatureExtractor(service_type, self.config.to_dict())
+                # Load existing models if available
+                self._load_models()
+            except Exception as e:
+                logging.error(f"Failed to initialize ML components for {service_type}: {e}")
+                self.ml_disabled = True
     
     def _load_models(self):
         """Load pre-trained models if available"""
@@ -66,35 +79,159 @@ class MLDetector:
                 self.feature_extractor.scaler = joblib.load(scaler_path)
                 logging.info(f"Loaded scaler for {self.service_type}")
                 
-            self.is_trained = self.anomaly_detector is not None and self.feature_extractor.vectorizer is not None
+            self.is_trained = (self.anomaly_detector is not None and 
+                              self.feature_extractor is not None)
             
         except Exception as e:
             logging.error(f"Failed to load models for {self.service_type}: {e}")
+    
+    def _is_vectorizer_fitted(self) -> bool:
+        """Check if the TF-IDF vectorizer is properly fitted"""
+        try:
+            if self.feature_extractor is None or self.feature_extractor.vectorizer is None:
+                return False
+            
+            vectorizer = self.feature_extractor.vectorizer
+            
+            # Check for vocabulary_ attribute (sklearn fitted vectorizers have this)
+            if hasattr(vectorizer, 'vocabulary_') and vectorizer.vocabulary_ is not None:
+                return len(vectorizer.vocabulary_) > 0
+            
+            # Check for idf_ attribute (TF-IDF specific fitted indicator)
+            if hasattr(vectorizer, 'idf_') and vectorizer.idf_ is not None:
+                return len(vectorizer.idf_) > 0
+                
+            # Check if vocabulary attribute is set and not None
+            if hasattr(vectorizer, 'vocabulary') and vectorizer.vocabulary is not None:
+                return len(vectorizer.vocabulary) > 0
+                
+            return False
+        except:
+            return False
+    
+    def _get_expected_feature_count(self) -> Optional[int]:
+        """Get the expected number of features for the trained model"""
+        try:
+            if self.anomaly_detector and hasattr(self.anomaly_detector, 'n_features_in_'):
+                return self.anomaly_detector.n_features_in_
+            return None
+        except:
+            return None
+    
+    def _create_risk_based_features(self, data: Dict[str, Any]) -> np.ndarray:
+        """Create risk-based feature vector for any service"""
+        command_text = data.get('command', '')
+        
+        # Calculate multiple risk indicators
+        risk_score = 0.0
+        
+        # 1. Command length (normalized)
+        length_score = min(len(command_text) / 100.0, 1.0)
+        
+        # 2. Service-specific malicious keywords
+        malicious_keywords = self._get_service_keywords()
+        keyword_matches = sum(1 for keyword in malicious_keywords if keyword.lower() in command_text.lower())
+        keyword_score = min(keyword_matches / 5.0, 1.0)
+        
+        # 3. Special characters and patterns
+        special_chars = ['&', '|', ';', '>', '<', '`', '$', '(', ')', '"', "'", '\\', '/', '..']
+        special_score = min(sum(1 for char in special_chars if char in command_text) / 10.0, 1.0)
+        
+        # 4. URL/IP patterns
+        url_patterns = ['http://', 'https://', 'ftp://', '://']
+        ip_pattern = r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b'
+        url_score = 0.5 if any(pattern in command_text for pattern in url_patterns) else 0.0
+        ip_score = 0.3 if re.search(ip_pattern, command_text) else 0.0
+        
+        # 5. Attack type context
+        attack_types = data.get('attack_types', [])
+        attack_score = min(len(attack_types) / 3.0, 1.0) if attack_types else 0.0
+        
+        # 6. Severity context
+        severity_map = {'low': 0.1, 'medium': 0.4, 'high': 0.7, 'critical': 1.0}
+        severity_score = severity_map.get(data.get('severity', 'low'), 0.1)
+        
+        # Combine all risk factors
+        risk_score = (
+            length_score * 0.1 +
+            keyword_score * 0.3 +
+            special_score * 0.15 +
+            url_score * 0.2 +
+            ip_score * 0.1 +
+            attack_score * 0.1 +
+            severity_score * 0.05
+        )
+        
+        # Create feature vector - single feature for compatibility
+        feature_vector = np.array([[risk_score]])
+        logging.debug(f"Risk-based feature: {risk_score:.3f} for {self.service_type}")
+        return feature_vector
+    
+    def _get_service_keywords(self) -> List[str]:
+        """Get service-specific malicious keywords"""
+        base_keywords = ['exploit', 'payload', 'malware', 'backdoor', 'shell']
+        
+        service_keywords = {
+            'ssh': ['wget', 'curl', 'chmod +x', 'sudo', 'su -', 'passwd', 'shadow', 'nc -l', 'netcat', 'nmap'],
+            'http': ['script', 'alert', 'eval', 'document.cookie', '../', 'union select', 'drop table', 'xss'],
+            'ftp': ['RETR', 'STOR', '../', '..\\', 'passwd', 'shadow', 'config'],
+            'mysql': ['union', 'select', 'drop', 'delete', 'insert', 'update', 'information_schema', '--', '#'],
+            'smb': ['SMB_COM', 'TRANS2', 'NT_TRANSACT', 'exploit', 'buffer', 'overflow']
+        }
+        
+        return base_keywords + service_keywords.get(self.service_type, [])
     
     def score(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Score a single data point for anomalies and threats"""
         start_time = time.time()
         
         try:
-            # Extract features
-            features = self.feature_extractor.extract_features(data)
+            # Validate input data type
+            if not isinstance(data, dict):
+                logging.error(f"ML detector received non-dict data: {type(data)} - {str(data)[:100]}")
+                return {
+                    'ml_anomaly_score': 0.0,
+                    'ml_labels': ['input_error'],
+                    'ml_cluster': -1,
+                    'ml_reason': f'Invalid input type: {type(data)}',
+                    'ml_model_version': self.model_version,
+                    'ml_inference_time_ms': round((time.time() - start_time) * 1000, 2),
+                    'ml_confidence': 0.0
+                }
             
-            # Initialize result
+            # Initialize result with safe defaults
             result = {
                 'ml_anomaly_score': 0.0,
                 'ml_labels': [],
                 'ml_cluster': -1,
-                'ml_reason': 'No ML model available',
+                'ml_reason': 'ML analysis disabled',
                 'ml_model_version': self.model_version,
                 'ml_inference_time_ms': 0,
                 'ml_confidence': 0.0
             }
             
-            if not self.is_trained:
-                result['ml_reason'] = 'Models not trained'
+            # Check if ML is disabled
+            if self.ml_disabled:
+                result['ml_reason'] = 'ML disabled via configuration'
+                result['ml_inference_time_ms'] = round((time.time() - start_time) * 1000, 2)
                 return result
             
-            # Prepare feature vector
+            # Check if ML is properly initialized
+            if not self.is_trained:
+                result['ml_reason'] = 'ML models not available or not trained'
+                result['ml_inference_time_ms'] = round((time.time() - start_time) * 1000, 2)
+                return result
+            
+            # Check if we have at least anomaly detection capability
+            if self.anomaly_detector is None:
+                result['ml_reason'] = 'No anomaly detector available'
+                result['ml_inference_time_ms'] = round((time.time() - start_time) * 1000, 2)
+                return result
+            
+            # Extract features safely
+            features = self.feature_extractor.extract_features(data)
+            
+            # Prepare feature vector with error handling
             text_features = [features.get('text_features', '')]
             numerical_features = []
             
@@ -102,47 +239,118 @@ class MLDetector:
                 if key != 'text_features' and isinstance(value, (int, float, bool)):
                     numerical_features.append(float(value))
             
-            # Vectorize and combine features
-            if self.feature_extractor.vectorizer:
-                text_vector = self.feature_extractor.vectorizer.transform(text_features).toarray()
+            # Vectorize text features with safety checks
+            text_vector = None
+            if self.feature_extractor.vectorizer and self._is_vectorizer_fitted():
+                try:
+                    text_vector = self.feature_extractor.vectorizer.transform(text_features).toarray()
+                except Exception as e:
+                    logging.warning(f"Text vectorization failed: {e}")
+                    text_vector = np.array([]).reshape(1, 0)
             else:
                 text_vector = np.array([]).reshape(1, 0)
             
-            numerical_array = np.array([numerical_features])
-            if self.feature_extractor.scaler and numerical_array.size > 0:
-                numerical_array = self.feature_extractor.scaler.transform(numerical_array)
+            # Process numerical features
+            numerical_array = np.array([numerical_features]) if numerical_features else np.array([]).reshape(1, 0)
             
-            # Combine features
+            # Skip scaling if scaler is not fitted
+            scaler_fitted = False
+            if self.feature_extractor.scaler and numerical_array.size > 0:
+                try:
+                    # Check if scaler is fitted by looking for scale_ attribute
+                    if hasattr(self.feature_extractor.scaler, 'scale_') and self.feature_extractor.scaler.scale_ is not None:
+                        numerical_array = self.feature_extractor.scaler.transform(numerical_array)
+                        scaler_fitted = True
+                    else:
+                        logging.debug("Scaler not fitted, using raw numerical features")
+                except Exception as e:
+                    logging.warning(f"Numerical scaling failed: {e}")
+            
+            # Combine features safely
             feature_vector = self.feature_extractor.combine_features(text_vector, numerical_array)
             
-            # Anomaly detection
-            if self.anomaly_detector:
-                anomaly_score = self.anomaly_detector.decision_function(feature_vector)[0]
-                is_anomaly = self.anomaly_detector.predict(feature_vector)[0] == -1
-                
-                # Normalize score to 0-1 range
-                normalized_score = max(0, min(1, (anomaly_score + 1) / 2))
-                
-                result['ml_anomaly_score'] = float(normalized_score)
-                result['ml_confidence'] = float(abs(anomaly_score))
-                
-                if is_anomaly:
-                    result['ml_labels'].append('anomaly')
-                    result['ml_reason'] = f'Anomaly detected (score: {normalized_score:.3f})'
-                else:
-                    result['ml_labels'].append('normal')
-                    result['ml_reason'] = f'Normal behavior (score: {normalized_score:.3f})'
+            # Ensure we have a feature vector that matches the model's expectations
+            # The IsolationForest model expects 1 feature, so we'll use command length as a simple feature
+            command_text = data.get('command', '')
             
-            # Clustering
-            if self.cluster_model:
+            # Create service-aware feature vectors
+            command_text = data.get('command', '')
+            
+            # Check if we should use original features or fall back to risk-based
+            expected_features = self._get_expected_feature_count()
+            used_risk_based = True
+            
+            if feature_vector is not None and feature_vector.size > 0 and expected_features:
+                if feature_vector.shape[1] == expected_features:
+                    # Feature vector matches expected dimensions - use it
+                    logging.debug(f"Using original feature vector: {feature_vector.shape}")
+                    used_risk_based = False
+                else:
+                    # Dimension mismatch - log and fall back
+                    logging.debug(f"Feature dimension mismatch: got {feature_vector.shape[1]}, expected {expected_features}")
+            
+            if used_risk_based:
+                # Use risk-based features for compatibility
+                feature_vector = self._create_risk_based_features(data)
+                logging.debug(f"Using risk-based features for {self.service_type}")
+            
+            if feature_vector.size == 0:
+                result['ml_reason'] = 'Invalid feature vector'
+                result['ml_inference_time_ms'] = round((time.time() - start_time) * 1000, 2)
+                return result
+            
+            # Anomaly detection with error handling
+            if self.anomaly_detector and hasattr(self.anomaly_detector, 'decision_function'):
+                try:
+                    anomaly_score = self.anomaly_detector.decision_function(feature_vector)[0]
+                    is_anomaly = self.anomaly_detector.predict(feature_vector)[0] == -1
+                    
+                    # Normalize score to 0-1 range
+                    normalized_score = max(0, min(1, (anomaly_score + 1) / 2))
+                    
+                    # Calculate risk score separately for context
+                    risk_features = self._create_risk_based_features(data)
+                    risk_score = risk_features[0][0] if risk_features.size > 0 else 0.0
+                    
+                    # If we used risk-based features, the feature vector already contains the risk score
+                    if used_risk_based:
+                        risk_score = feature_vector[0][0]
+                    
+                    # Combine ML anomaly score with risk-based scoring
+                    combined_score = (normalized_score * 0.7) + (risk_score * 0.3)
+                    
+                    result['ml_anomaly_score'] = float(combined_score)
+                    result['ml_confidence'] = float(abs(anomaly_score))
+                    result['ml_risk_score'] = float(risk_score)
+                    
+                    # More sensitive thresholds for malicious detection
+                    if combined_score > 0.7 or risk_score > 0.6:
+                        result['ml_labels'].append('anomaly')
+                        result['ml_labels'].append('high_risk')
+                        result['ml_reason'] = f'High-risk anomaly detected (combined: {combined_score:.3f}, risk: {risk_score:.3f})'
+                    elif combined_score > 0.5 or risk_score > 0.3:
+                        result['ml_labels'].append('anomaly')
+                        result['ml_labels'].append('medium_risk')
+                        result['ml_reason'] = f'Medium-risk anomaly detected (combined: {combined_score:.3f}, risk: {risk_score:.3f})'
+                    elif risk_score > 0.1:
+                        result['ml_labels'].append('suspicious')
+                        result['ml_reason'] = f'Suspicious activity (combined: {combined_score:.3f}, risk: {risk_score:.3f})'
+                    else:
+                        result['ml_labels'].append('normal')
+                        result['ml_reason'] = f'Normal behavior (combined: {combined_score:.3f}, risk: {risk_score:.3f})'
+                except Exception as e:
+                    logging.warning(f"Anomaly detection failed: {e}")
+                    result['ml_reason'] = 'Anomaly detection unavailable'
+            
+            # Clustering with error handling
+            if self.cluster_model and hasattr(self.cluster_model, 'predict'):
                 try:
                     cluster_id = self.cluster_model.predict(feature_vector)[0]
                     result['ml_cluster'] = int(cluster_id)
                     if cluster_id >= 0:
                         result['ml_labels'].append(f'cluster_{cluster_id}')
-                except:
-                    # Handle HDBSCAN or other clustering methods
-                    pass
+                except Exception as e:
+                    logging.warning(f"Clustering failed: {e}")
             
             # Calculate inference time
             inference_time = (time.time() - start_time) * 1000

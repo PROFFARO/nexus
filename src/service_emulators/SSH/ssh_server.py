@@ -32,6 +32,7 @@ from langchain_core.runnables import RunnablePassthrough, RunnableConfig
 from asyncssh.misc import ConnectionLost
 import socket
 
+from command_formatter import CommandFormatter
 # Load environment variables from .env file
 try:
     from dotenv import load_dotenv
@@ -40,22 +41,40 @@ except ImportError:
     print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
     print("Environment variables will be loaded from system environment only.")
 
-# Import ML components
+# Import ML components with robust path handling
+ML_AVAILABLE = False
+MLDetector = None
+MLConfig = None
+
 try:
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent.parent))
-    from ai.detectors import MLDetector
-    from ai.config import MLConfig
+    # Try relative imports first
+    from ...ai.detectors import MLDetector
+    from ...ai.config import MLConfig
     ML_AVAILABLE = True
-except ImportError as e:
-    ML_AVAILABLE = False
-    print(f"Warning: ML components not available: {e}")
+except ImportError:
+    try:
+        # Try absolute imports with path adjustment
+        import sys
+        from pathlib import Path
+        ai_path = Path(__file__).parent.parent.parent / "ai"
+        if ai_path.exists() and str(ai_path) not in sys.path:
+            sys.path.insert(0, str(ai_path.parent))
+        
+        from ai.detectors import MLDetector
+        from ai.config import MLConfig
+        ML_AVAILABLE = True
+    except ImportError as e:
+        ML_AVAILABLE = False
+        # Only print warning if running directly, not during imports
+        if __name__ == "__main__":
+            print(f"Warning: ML components not available: {e}")
+
 
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
     
     def __init__(self):
+        self.formatter = CommandFormatter()
         # Load attack patterns from JSON file
         self.attack_patterns = self._load_attack_patterns()
         # Load vulnerability signatures from JSON file  
@@ -187,6 +206,18 @@ class AttackAnalyzer:
                 ml_results = self.ml_detector.score(ml_data)
                 
                 # Integrate ML results into analysis
+                
+                # Ensure ml_results is a dictionary
+                if not isinstance(ml_results, dict):
+                    logging.warning(f"ML detector returned non-dict result: {type(ml_results)}")
+                    ml_results = {
+                        'ml_anomaly_score': 0.0,
+                        'ml_labels': ['ml_error'],
+                        'ml_cluster': -1,
+                        'ml_reason': f'Invalid ML result type: {type(ml_results)}',
+                        'ml_confidence': 0.0,
+                        'ml_inference_time_ms': 0
+                    }
                 analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
                 analysis['ml_labels'] = ml_results.get('ml_labels', [])
                 analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
@@ -458,6 +489,7 @@ class VulnerabilityLogger:
     """Log and analyze vulnerability exploitation attempts using integrated JSON data"""
     
     def __init__(self):
+        self.formatter = CommandFormatter()
         # Load vulnerability signatures from JSON file (shared with AttackAnalyzer)
         self.vulnerability_signatures = self._load_vulnerability_signatures()
         
@@ -585,6 +617,7 @@ class JSONFormatter(logging.Formatter):
 
 class MySSHServer(asyncssh.SSHServer):
     def __init__(self):
+        self.formatter = CommandFormatter()
         super().__init__()
         self.summary_generated = False
         self.current_directory = '/home/guest'
@@ -684,29 +717,29 @@ class MySSHServer(asyncssh.SSHServer):
                 clean_output = re.sub(r'([a-zA-Z0-9_-]+\.[a-zA-Z0-9]{2,4})([A-Z][a-zA-Z0-9_-])', r'\1 \2', clean_output)
                 clean_output = re.sub(r'([a-zA-Z0-9_-]+/)([A-Z][a-zA-Z0-9_-])', r'\1 \2', clean_output)
                 clean_output = re.sub(r'([a-z])([A-Z][a-z])', r'\1 \2', clean_output)
-            return self._format_ls_output(clean_output, command)
+            return self.formatter.format_ls_output(clean_output, command)
         elif cmd_lower.startswith('cd'):
             return self._handle_cd_command(command)
         elif cmd_lower.startswith('ps'):
-            return self._format_ps_output(clean_output)
+            return self.formatter.format_ps_output(clean_output)
         elif cmd_lower.startswith('netstat'):
-            return self._format_netstat_output(clean_output)
+            return self.formatter.format_netstat_output(clean_output)
         elif cmd_lower.startswith('top'):
-            return self._format_top_output(clean_output)
+            return self.formatter.format_top_output(clean_output)
         elif cmd_lower.startswith('df'):
-            return self._format_df_output(clean_output)
+            return self.formatter.format_df_output(clean_output)
         elif cmd_lower.startswith('find'):
-            return self._format_find_output(clean_output)
+            return self.formatter.format_find_output(clean_output, command)
         elif cmd_lower.startswith('grep'):
-            return self._format_grep_output(clean_output)
+            return self.formatter.format_grep_output(clean_output, command)
         elif cmd_lower.startswith('cat'):
-            return self._format_cat_output(clean_output)
+            return self.formatter.format_cat_output(clean_output, command)
         elif cmd_lower.startswith('ifconfig'):
-            return self._format_ifconfig_output(clean_output)
+            return self.formatter.format_ifconfig_output(clean_output)
         elif cmd_lower.startswith('mount'):
-            return self._format_mount_output(clean_output)
+            return self.formatter.format_mount_output(clean_output)
         else:
-            return clean_output
+            return self.formatter.format_generic_output(clean_output)
     
     def _format_ls_output(self, output: str, command: str = '') -> str:
         """Format ls command output horizontally with proper spacing"""
@@ -1487,7 +1520,7 @@ def _get_fallback_response(command: str, process: asyncssh.SSHServerProcess, ser
     """Get fallback response when LLM fails"""
     cmd_lower = command.lower().strip()
     if cmd_lower == 'ls':
-        return "Desktop/            Documents/          Downloads/          Music/\nPictures/           Public/             Templates/          Videos/\ndev_notes.txt       my_project/         scripts/"
+        return None  # Let LLM handle ls command
     elif cmd_lower == 'pwd':
         return server.current_directory if server else '/home/guest'
     elif cmd_lower == 'whoami':
@@ -1603,35 +1636,19 @@ def handle_manual_commands(command: str, process: asyncssh.SSHServerProcess, ser
     # Handle clear command immediately - should always work
     elif cmd == 'clear':
         return "\033[2J\033[H"
-    
-    # Handle download commands to show successful downloads
-    elif cmd in ['wget', 'curl'] and server and server.file_handler:
+
+
+    # Let LLM handle download commands dynamically
+    elif cmd in ["wget", "curl"] and server and server.file_handler:
+        # Still track the download for session data
         try:
             download_info = server.file_handler.handle_download(command)
-            server.session_data['files_downloaded'].append(download_info)
-            
-            if download_info.get('filename'):
-                filename = download_info['filename']
-                file_size = download_info.get('file_size', '1024')
-                
-                if cmd == 'wget':
-                    return f"""--{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}--  {download_info.get('url', 'http://example.com/file')}
-Resolving host... done.
-Connecting to host... connected.
-HTTP request sent, awaiting response... 200 OK
-Length: {file_size} [{file_size} bytes]
-Saving to: '{filename}'
-
-{filename}           100%[===================>]   {file_size}  --.-KB/s    in 0.1s
-
-{datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ({file_size} KB/s) - '{filename}' saved [{file_size}/{file_size}]"""
-                else:  # curl
-                    # amazonq-ignore-next-line
-                    return f"""  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100  {file_size}  100  {file_size}    0     0   {file_size}      0 --:--:-- --:--:-- --:--:--  {file_size}"""
-        except Exception as e:
-            return f"bash: {cmd}: command failed"
+            server.session_data["files_downloaded"].append(download_info)
+        except Exception:
+            pass
+        # Let LLM provide the response
+        return None
+    
     
     elif cmd == 'pwd':
         current_path = server.current_directory if server else f'/home/{username}'

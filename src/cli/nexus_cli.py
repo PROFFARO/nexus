@@ -1,4 +1,3 @@
-    #!/usr/bin/env python3
 """
 NEXUS Honeypot CLI - Centralized command-line interface for all service emulators
 """

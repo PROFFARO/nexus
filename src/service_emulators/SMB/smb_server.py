@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+# Import enhanced SMB components
+
 from configparser import ConfigParser
 import argparse
 import asyncio
@@ -44,17 +46,34 @@ except ImportError:
     print("Warning: python-dotenv not installed. Install with: pip install python-dotenv")
     print("Environment variables will be loaded from system environment only.")
 
-# Import ML components
+# Import ML components with robust path handling
+ML_AVAILABLE = False
+MLDetector = None
+MLConfig = None
+
 try:
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent.parent))
-    from ai.detectors import MLDetector
-    from ai.config import MLConfig
+    # Try relative imports first
+    from ...ai.detectors import MLDetector
+    from ...ai.config import MLConfig
     ML_AVAILABLE = True
 except ImportError:
-    ML_AVAILABLE = False
-    print("Warning: ML components not available. Install dependencies or check ai module.")
+    try:
+        # Try absolute imports with path adjustment
+        import sys
+        from pathlib import Path
+        ai_path = Path(__file__).parent.parent.parent / "ai"
+        if ai_path.exists() and str(ai_path) not in sys.path:
+            sys.path.insert(0, str(ai_path.parent))
+        
+        from ai.detectors import MLDetector
+        from ai.config import MLConfig
+        ML_AVAILABLE = True
+    except ImportError as e:
+        ML_AVAILABLE = False
+        # Only print warning if running directly, not during imports
+        if __name__ == "__main__":
+            print(f"Warning: ML components not available: {e}")
+
 
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
@@ -192,6 +211,18 @@ class AttackAnalyzer:
                 ml_results = self.ml_detector.score(ml_data)
                 
                 # Integrate ML results into analysis
+                
+                # Ensure ml_results is a dictionary
+                if not isinstance(ml_results, dict):
+                    logging.warning(f"ML detector returned non-dict result: {type(ml_results)}")
+                    ml_results = {
+                        'ml_anomaly_score': 0.0,
+                        'ml_labels': ['ml_error'],
+                        'ml_cluster': -1,
+                        'ml_reason': f'Invalid ML result type: {type(ml_results)}',
+                        'ml_confidence': 0.0,
+                        'ml_inference_time_ms': 0
+                    }
                 analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
                 analysis['ml_labels'] = ml_results.get('ml_labels', [])
                 analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)

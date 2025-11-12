@@ -119,11 +119,21 @@ class MLConfig:
         return self.config.get(section, {}).get(key, default)
     
     def get_model_path(self, model_type: str, service: str = None) -> Path:
-        """Get path for model file"""
+        """Get path for model file with proper filename mapping"""
         service = service or self.service_name or "global"
         service_dir = self.models_dir / service
         service_dir.mkdir(exist_ok=True)
-        return service_dir / f"{model_type}.pkl"
+        
+        # Map model types to actual filenames
+        model_files = {
+            'anomaly_detector': 'isolation_forest_anomaly.pkl',
+            'cluster_model': 'hdbscan_clustering.pkl',
+            'supervised_classifier': 'supervised_classifier.pkl',
+            'one_class_svm': 'one_class_svm_anomaly.pkl'
+        }
+        
+        filename = model_files.get(model_type, f"{model_type}.pkl")
+        return service_dir / filename
     
     def get_vectorizer_path(self, service: str = None) -> Path:
         """Get path for vectorizer file"""
@@ -193,24 +203,7 @@ class MLConfig:
             with open(config_path, 'w') as f:
                 parser.write(f)
     
-    def get_model_path(self, model_type: str, service: str) -> Path:
-        """Get path to a specific model file"""
-        service_dir = self.models_dir / service
-        
-        # Map model types to actual filenames
-        model_files = {
-            'anomaly_detector': 'isolation_forest_anomaly.pkl',
-            'cluster_model': 'hdbscan_clustering.pkl',
-            'supervised_classifier': 'supervised_classifier.pkl',
-            'one_class_svm': 'one_class_svm_anomaly.pkl'
-        }
-        
-        filename = model_files.get(model_type, f"{model_type}.pkl")
-        return service_dir / filename
     
-    def get_vectorizer_path(self, service: str) -> Path:
-        """Get path to vectorizer file"""
-        return self.models_dir / service / "vectorizer.pkl"
     
     def get_scaler_path(self, service: str) -> Path:
         """Get path to scaler file"""

@@ -27,14 +27,36 @@ logger = logging.getLogger(__name__)
 # Thread-local used by ContextFilter
 thread_local = threading.local()
 
-# Import ML components
+# Global configuration variable
+config = None
+
+# Import ML components with robust path handling
+ML_AVAILABLE = False
+MLDetector = None
+MLConfig = None
+
 try:
+    # Try relative imports first
     from ...ai.detectors import MLDetector
     from ...ai.config import MLConfig
     ML_AVAILABLE = True
 except ImportError:
-    ML_AVAILABLE = False
-    print("Warning: ML components not available. Install dependencies or check ai module.")
+    try:
+        # Try absolute imports with path adjustment
+        import sys
+        from pathlib import Path
+        ai_path = Path(__file__).parent.parent.parent / "ai"
+        if ai_path.exists() and str(ai_path) not in sys.path:
+            sys.path.insert(0, str(ai_path.parent))
+        
+        from ai.detectors import MLDetector
+        from ai.config import MLConfig
+        ML_AVAILABLE = True
+    except ImportError as e:
+        ML_AVAILABLE = False
+        # Only print warning if running directly, not during imports
+        if __name__ == "__main__":
+            print(f"Warning: ML components not available: {e}")
 
 # --------------------------
 # Dynamic import of mysql_mimic (avoid static Pylance errors)
@@ -155,16 +177,7 @@ except ImportError:
     logger.debug("python-dotenv not installed; skipping loading .env")
 
 # Import ML components
-try:
-    import sys
-    from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent.parent))
-    from ai.detectors import MLDetector
-    from ai.config import MLConfig
-    ML_AVAILABLE = True
-except ImportError as e:
-    ML_AVAILABLE = False
-    print(f"Warning: ML components not available: {e}")
+# ML components already imported above
 
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
@@ -293,6 +306,18 @@ class AttackAnalyzer:
                 ml_results = self.ml_detector.score(ml_data)
                 
                 # Integrate ML results into analysis
+                
+                # Ensure ml_results is a dictionary
+                if not isinstance(ml_results, dict):
+                    logging.warning(f"ML detector returned non-dict result: {type(ml_results)}")
+                    ml_results = {
+                        'ml_anomaly_score': 0.0,
+                        'ml_labels': ['ml_error'],
+                        'ml_cluster': -1,
+                        'ml_reason': f'Invalid ML result type: {type(ml_results)}',
+                        'ml_confidence': 0.0,
+                        'ml_inference_time_ms': 0
+                    }
                 analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
                 analysis['ml_labels'] = ml_results.get('ml_labels', [])
                 analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
@@ -476,8 +501,8 @@ class MySQLAttackAnalyzer:
             logger.debug(f"Failed to load vulnerability signatures: {e}")
             return {}
 
-    def analyze_query(self, query: str) -> Dict[str, Any]:
-        """Analyze MySQL query for attack patterns"""
+    def analyze_query(self, query: str, username: str = "", database: str = "") -> Dict[str, Any]:
+        """Analyze MySQL query for attack patterns with ML integration"""
         analysis = {
             'query': query,
             'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
@@ -489,7 +514,7 @@ class MySQLAttackAnalyzer:
         }
 
         # Check if attack pattern recognition is enabled
-        if not config['ai_features'].getboolean('attack_pattern_recognition', True):
+        if config and not config['ai_features'].getboolean('attack_pattern_recognition', True):
             return analysis
 
         # Check attack patterns
@@ -539,16 +564,17 @@ class MySQLAttackAnalyzer:
                 max_severity = vuln['severity']
 
         # Apply sensitivity level adjustment
-        sensitivity = config['attack_detection'].get('sensitivity_level', 'medium').lower()
-        if sensitivity == 'high' and max_severity == 'low':
-            max_severity = 'medium'
-        elif sensitivity == 'low' and max_severity == 'medium':
-            max_severity = 'low'
+        if config:
+            sensitivity = config['attack_detection'].get('sensitivity_level', 'medium').lower()
+            if sensitivity == 'high' and max_severity == 'low':
+                max_severity = 'medium'
+            elif sensitivity == 'low' and max_severity == 'medium':
+                max_severity = 'low'
         
         analysis['severity'] = max_severity
         
         # Calculate threat score if enabled
-        if config['attack_detection'].getboolean('threat_scoring', True):
+        if config and config['attack_detection'].getboolean('threat_scoring', True):
             threat_score = self._calculate_threat_score(analysis)
             analysis['threat_score'] = threat_score
             
@@ -559,16 +585,45 @@ class MySQLAttackAnalyzer:
         # Add ML-based analysis if available
         if self.ml_detector:
             try:
+                # Prepare comprehensive ML data
                 ml_data = {
                     'query': query,
+                    'username': username,
+                    'database': database,
+                    'timestamp': analysis['timestamp'],
+                    'attack_types': analysis['attack_types'],
+                    'severity': analysis['severity'],
+                    'indicators': analysis['indicators'],
+                    'vulnerabilities': analysis['vulnerabilities'],
+                    'pattern_matches': analysis['pattern_matches'],
                     'session_data': {
                         'query_count': 1,
                         'failed_queries': 0,
                         'bytes_transferred': len(query)
                     }
                 }
+                
+                # Get ML scoring results
                 ml_results = self.ml_detector.score(ml_data)
-                analysis.update(ml_results)
+                
+                # Integrate ML results into analysis
+                analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
+                analysis['ml_labels'] = ml_results.get('ml_labels', [])
+                analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
+                analysis['ml_reason'] = ml_results.get('ml_reason', 'No ML analysis')
+                analysis['ml_confidence'] = ml_results.get('ml_confidence', 0.0)
+                analysis['ml_inference_time_ms'] = ml_results.get('ml_inference_time_ms', 0)
+                
+                # Log ML analysis results
+                logging.info("MySQL ML analysis completed", extra={
+                    'ml_anomaly_score': analysis['ml_anomaly_score'],
+                    'ml_labels': analysis['ml_labels'],
+                    'ml_reason': analysis['ml_reason'],
+                    'ml_inference_time_ms': analysis['ml_inference_time_ms'],
+                    'query': query[:50] + '...' if len(query) > 50 else query,
+                    'username': username,
+                    'database': database
+                })
                 
                 # Enhance severity based on ML anomaly score
                 if ml_results.get('ml_anomaly_score', 0) > 0.8:
@@ -578,7 +633,7 @@ class MySQLAttackAnalyzer:
                         
             except Exception as e:
                 logging.error(f"ML analysis failed: {e}")
-                if not config.get('ml', {}).get('fallback_on_error', True):
+                if config and not config.get('ml', {}).get('fallback_on_error', True):
                     raise
         
         return analysis
@@ -1139,6 +1194,62 @@ class MySQLHoneypotSession(Session):
             return 'EXPLAIN'
         else:
             return 'OTHER'
+    
+    def _get_schema_definitions(self) -> Dict[str, List[Dict[str, str]]]:
+        """Get realistic schema definitions for game development tables"""
+        return {
+            "users": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "username", "Type": "varchar(64)", "Null": "NO", "Key": "UNI", "Default": None, "Extra": ""},
+                {"Field": "email", "Type": "varchar(255)", "Null": "NO", "Key": "UNI", "Default": None, "Extra": ""},
+                {"Field": "password_hash", "Type": "varchar(255)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "created_at", "Type": "datetime", "Null": "NO", "Key": "", "Default": "CURRENT_TIMESTAMP", "Extra": ""},
+                {"Field": "last_login", "Type": "datetime", "Null": "YES", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "is_active", "Type": "tinyint(1)", "Null": "NO", "Key": "", "Default": "1", "Extra": ""}
+            ],
+            "players": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "user_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "player_name", "Type": "varchar(128)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "level", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "1", "Extra": ""},
+                {"Field": "experience", "Type": "bigint(20)", "Null": "NO", "Key": "", "Default": "0", "Extra": ""},
+                {"Field": "coins", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "100", "Extra": ""},
+                {"Field": "gems", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "0", "Extra": ""}
+            ],
+            "games": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "title", "Type": "varchar(255)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "genre", "Type": "varchar(64)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "platform", "Type": "varchar(64)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "release_date", "Type": "date", "Null": "YES", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "status", "Type": "enum('development','testing','released','archived')", "Null": "NO", "Key": "", "Default": "development", "Extra": ""}
+            ],
+            "messages": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "sender_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "recipient_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "subject", "Type": "varchar(255)", "Null": "YES", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "content", "Type": "text", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "sent_at", "Type": "datetime", "Null": "NO", "Key": "", "Default": "CURRENT_TIMESTAMP", "Extra": ""},
+                {"Field": "is_read", "Type": "tinyint(1)", "Null": "NO", "Key": "", "Default": "0", "Extra": ""}
+            ],
+            "characters": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "player_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "character_name", "Type": "varchar(128)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "class", "Type": "varchar(64)", "Null": "NO", "Key": "", "Default": None, "Extra": ""},
+                {"Field": "level", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "1", "Extra": ""},
+                {"Field": "health", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "100", "Extra": ""},
+                {"Field": "mana", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "50", "Extra": ""}
+            ],
+            "inventory": [
+                {"Field": "id", "Type": "int(11)", "Null": "NO", "Key": "PRI", "Default": None, "Extra": "auto_increment"},
+                {"Field": "player_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "item_id", "Type": "int(11)", "Null": "NO", "Key": "MUL", "Default": None, "Extra": ""},
+                {"Field": "quantity", "Type": "int(11)", "Null": "NO", "Key": "", "Default": "1", "Extra": ""},
+                {"Field": "acquired_at", "Type": "datetime", "Null": "NO", "Key": "", "Default": "CURRENT_TIMESTAMP", "Extra": ""}
+            ]
+        }
 
     def _handle_termination_query(self, query: str) -> Optional[Any]:
         """Handle session termination queries"""
@@ -1196,8 +1307,24 @@ class MySQLHoneypotSession(Session):
     
     def _analyze_and_log_threats(self, query: str) -> tuple[Dict[str, Any], List[Dict[str, Any]]]:
         """Analyze query for threats and log findings"""
-        attack_analysis = self.attack_analyzer.analyze_query(query)
+        # Get session context for ML analysis
+        username = self.session_data.get('username', 'unknown')
+        database = self.session_data.get('database', None)
+        
+        # Perform comprehensive analysis with ML integration
+        attack_analysis = self.attack_analyzer.analyze_query(query, username, database)
         vulnerabilities = self.vuln_logger.analyze_for_vulnerabilities(query)
+        
+        # Log ML analysis results if available
+        if attack_analysis.get('ml_anomaly_score') is not None:
+            logger.info("MySQL ML analysis completed", extra={
+                'ml_anomaly_score': attack_analysis.get('ml_anomaly_score', 0.0),
+                'ml_labels': attack_analysis.get('ml_labels', []),
+                'ml_reason': attack_analysis.get('ml_reason', 'No reason'),
+                'ml_inference_time_ms': attack_analysis.get('ml_inference_time_ms', 0),
+                'query': query[:50] + '...' if len(query) > 50 else query,
+                'session_id': self.session_data['session_id']
+            })
         
         if attack_analysis.get('attack_types'):
             logger.warning("MySQL attack pattern detected", extra={
@@ -1400,7 +1527,9 @@ class MySQLHoneypotSession(Session):
             enhanced_query += f" | Default DB: {config['mysql'].get('default_database', 'nexus_gamedev')}"
         
         # Add threat adaptation if enabled and attacks detected
-        attack_analysis = self.attack_analyzer.analyze_query(query)
+        username = self.session_data.get('username', 'unknown')
+        database = self.session_data.get('database', None)
+        attack_analysis = self.attack_analyzer.analyze_query(query, username, database)
         if config['llm'].getboolean('threat_adaptation', True) and attack_analysis.get('attack_types'):
             enhanced_query += f" | ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}"
             enhanced_query += f" | Threat Level: {attack_analysis.get('severity', 'low')}"
@@ -1415,11 +1544,35 @@ class MySQLHoneypotSession(Session):
         # Add query result manipulation if enabled
         if config['ai_features'].getboolean('query_result_manipulation', True) and attack_analysis.get('attack_types'):
             enhanced_query += " | MANIPULATE_RESULTS: Provide believable but controlled data"
+        
+        # Add ML analysis context if available
+        if attack_analysis.get('ml_anomaly_score', 0) > 0:
+            enhanced_query += f" | ML_ANALYSIS: Anomaly Score={attack_analysis.get('ml_anomaly_score', 0):.3f}"
+            if attack_analysis.get('ml_labels'):
+                enhanced_query += f", Labels={','.join(attack_analysis.get('ml_labels', []))}"
+            if attack_analysis.get('ml_reason'):
+                enhanced_query += f", Reason={attack_analysis.get('ml_reason', 'Unknown')}"
 
+        # Prepare template variables for the prompt with enhanced schema context
+        schema_definitions = self._get_schema_definitions()
+        available_databases = ["nexus_gamedev", "information_schema", "mysql", "performance_schema"]
+        tables_in_database = {
+            "nexus_gamedev": ["users", "players", "games", "characters", "inventory", "items", "achievements", "leaderboards", "messages", "accounts", "settings", "configurations", "rewards"]
+        }
+        
+        template_vars = {
+            "messages": [HumanMessage(content=enhanced_query)],
+            "username": self.session_data.get('username', 'unknown'),
+            "host": self.session_data.get('client_info', {}).get('ip', 'localhost'),
+            "database": self.session_data.get('database', None),
+            "available_databases": available_databases,
+            "tables_in_database": tables_in_database,
+            "schema_definitions": schema_definitions,
+            "max_rows": 10
+        }
+        
         response = await with_message_history.ainvoke(
-            {
-                "messages": [HumanMessage(content=enhanced_query)]
-            },
+            template_vars,
             config=config_dict
         )
 
@@ -1753,10 +1906,20 @@ End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]" and specify the primary atta
 
             config_dict = {"configurable": {"session_id": session_id}}
 
+            # Prepare template variables for the session summary prompt
+            template_vars = {
+                "messages": [HumanMessage(content=prompt)],
+                "username": session_data.get('username', 'unknown'),
+                "host": session_data.get('client_info', {}).get('ip', 'localhost'),
+                "database": session_data.get('database', None),
+                "available_databases": None,
+                "tables_in_database": None,
+                "schema_definitions": None,
+                "max_rows": 10
+            }
+            
             llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=prompt)]
-                },
+                template_vars,
                 config=config_dict
             )
 
