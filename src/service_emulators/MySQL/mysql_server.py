@@ -472,134 +472,100 @@ def patch_client_connected_cb_to_avoid_log_errors():
 # Authentication plugin and provider
 # --------------------------
 # Create base class dynamically to avoid Pylance errors
+# Create base class dynamically to avoid Pylance errors
 if NativePasswordAuthPlugin is None:
     NativePasswordAuthPlugin = _FallbackNativePasswordAuthPlugin
 
 
 class PasswordVerifyAuthPlugin(NativePasswordAuthPlugin):
-    """Authentication plugin that verifies passwords against config using MySQL native password algorithm"""
+    """
+    Correct plugin for mysql-mimic >= 1.1
+    """
 
     def __init__(self, accounts: Dict[str, str]):
         super().__init__()
         self.accounts = accounts
-        self.nonce = None
+        self._nonce = None
 
-    def _verify_mysql_native_password(
-        self, password: str, auth_response: bytes
-    ) -> bool:
-        """Verify password using MySQL native password algorithm"""
-        if not password:
-            # Empty password - check if auth_response is also empty
-            return len(auth_response) == 0
-
-        if not auth_response or len(auth_response) == 0:
-            # Client sent no password
-            return False
-
-        # MySQL native password algorithm:
-        # Client sends: SHA1(password) XOR SHA1(nonce + SHA1(SHA1(password)))
-        # We compute the same and compare
-
-        password_bytes = password.encode("utf-8")
-
-        # Stage 1: SHA1(password)
-        stage1 = hashlib.sha1(password_bytes).digest()
-
-        # Stage 2: SHA1(SHA1(password))
-        stage2 = hashlib.sha1(stage1).digest()
-
-        # Stage 3: SHA1(nonce + SHA1(SHA1(password)))
-        stage3 = hashlib.sha1(self.nonce + stage2).digest()
-
-        # Expected response: stage1 XOR stage3
-        expected_response = bytes(a ^ b for a, b in zip(stage1, stage3))
-
-        return auth_response == expected_response
+    # local XOR function (pxor replacement)
+    def _pxor(self, a: bytes, b: bytes) -> bytes:
+        return bytes(x ^ y for x, y in zip(a, b))
 
     async def auth(self, auth_info=None):
-        """Authenticate with proper password verification"""
-        if not auth_info:
-            # Generate nonce for authentication handshake
-            try:
-                if utils is not None:
-                    self.nonce = await utils.nonce(20)
-                else:
-                    self.nonce = os.urandom(20)
-            except Exception:
-                self.nonce = os.urandom(20)
+        # STEP 1: server sends nonce on first call
+        if auth_info is None:
+            self._nonce = utils.nonce(20)
+            auth_info = yield self._nonce + b"\x00"
 
-            # Send nonce to client
-            auth_info = yield self.nonce + b"\x00"
+        username = auth_info.username  # correct API
 
-        # Get username from auth_info
-        user_obj = getattr(auth_info, "user", None)
-        username = getattr(user_obj, "name", "unknown") if user_obj else "unknown"
-
-        # Check if user exists in config
+        # STEP 2: unknown user
         if username not in self.accounts:
-            logger.warning(f"Authentication failed: unknown user '{username}'")
-            raise Exception(
-                f"Access denied for user '{username}'@'localhost' (using password: YES)"
+            yield MysqlError(
+                code=1045,
+                message=f"Access denied for user '{username}' (unknown user)",
             )
-
-        # Get expected password from config
-        expected_password = self.accounts[username]
-
-        # Get auth response from client
-        auth_response = getattr(auth_info, "auth_response", b"")
-
-        # Special case: wildcard password accepts any password
-        if expected_password == "*":
-            logger.info(f"User '{username}' authenticated with wildcard password")
-            if Success is not None:
-                yield Success(username)
-            else:
-                yield _FallbackSuccess(username)
             return
 
-        # Verify the password
-        if self._verify_mysql_native_password(expected_password, auth_response):
-            logger.info(
-                f"User '{username}' authenticated successfully with correct password"
+        stored_pw = self.accounts[username]
+
+        # STEP 3: wildcard → accept any password
+        if stored_pw == "*":
+            yield Success(username)
+            return
+
+        client_resp = auth_info.data  # correct API
+
+        if not client_resp:
+            yield MysqlError(
+                code=1045,
+                message=f"Access denied for user '{username}' (empty password)",
             )
-            if Success is not None:
-                yield Success(username)
-            else:
-                yield _FallbackSuccess(username)
-        else:
-            # Password verification failed
-            logger.warning(
-                f"Authentication failed for user '{username}': incorrect password"
-            )
-            raise Exception(
-                f"Access denied for user '{username}'@'localhost' (using password: YES)"
-            )
+            return
+
+        import hashlib
+
+        # MySQL native double SHA1 hashing
+        stage1 = hashlib.sha1(stored_pw.encode()).digest()
+        stage2 = hashlib.sha1(stage1).digest()
+
+        # match = SHA1(nonce + stage2) XOR stage1
+        expected = self._pxor(
+            client_resp,
+            hashlib.sha1(self._nonce + stage2).digest(),
+        )
+
+        if expected == stage1:
+            yield Success(username)
+            return
+
+        # wrong password
+        yield MysqlError(
+            code=1045,
+            message=f"Access denied for user '{username}' (incorrect password)",
+        )
+        return
 
 
 class ConfigBasedIdentityProvider(IdentityProvider):
-    """Identity provider that loads users from config with proper password hashing"""
-
     def __init__(self, accounts: Dict[str, str]):
         self.accounts = accounts
+        self.plugin = PasswordVerifyAuthPlugin(accounts)
 
     def get_plugins(self):
-        return [PasswordVerifyAuthPlugin(self.accounts)]
+        return [self.plugin]
 
     def get_default_plugin(self):
-        return PasswordVerifyAuthPlugin(self.accounts)
+        return self.plugin
 
-    async def get_user(self, username: str):
-        # Only return user if it exists in config
+    async def get_user(self, username: str) -> Optional[User]:
         if username not in self.accounts:
-            logger.debug(f"User '{username}' not found in configuration")
             return None
 
-        # User exists in config - return user object
-        logger.debug(f"User '{username}' found in configuration")
-        if User is not None:
-            return User(name=username, auth_plugin="mysql_native_password")
-        else:
-            return _FallbackUser(name=username, auth_plugin="mysql_native_password")
+        return User(
+            name=username,
+            auth_plugin="mysql_native_password",
+        )
 
 
 # --------------------------
@@ -1869,15 +1835,79 @@ class MySQLHoneypotSession(Session):
             if len(parts) >= 2:
                 db_name = parts[1].strip("`\"';")
 
-                # Validate database exists (you can add more validation here)
-                # For now, accept any database name and let LLM handle validation
+                # Build available_databases list (source of truth)
+                # Prefer config-driven list if present, otherwise fall back to global set
+                available_databases = None
+                try:
+                    cfg = getattr(self, "config", None)
+                    if cfg and "database_list" in cfg:
+                        available_databases = cfg["database_list"]
+                    elif cfg and cfg.get("llm"):
+                        # if config.ini contains a 'default_database' and common ones:
+                        available_databases = [
+                            "nexus_gamedev",
+                            "information_schema",
+                            "mysql",
+                            "performance_schema",
+                        ]
+                except Exception:
+                    available_databases = [
+                        "nexus_gamedev",
+                        "information_schema",
+                        "mysql",
+                        "performance_schema",
+                    ]
+
+                # If you maintain global created DBs in _global_databases, include those
+                try:
+                    globals_set = getattr(
+                        MySQLHoneypotSession, "_global_databases", set()
+                    )
+                    if globals_set:
+                        available_databases = (
+                            set(available_databases) | set(globals_set)
+                            if available_databases
+                            else set(globals_set)
+                        )
+                except Exception:
+                    pass
+
+                # Normalize to set for quick membership check
+                if available_databases is None:
+                    available_databases = {
+                        "nexus_gamedev",
+                        "information_schema",
+                        "mysql",
+                        "performance_schema",
+                    }
+                else:
+                    available_databases = set(available_databases)
+
+                # If database not in known list, return Unknown database error (1049)
+                if db_name not in available_databases:
+                    logger.warning(
+                        "Attempt to USE unknown database",
+                        extra={
+                            "session_id": self.session_data.get("session_id"),
+                            "attempt_db": db_name,
+                            "username": self.session_data.get("username"),
+                        },
+                    )
+                    return ResultSet(
+                        rows=[(f"ERROR 1049 (42000): Unknown database '{db_name}'",)],
+                        columns=[ResultColumn(name="Error", type=253)],
+                    )
+
+                # If valid, set selected database on the session
                 old_database = self.session_data.get("database")
                 self.session_data["database"] = db_name
+                # Also set an explicit attribute for other code that may check `.current_db`
+                self.current_database = db_name
 
                 logger.info(
                     "MySQL database changed",
                     extra={
-                        "session_id": self.session_data["session_id"],
+                        "session_id": self.session_data.get("session_id"),
                         "command": query,
                         "old_database": old_database,
                         "new_database": db_name,
@@ -1885,9 +1915,7 @@ class MySQLHoneypotSession(Session):
                     },
                 )
 
-                # Return success for USE command
-                # Note: MySQL doesn't validate database existence in USE command at protocol level
-                # It just changes the default database. Errors appear on actual table access.
+                # Successful USE returns no rows
                 return ResultSet(rows=[], columns=[])
         return None
 
@@ -2043,6 +2071,9 @@ class MySQLHoneypotSession(Session):
     async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
         """Handle MySQL query with AI analysis"""
         query = sql.strip().rstrip(";")
+        
+        # DEBUG: Log current state before processing
+        logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
 
         # Check for session termination queries
         termination_result = self._handle_termination_query(query)
@@ -2056,6 +2087,7 @@ class MySQLHoneypotSession(Session):
         # Handle USE database commands
         use_result = self._handle_use_database(query)
         if use_result is not None:
+            logger.info(f"[QUERY_DEBUG] USE command result: db_set_to={self.session_data.get('database')}, result={use_result}")
             return use_result
 
         # Log query information
@@ -2168,6 +2200,9 @@ class MySQLHoneypotSession(Session):
         username = self.session_data.get("username", "unknown")
         host = self.session_data.get("client_info", {}).get("ip", "localhost")
         database = self.session_data.get("database", None)
+        
+        # DEBUG: Log database context
+        logger.info(f"[LLM_DEBUG] _get_llm_response: query='{query}', database={database}, session_database={self.session_data.get('database')}")
 
         # Schema definitions
         schema_definitions = self._get_schema_definitions()
@@ -2339,7 +2374,13 @@ class MySQLHoneypotSession(Session):
             raw = raw.strip()
 
             # Try to parse JSON
-            parsed = json.loads(raw)
+            try:
+                parsed = json.loads(raw)
+            except Exception:
+                return ResultSet(
+                    rows=[],
+                    columns=[ResultColumn(name="Error", type="text")],
+                )
 
             # Handle specific MySQL commands with proper formatting
             return self._format_mysql_response(parsed, query_lower)
@@ -2425,20 +2466,64 @@ class MySQLHoneypotSession(Session):
     def _format_show_tables(self, parsed: Any) -> Any:
         """Format SHOW TABLES response with proper column naming"""
         if isinstance(parsed, list) and parsed:
-            # Check if it's an error response first
+            # If parsed is an error object from LLM, return it as an error row
             if len(parsed) > 0 and isinstance(parsed[0], dict) and "Error" in parsed[0]:
-                # Return error as-is
                 return ResultSet(
                     rows=[(parsed[0]["Error"],)],
                     columns=[ResultColumn(name="Error", type=253)],
                 )
 
-            db_name = self.session_data.get("database")
-            if not db_name or db_name == "none" or db_name is None:
-                # No database selected - should have been caught by LLM
+            # Determine current database: prefer explicit attribute, then session_data
+            db_name = getattr(self, "current_database", None) or self.session_data.get(
+                "database"
+            )
+            # Normalize empty values
+            if db_name in (None, "", "none"):
                 logger.warning("SHOW TABLES called without database context")
                 return ResultSet(
                     rows=[("ERROR 1046 (3D000): No database selected",)],
+                    columns=[ResultColumn(name="Error", type=253)],
+                )
+
+            # Confirm the database exists in available list (avoid hallucinated tables)
+            available_databases = None
+            try:
+                # Try to get from config if it's a ConfigParser object
+                if hasattr(self, "config") and hasattr(self.config, "get"):
+                    try:
+                        # For ConfigParser, try getting from a specific section
+                        if hasattr(self.config, "options"):
+                            available_databases = self.config.get("mysql", "available_databases", fallback=None)
+                    except Exception:
+                        available_databases = None
+                # Fallback to hardcoded list
+                if available_databases is None:
+                    available_databases = {
+                        "nexus_gamedev",
+                        "information_schema",
+                        "mysql",
+                        "performance_schema",
+                    }
+                else:
+                    available_databases = set(available_databases) if isinstance(available_databases, str) else available_databases
+            except Exception:
+                available_databases = {
+                    "nexus_gamedev",
+                    "information_schema",
+                    "mysql",
+                    "performance_schema",
+                }
+            
+            # Include global created DBs
+            if hasattr(MySQLHoneypotSession, "_global_databases"):
+                available_databases |= set(MySQLHoneypotSession._global_databases)
+
+            if db_name not in available_databases:
+                logger.warning(
+                    "SHOW TABLES for non-existent database", extra={"db": db_name}
+                )
+                return ResultSet(
+                    rows=[(f"ERROR 1049 (42000): Unknown database '{db_name}'",)],
                     columns=[ResultColumn(name="Error", type=253)],
                 )
 
@@ -3106,12 +3191,31 @@ class MySQLHoneypotServer:
                 "mysql-mimic is not installed or could not be imported. Install it with: pip install mysql-mimic"
             )
 
-        # Create server instance (mysql_mimic API) with proper authentication
+        def load_user_accounts(config):
+            accounts = {}
+            if "user_accounts" in config:
+                for user, pwd in config["user_accounts"].items():
+                    accounts[user] = pwd.strip()
+            else:
+                logger.error("user_accounts section missing in config.ini")
+            return accounts
+
+        # Load config.ini (if not already loaded)
+        global config
+        if config is None:
+            config = ConfigParser()
+            config.read(Path(__file__).parent / "config.ini")
+
+        # Load all MySQL username/password pairs
+        accounts = load_user_accounts(config)
+        identity_provider = ConfigBasedIdentityProvider(accounts)
+
+        # Create server instance using mysql_mimic with correct auth provider
         server = MysqlServer(
             session_factory=self.create_session_factory(),
-            identity_provider=ConfigBasedIdentityProvider(self.accounts),
-            port=self.port,
-            host=self.host,
+            identity_provider=identity_provider,
+            host=config["mysql"]["host"],
+            port=config["mysql"].getint("port"),
         )
 
         # Store connection info for sessions
