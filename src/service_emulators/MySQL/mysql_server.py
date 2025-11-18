@@ -476,41 +476,126 @@ if NativePasswordAuthPlugin is None:
     NativePasswordAuthPlugin = _FallbackNativePasswordAuthPlugin
 
 
-class AllowAllPasswordAuthPlugin(NativePasswordAuthPlugin):
-    """Authentication plugin that accepts any password"""
+class PasswordVerifyAuthPlugin(NativePasswordAuthPlugin):
+    """Authentication plugin that verifies passwords against config using MySQL native password algorithm"""
+
+    def __init__(self, accounts: Dict[str, str]):
+        super().__init__()
+        self.accounts = accounts
+        self.nonce = None
+
+    def _verify_mysql_native_password(
+        self, password: str, auth_response: bytes
+    ) -> bool:
+        """Verify password using MySQL native password algorithm"""
+        if not password:
+            # Empty password - check if auth_response is also empty
+            return len(auth_response) == 0
+
+        if not auth_response or len(auth_response) == 0:
+            # Client sent no password
+            return False
+
+        # MySQL native password algorithm:
+        # Client sends: SHA1(password) XOR SHA1(nonce + SHA1(SHA1(password)))
+        # We compute the same and compare
+
+        password_bytes = password.encode("utf-8")
+
+        # Stage 1: SHA1(password)
+        stage1 = hashlib.sha1(password_bytes).digest()
+
+        # Stage 2: SHA1(SHA1(password))
+        stage2 = hashlib.sha1(stage1).digest()
+
+        # Stage 3: SHA1(nonce + SHA1(SHA1(password)))
+        stage3 = hashlib.sha1(self.nonce + stage2).digest()
+
+        # Expected response: stage1 XOR stage3
+        expected_response = bytes(a ^ b for a, b in zip(stage1, stage3))
+
+        return auth_response == expected_response
 
     async def auth(self, auth_info=None):
+        """Authenticate with proper password verification"""
         if not auth_info:
-            # generate a nonce-like response if caller requests it
+            # Generate nonce for authentication handshake
             try:
                 if utils is not None:
-                    nonce = await utils.nonce(20)
+                    self.nonce = await utils.nonce(20)
                 else:
-                    nonce = os.urandom(20)
+                    self.nonce = os.urandom(20)
             except Exception:
-                # fallback if utils is not available
-                nonce = os.urandom(20)
-            auth_info = yield nonce + b"\x00"
-        # return success with user name
-        if Success is not None:
-            yield Success(auth_info.user.name)
+                self.nonce = os.urandom(20)
+
+            # Send nonce to client
+            auth_info = yield self.nonce + b"\x00"
+
+        # Get username from auth_info
+        user_obj = getattr(auth_info, "user", None)
+        username = getattr(user_obj, "name", "unknown") if user_obj else "unknown"
+
+        # Check if user exists in config
+        if username not in self.accounts:
+            logger.warning(f"Authentication failed: unknown user '{username}'")
+            raise Exception(
+                f"Access denied for user '{username}'@'localhost' (using password: YES)"
+            )
+
+        # Get expected password from config
+        expected_password = self.accounts[username]
+
+        # Get auth response from client
+        auth_response = getattr(auth_info, "auth_response", b"")
+
+        # Special case: wildcard password accepts any password
+        if expected_password == "*":
+            logger.info(f"User '{username}' authenticated with wildcard password")
+            if Success is not None:
+                yield Success(username)
+            else:
+                yield _FallbackSuccess(username)
+            return
+
+        # Verify the password
+        if self._verify_mysql_native_password(expected_password, auth_response):
+            logger.info(
+                f"User '{username}' authenticated successfully with correct password"
+            )
+            if Success is not None:
+                yield Success(username)
+            else:
+                yield _FallbackSuccess(username)
         else:
-            # Create a simple object with name attribute
-            user_obj = getattr(auth_info, "user", None)
-            username = getattr(user_obj, "name", "unknown") if user_obj else "unknown"
-            yield _FallbackSuccess(username)
+            # Password verification failed
+            logger.warning(
+                f"Authentication failed for user '{username}': incorrect password"
+            )
+            raise Exception(
+                f"Access denied for user '{username}'@'localhost' (using password: YES)"
+            )
 
 
-class AllowAllIdentityProvider(IdentityProvider):
-    """Identity provider that accepts any user"""
+class ConfigBasedIdentityProvider(IdentityProvider):
+    """Identity provider that loads users from config with proper password hashing"""
+
+    def __init__(self, accounts: Dict[str, str]):
+        self.accounts = accounts
 
     def get_plugins(self):
-        return [AllowAllPasswordAuthPlugin()]
+        return [PasswordVerifyAuthPlugin(self.accounts)]
 
     def get_default_plugin(self):
-        return AllowAllPasswordAuthPlugin()
+        return PasswordVerifyAuthPlugin(self.accounts)
 
     async def get_user(self, username: str):
+        # Only return user if it exists in config
+        if username not in self.accounts:
+            logger.debug(f"User '{username}' not found in configuration")
+            return None
+
+        # User exists in config - return user object
+        logger.debug(f"User '{username}' found in configuration")
         if User is not None:
             return User(name=username, auth_plugin="mysql_native_password")
         else:
@@ -1778,11 +1863,14 @@ class MySQLHoneypotSession(Session):
         return None
 
     def _handle_use_database(self, query: str) -> Optional[Any]:
-        """Handle USE database commands"""
+        """Handle USE database commands with validation"""
         if query.lower().startswith("use "):
             parts = query.split()
             if len(parts) >= 2:
                 db_name = parts[1].strip("`\"';")
+
+                # Validate database exists (you can add more validation here)
+                # For now, accept any database name and let LLM handle validation
                 old_database = self.session_data.get("database")
                 self.session_data["database"] = db_name
 
@@ -1797,6 +1885,9 @@ class MySQLHoneypotSession(Session):
                     },
                 )
 
+                # Return success for USE command
+                # Note: MySQL doesn't validate database existence in USE command at protocol level
+                # It just changes the default database. Errors appear on actual table access.
                 return ResultSet(rows=[], columns=[])
         return None
 
@@ -2109,21 +2200,40 @@ class MySQLHoneypotSession(Session):
             f"CONTEXT:",
             f"- Username: {username}",
             f"- Client Host: {host}",
-            f"- Current Database: {database if database else 'none'}",
+            f"- Current Database: {database if database and database != 'none' else 'NOT SELECTED'}",
             f"- MySQL Server Version: {config['mysql'].get('server_version', '8.0.32')}",
             f"- Charset: {config['mysql'].get('charset', 'utf8mb4')}",
-            f"- Available Databases: {', '.join(available_databases)}",
+            f"- Available Databases (ONLY these exist): {', '.join(available_databases)}",
         ]
 
-        # Add tables for current database
-        if database and database in tables_in_database:
+        # CRITICAL: Add explicit instruction about current database context
+        if database and database != "none" and database in available_databases:
             context_parts.append(
-                f"- Tables in {database}: {', '.join(tables_in_database[database])}"
+                f"- CRITICAL INSTRUCTION: The current database is '{database}'. For SHOW TABLES query, you MUST use column name 'Tables_in_{database}' EXACTLY. Do NOT use 'Tables_in_database' or 'Tables_in_None'. Use the EXACT database name '{database}'."
+            )
+            if database in tables_in_database:
+                context_parts.append(
+                    f"- Available tables in '{database}': {', '.join(tables_in_database[database])}"
+                )
+            else:
+                context_parts.append(
+                    f"- The database '{database}' exists but has no predefined tables. Generate realistic tables appropriate for this database name."
+                )
+        else:
+            context_parts.append(
+                f'- CRITICAL INSTRUCTION: No database is currently selected. If SHOW TABLES or any query requiring database context is executed, you MUST return this error array: [{{"Error":"ERROR 1046 (3D000): No database selected"}}]'
             )
 
         # Add schema definitions if available
-        if schema_definitions and database:
-            context_parts.append(f"- Schema information available for common tables")
+        if schema_definitions and database and database != "none":
+            context_parts.append(
+                f"- Schema information available for common tables in {database} database"
+            )
+
+        # Add database validation instruction
+        context_parts.append(
+            f"- CRITICAL: If a USE command tries to select a database NOT in the available databases list, return error: ERROR 1049 (42000): Unknown database '<dbname>'"
+        )
 
         # Add threat adaptation if enabled and attacks detected
         attack_analysis = self.attack_analyzer.analyze_query(query, username, database)
@@ -2313,18 +2423,44 @@ class MySQLHoneypotSession(Session):
         return ResultSet(rows=[], columns=[])
 
     def _format_show_tables(self, parsed: Any) -> Any:
-        """Format SHOW TABLES response"""
+        """Format SHOW TABLES response with proper column naming"""
         if isinstance(parsed, list) and parsed:
-            db_name = self.session_data.get("database", "database")
+            # Check if it's an error response first
+            if len(parsed) > 0 and isinstance(parsed[0], dict) and "Error" in parsed[0]:
+                # Return error as-is
+                return ResultSet(
+                    rows=[(parsed[0]["Error"],)],
+                    columns=[ResultColumn(name="Error", type=253)],
+                )
+
+            db_name = self.session_data.get("database")
+            if not db_name or db_name == "none" or db_name is None:
+                # No database selected - should have been caught by LLM
+                logger.warning("SHOW TABLES called without database context")
+                return ResultSet(
+                    rows=[("ERROR 1046 (3D000): No database selected",)],
+                    columns=[ResultColumn(name="Error", type=253)],
+                )
+
             col_name = f"Tables_in_{db_name}"
 
             if isinstance(parsed[0], str):
                 rows = [(table,) for table in parsed]
             elif isinstance(parsed[0], dict):
-                key = next(
-                    (k for k in parsed[0].keys() if "table" in k.lower()),
-                    list(parsed[0].keys())[0],
-                )
+                # Look for Tables_in_ key first
+                key = None
+                for k in parsed[0].keys():
+                    if k.startswith("Tables_in_"):
+                        key = k
+                        # Use the LLM's column name as-is to preserve database name
+                        col_name = k
+                        break
+                if not key:
+                    # Fallback: look for any table-related key
+                    key = next(
+                        (k for k in parsed[0].keys() if "table" in k.lower()),
+                        list(parsed[0].keys())[0] if parsed[0].keys() else "table",
+                    )
                 rows = [(row[key],) for row in parsed]
             else:
                 rows = [("players",), ("games",), ("achievements",), ("sessions",)]
@@ -2970,10 +3106,10 @@ class MySQLHoneypotServer:
                 "mysql-mimic is not installed or could not be imported. Install it with: pip install mysql-mimic"
             )
 
-        # Create server instance (mysql_mimic API)
+        # Create server instance (mysql_mimic API) with proper authentication
         server = MysqlServer(
             session_factory=self.create_session_factory(),
-            identity_provider=AllowAllIdentityProvider(),
+            identity_provider=ConfigBasedIdentityProvider(self.accounts),
             port=self.port,
             host=self.host,
         )
