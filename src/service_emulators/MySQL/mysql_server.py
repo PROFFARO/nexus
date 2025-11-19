@@ -701,29 +701,38 @@ class MySQLAttackAnalyzer:
             if severity_scores.get(vuln["severity"], 1) > severity_scores[max_severity]:
                 max_severity = vuln["severity"]
 
-        # Apply sensitivity level adjustment
+        # Apply sensitivity level adjustment - dynamically loaded from config
         if config:
             sensitivity = (
                 config["attack_detection"].get("sensitivity_level", "medium").lower()
             )
-            if sensitivity == "high" and max_severity == "low":
+            if sensitivity == "critical":
+                # Treat all detections as high severity
+                if max_severity in ["low", "medium"]:
+                    max_severity = "high"
+            elif sensitivity == "high" and max_severity == "low":
                 max_severity = "medium"
             elif sensitivity == "low" and max_severity == "medium":
                 max_severity = "low"
 
         analysis["severity"] = max_severity
 
-        # Calculate threat score if enabled
+        # Calculate threat score if enabled - uses config alert_threshold
         if config and config["attack_detection"].getboolean("threat_scoring", True):
             threat_score = self._calculate_threat_score(analysis)
             analysis["threat_score"] = threat_score
 
-            # Check alert threshold
+            # Check alert threshold - dynamically loaded from config
             alert_threshold = config["attack_detection"].getint("alert_threshold", 70)
             analysis["alert_triggered"] = threat_score >= alert_threshold
+            
+            # Log the dynamic threshold being used
+            logging.debug(
+                f"Threat scoring: score={threat_score}, threshold={alert_threshold}, triggered={analysis['alert_triggered']}"
+            )
 
-        # Add ML-based analysis if available
-        if self.ml_detector:
+        # Add ML-based analysis if available and enabled - uses config ml.enabled
+        if self.ml_detector and config and config["ml"].getboolean("enabled", True) if "ml" in config else False:
             try:
                 # Prepare comprehensive ML data
                 ml_data = {
@@ -756,7 +765,7 @@ class MySQLAttackAnalyzer:
                     "ml_inference_time_ms", 0
                 )
 
-                # Log ML analysis results
+                # Log ML analysis results with dynamic config parameters
                 logging.info(
                     "MySQL ML analysis completed",
                     extra={
@@ -764,22 +773,27 @@ class MySQLAttackAnalyzer:
                         "ml_labels": analysis["ml_labels"],
                         "ml_reason": analysis["ml_reason"],
                         "ml_inference_time_ms": analysis["ml_inference_time_ms"],
+                        "ml_enabled": config["ml"].getboolean("enabled", True),
+                        "anomaly_threshold": config["ml"].getfloat("anomaly_threshold", 0.95),
                         "query": query[:50] + "..." if len(query) > 50 else query,
                         "username": username,
                         "database": database,
                     },
                 )
 
-                # Enhance severity based on ML anomaly score
-                if ml_results.get("ml_anomaly_score", 0) > 0.8:
+                # Enhance severity based on ML anomaly score using dynamic threshold
+                ml_threshold = config["ml"].getfloat("anomaly_threshold", 0.95) if "ml" in config else 0.95
+                if ml_results.get("ml_anomaly_score", 0) > ml_threshold:
                     if analysis["severity"] in ["low", "medium"]:
                         analysis["severity"] = "high"
                         analysis["attack_types"].append("ml_anomaly")
 
             except Exception as e:
                 logging.error(f"ML analysis failed: {e}")
-                if config and not config.get("ml", {}).get("fallback_on_error", True):
+                ml_fallback = config["ml"].getboolean("fallback_on_error", True) if "ml" in config else True
+                if not ml_fallback:
                     raise
+                logging.info("ML error fallback enabled, continuing with rule-based analysis")
 
         return analysis
 
@@ -1064,22 +1078,12 @@ class MySQLHoneypotSession(Session):
             "vulnerabilities": [],
             "authenticated": False,
             "username": None,
-            "database": None,
-            "vars": {},
-            "created_databases": [],
-            "created_tables": [],
             "client_info": {"ip": "unknown", "port": "unknown"},
             "session_stats": {
                 "total_queries": 0,
-                "failed_queries": 0,
                 "attack_queries": 0,
             },
         }
-        # Global database state (shared across sessions) - start empty
-        if not hasattr(MySQLHoneypotSession, "_global_databases"):
-            MySQLHoneypotSession._global_databases = set()
-        if not hasattr(MySQLHoneypotSession, "_global_tables"):
-            MySQLHoneypotSession._global_tables = {}
         self.forensic_logger = None
 
     def _extract_server_connection_info(self, connection) -> tuple[bool, str, str]:
@@ -1476,335 +1480,6 @@ class MySQLHoneypotSession(Session):
         else:
             return "OTHER"
 
-    def _get_schema_definitions(self) -> Dict[str, List[Dict[str, str]]]:
-        """Get realistic schema definitions for game development tables"""
-        return {
-            "users": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "username",
-                    "Type": "varchar(64)",
-                    "Null": "NO",
-                    "Key": "UNI",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "email",
-                    "Type": "varchar(255)",
-                    "Null": "NO",
-                    "Key": "UNI",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "password_hash",
-                    "Type": "varchar(255)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "created_at",
-                    "Type": "datetime",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "CURRENT_TIMESTAMP",
-                    "Extra": "",
-                },
-                {
-                    "Field": "last_login",
-                    "Type": "datetime",
-                    "Null": "YES",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "is_active",
-                    "Type": "tinyint(1)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "1",
-                    "Extra": "",
-                },
-            ],
-            "players": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "user_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "player_name",
-                    "Type": "varchar(128)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "level",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "1",
-                    "Extra": "",
-                },
-                {
-                    "Field": "experience",
-                    "Type": "bigint(20)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "0",
-                    "Extra": "",
-                },
-                {
-                    "Field": "coins",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "100",
-                    "Extra": "",
-                },
-                {
-                    "Field": "gems",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "0",
-                    "Extra": "",
-                },
-            ],
-            "games": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "title",
-                    "Type": "varchar(255)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "genre",
-                    "Type": "varchar(64)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "platform",
-                    "Type": "varchar(64)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "release_date",
-                    "Type": "date",
-                    "Null": "YES",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "status",
-                    "Type": "enum('development','testing','released','archived')",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "development",
-                    "Extra": "",
-                },
-            ],
-            "messages": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "sender_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "recipient_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "subject",
-                    "Type": "varchar(255)",
-                    "Null": "YES",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "content",
-                    "Type": "text",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "sent_at",
-                    "Type": "datetime",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "CURRENT_TIMESTAMP",
-                    "Extra": "",
-                },
-                {
-                    "Field": "is_read",
-                    "Type": "tinyint(1)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "0",
-                    "Extra": "",
-                },
-            ],
-            "characters": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "player_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "character_name",
-                    "Type": "varchar(128)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "class",
-                    "Type": "varchar(64)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "level",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "1",
-                    "Extra": "",
-                },
-                {
-                    "Field": "health",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "100",
-                    "Extra": "",
-                },
-                {
-                    "Field": "mana",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "50",
-                    "Extra": "",
-                },
-            ],
-            "inventory": [
-                {
-                    "Field": "id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "PRI",
-                    "Default": None,
-                    "Extra": "auto_increment",
-                },
-                {
-                    "Field": "player_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "item_id",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "MUL",
-                    "Default": None,
-                    "Extra": "",
-                },
-                {
-                    "Field": "quantity",
-                    "Type": "int(11)",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "1",
-                    "Extra": "",
-                },
-                {
-                    "Field": "acquired_at",
-                    "Type": "datetime",
-                    "Null": "NO",
-                    "Key": "",
-                    "Default": "CURRENT_TIMESTAMP",
-                    "Extra": "",
-                },
-            ],
-        }
-
     def _handle_termination_query(self, query: str) -> Optional[Any]:
         """Handle session termination queries"""
         if query.lower() in ["quit", "exit", r"\q"]:
@@ -1829,94 +1504,12 @@ class MySQLHoneypotSession(Session):
         return None
 
     def _handle_use_database(self, query: str) -> Optional[Any]:
-        """Handle USE database commands with validation"""
+        """Handle USE database commands - just return empty result, let LLM handle it"""
         if query.lower().startswith("use "):
-            parts = query.split()
-            if len(parts) >= 2:
-                db_name = parts[1].strip("`\"';")
-
-                # Build available_databases list (source of truth)
-                # Prefer config-driven list if present, otherwise fall back to global set
-                available_databases = None
-                try:
-                    cfg = getattr(self, "config", None)
-                    if cfg and "database_list" in cfg:
-                        available_databases = cfg["database_list"]
-                    elif cfg and cfg.get("llm"):
-                        # if config.ini contains a 'default_database' and common ones:
-                        available_databases = [
-                            "nexus_gamedev",
-                            "information_schema",
-                            "mysql",
-                            "performance_schema",
-                        ]
-                except Exception:
-                    available_databases = [
-                        "nexus_gamedev",
-                        "information_schema",
-                        "mysql",
-                        "performance_schema",
-                    ]
-
-                # If you maintain global created DBs in _global_databases, include those
-                try:
-                    globals_set = getattr(
-                        MySQLHoneypotSession, "_global_databases", set()
-                    )
-                    if globals_set:
-                        available_databases = (
-                            set(available_databases) | set(globals_set)
-                            if available_databases
-                            else set(globals_set)
-                        )
-                except Exception:
-                    pass
-
-                # Normalize to set for quick membership check
-                if available_databases is None:
-                    available_databases = {
-                        "nexus_gamedev",
-                        "information_schema",
-                        "mysql",
-                        "performance_schema",
-                    }
-                else:
-                    available_databases = set(available_databases)
-
-                # If database not in known list, return Unknown database error (1049)
-                if db_name not in available_databases:
-                    logger.warning(
-                        "Attempt to USE unknown database",
-                        extra={
-                            "session_id": self.session_data.get("session_id"),
-                            "attempt_db": db_name,
-                            "username": self.session_data.get("username"),
-                        },
-                    )
-                    return ResultSet(
-                        rows=[(f"ERROR 1049 (42000): Unknown database '{db_name}'",)],
-                        columns=[ResultColumn(name="Error", type=253)],
-                    )
-
-                # If valid, set selected database on the session
-                old_database = self.session_data.get("database")
-                self.session_data["database"] = db_name
-                # Also set an explicit attribute for other code that may check `.current_db`
-                self.current_database = db_name
-
-                logger.info(
-                    "MySQL database changed",
-                    extra={
-                        "session_id": self.session_data.get("session_id"),
-                        "command": query,
-                        "old_database": old_database,
-                        "new_database": db_name,
-                        "username": self.session_data.get("username"),
-                    },
-                )
-
-                # Successful USE returns no rows
-                return ResultSet(rows=[], columns=[])
+            # Don't track database - let LLM handle all context
+            logger.info("USE database command received", extra={"query": query})
+            # Successful USE returns no rows
+            return ResultSet(rows=[], columns=[])
         return None
 
     def _log_query_info(self, query: str) -> Dict[str, Any]:
@@ -1927,7 +1520,6 @@ class MySQLHoneypotSession(Session):
             "query_length": len(query),
             "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "username": self.session_data.get("username"),
-            "database": self.session_data.get("database"),
             "session_id": self.session_data.get("session_id"),
         }
 
@@ -1943,10 +1535,9 @@ class MySQLHoneypotSession(Session):
         """Analyze query for threats and log findings"""
         # Get session context for ML analysis
         username = self.session_data.get("username", "unknown")
-        database = self.session_data.get("database", None)
 
         # Perform comprehensive analysis with ML integration
-        attack_analysis = self.attack_analyzer.analyze_query(query, username, database)
+        attack_analysis = self.attack_analyzer.analyze_query(query, username, "")
         vulnerabilities = self.vuln_logger.analyze_for_vulnerabilities(query)
 
         # Log ML analysis results if available
@@ -2030,8 +1621,6 @@ class MySQLHoneypotSession(Session):
         try:
             llm_response = await self._get_llm_response(query)
             result = self._parse_llm_response(llm_response, query)
-
-            self._update_database_state(query, result)
 
             result_info = {
                 "query": query,
@@ -2137,56 +1726,8 @@ class MySQLHoneypotSession(Session):
             raise Exception("Malformed session variable query")
         return None
 
-    def _update_database_state(self, query: str, result):
-        """Update database state based on successful LLM responses"""
-        query_lower = query.lower().strip()
-
-        # Track CREATE DATABASE
-        if (
-            query_lower.startswith("create database")
-            and hasattr(result, "rows")
-            and len(result.rows) == 0
-        ):
-            parts = query.split()
-            if len(parts) >= 3:
-                db_name = parts[2].strip("`\"';")
-                MySQLHoneypotSession._global_databases.add(db_name)
-                self.session_data["created_databases"].append(db_name)
-                logger.info(
-                    f"Database created: {db_name}",
-                    extra={
-                        "database_name": db_name,
-                        "session_id": self.session_data["session_id"],
-                    },
-                )
-
-        # Track USE DATABASE (already handled above, but keep for consistency)
-        elif (
-            query_lower.startswith("use ")
-            and hasattr(result, "rows")
-            and len(result.rows) == 0
-        ):
-            # This is already handled in the main query processing above
-            pass
-
-        # Track CREATE TABLE
-        elif (
-            query_lower.startswith("create table")
-            and hasattr(result, "rows")
-            and len(result.rows) == 0
-        ):
-            if self.session_data.get("database"):
-                db_name = self.session_data["database"]
-                if db_name not in MySQLHoneypotSession._global_tables:
-                    MySQLHoneypotSession._global_tables[db_name] = set()
-                # Extract table name
-                parts = query.split()
-                if len(parts) >= 3:
-                    table_name = parts[2].split("(")[0].strip("`\"';")
-                    MySQLHoneypotSession._global_tables[db_name].add(table_name)
-
     async def _get_llm_response(self, query: str) -> str:
-        """Get LLM response for MySQL query with enhanced context awareness"""
+        """Get LLM response for MySQL query - with all dynamic config parameters"""
         session_id = self.session_data["session_id"]
 
         # Create LLM session if not exists
@@ -2194,156 +1735,88 @@ class MySQLHoneypotSession(Session):
             llm_sessions[session_id] = InMemoryChatMessageHistory()
 
         config_dict = {"configurable": {"session_id": session_id}}
-
-        # Build context information as part of the message content
-        # This avoids template variable conflicts
         username = self.session_data.get("username", "unknown")
-        host = self.session_data.get("client_info", {}).get("ip", "localhost")
-        database = self.session_data.get("database", None)
-        
-        # DEBUG: Log database context
-        logger.info(f"[LLM_DEBUG] _get_llm_response: query='{query}', database={database}, session_database={self.session_data.get('database')}")
 
-        # Schema definitions
-        schema_definitions = self._get_schema_definitions()
-        available_databases = [
-            "nexus_gamedev",
-            "information_schema",
-            "mysql",
-            "performance_schema",
-        ]
-        tables_in_database = {
-            "nexus_gamedev": [
-                "users",
-                "players",
-                "games",
-                "characters",
-                "inventory",
-                "items",
-                "achievements",
-                "leaderboards",
-                "messages",
-                "accounts",
-                "settings",
-                "configurations",
-                "rewards",
-            ]
-        }
+        # Build context if context_awareness is enabled (from config)
+        context_info = ""
+        if self.config["llm"].getboolean("context_awareness", True):
+            context_info = f"\nContext: User={username}, Session={session_id[:8]}"
 
-        # Build enhanced query with all context in the message content
-        context_parts = [
-            f"CONTEXT:",
-            f"- Username: {username}",
-            f"- Client Host: {host}",
-            f"- Current Database: {database if database and database != 'none' else 'NOT SELECTED'}",
-            f"- MySQL Server Version: {config['mysql'].get('server_version', '8.0.32')}",
-            f"- Charset: {config['mysql'].get('charset', 'utf8mb4')}",
-            f"- Available Databases (ONLY these exist): {', '.join(available_databases)}",
-        ]
+        # Add threat adaptation context if enabled (from config)
+        threat_context = ""
+        if self.config["llm"].getboolean("threat_adaptation", True):
+            if self.session_data.get("attack_analysis"):
+                latest_attack = self.session_data["attack_analysis"][-1] if self.session_data["attack_analysis"] else None
+                if latest_attack:
+                    threat_level = latest_attack.get("severity", "low")
+                    threat_context = f"\nThreat Level: {threat_level}"
 
-        # CRITICAL: Add explicit instruction about current database context
-        if database and database != "none" and database in available_databases:
-            context_parts.append(
-                f"- CRITICAL INSTRUCTION: The current database is '{database}'. For SHOW TABLES query, you MUST use column name 'Tables_in_{database}' EXACTLY. Do NOT use 'Tables_in_database' or 'Tables_in_None'. Use the EXACT database name '{database}'."
-            )
-            if database in tables_in_database:
-                context_parts.append(
-                    f"- Available tables in '{database}': {', '.join(tables_in_database[database])}"
-                )
-            else:
-                context_parts.append(
-                    f"- The database '{database}' exists but has no predefined tables. Generate realistic tables appropriate for this database name."
-                )
-        else:
-            context_parts.append(
-                f'- CRITICAL INSTRUCTION: No database is currently selected. If SHOW TABLES or any query requiring database context is executed, you MUST return this error array: [{{"Error":"ERROR 1046 (3D000): No database selected"}}]'
-            )
-
-        # Add schema definitions if available
-        if schema_definitions and database and database != "none":
-            context_parts.append(
-                f"- Schema information available for common tables in {database} database"
-            )
-
-        # Add database validation instruction
-        context_parts.append(
-            f"- CRITICAL: If a USE command tries to select a database NOT in the available databases list, return error: ERROR 1049 (42000): Unknown database '<dbname>'"
+        # Get system prompt from config (dynamically loaded)
+        system_prompt = self.config["llm"].get(
+            "system_prompt",
+            "You are a MySQL 8.0.32 database server. Respond ONLY with valid JSON arrays."
         )
 
-        # Add threat adaptation if enabled and attacks detected
-        attack_analysis = self.attack_analyzer.analyze_query(query, username, database)
-        if config["llm"].getboolean("threat_adaptation", True) and attack_analysis.get(
-            "attack_types"
-        ):
-            context_parts.append(
-                f"- ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}"
+        # Build the prompt with all dynamic config parameters
+        # Use triple braces to escape JSON in f-string
+        prompt = f"""{system_prompt}
+
+User Query: {query}{context_info}{threat_context}
+
+Rules:
+- SHOW DATABASES -> [{{"Database":"db1"}},{{"Database":"db2"}}]
+- SHOW TABLES -> [{{"Tables_in_dbname":"table1"}},{{"Tables_in_dbname":"table2"}}]
+- SELECT -> [{{"col1":"value1","col2":"value2"}}]
+- CREATE/INSERT/UPDATE/DELETE -> []
+- USE database -> []
+- Errors -> [{{"Error":"ERROR message"}}]
+- Version queries -> [{{"@@version":"8.0.32"}}]
+
+Respond ONLY with valid JSON array format. No text, markdown, or explanations."""
+
+        try:
+            # Log the configuration being used
+            logger.debug(
+                "LLM request config",
+                extra={
+                    "provider": self.config["llm"].get("llm_provider", "ollama"),
+                    "model": self.config["llm"].get("model_name", "llama3.2"),
+                    "temperature": self.config["llm"].getfloat("temperature", 0.2),
+                    "context_awareness": self.config["llm"].getboolean("context_awareness", True),
+                    "threat_adaptation": self.config["llm"].getboolean("threat_adaptation", True),
+                    "creativity_level": self.config["llm"].getfloat("creativity_level", 0.4),
+                },
             )
-            context_parts.append(
-                f"- Threat Level: {attack_analysis.get('severity', 'low')}"
+
+            template_vars = {
+                "messages": [HumanMessage(content=prompt)],
+            }
+            response = await with_message_history.ainvoke(template_vars, config=config_dict)
+            raw = getattr(response, "content", response)
+            if not isinstance(raw, str):
+                try:
+                    raw = raw.decode("utf-8", errors="replace")
+                except Exception:
+                    raw = str(raw)
+            
+            logger.info(
+                "LLM response",
+                extra={
+                    "query": query,
+                    "llm_response": raw[:200],
+                    "session_id": session_id,
+                    "model": self.config["llm"].get("model_name", "llama3.2"),
+                    "creativity": self.config["llm"].getfloat("creativity_level", 0.4),
+                },
             )
+            return raw
+        except Exception as e:
+            logger.error(f"LLM request failed: {e}")
+            # ML fallback behavior from config
+            if "ml" in self.config and self.config["ml"].getboolean("fallback_on_error", True):
+                logger.info("Using fallback response due to ML error")
+            return json.dumps([])
 
-            if attack_analysis.get("threat_score", 0) >= config[
-                "attack_detection"
-            ].getint("alert_threshold", 70):
-                context_parts.append("- HIGH_THREAT_ALERT: Adapt response accordingly")
-
-        # Add deception techniques if enabled
-        if config["ai_features"].getboolean(
-            "deception_techniques", True
-        ) and attack_analysis.get("severity") in ["high", "critical"]:
-            context_parts.append("- DECEPTION_MODE: Use advanced deception techniques")
-
-        # Add query result manipulation if enabled
-        if config["ai_features"].getboolean(
-            "query_result_manipulation", True
-        ) and attack_analysis.get("attack_types"):
-            context_parts.append(
-                "- MANIPULATE_RESULTS: Provide believable but controlled data"
-            )
-
-        # Add ML analysis context if available
-        if attack_analysis.get("ml_anomaly_score", 0) > 0:
-            context_parts.append(
-                f"- ML_ANALYSIS: Anomaly Score={attack_analysis.get('ml_anomaly_score', 0):.3f}"
-            )
-            if attack_analysis.get("ml_labels"):
-                context_parts.append(
-                    f"- ML Labels: {','.join(attack_analysis.get('ml_labels', []))}"
-                )
-            if attack_analysis.get("ml_reason"):
-                context_parts.append(
-                    f"- ML Reason: {attack_analysis.get('ml_reason', 'Unknown')}"
-                )
-
-        # Combine context and query
-        enhanced_query = "\n".join(context_parts) + f"\n\nQUERY: {query}"
-
-        # Send only the messages - no template variables needed
-        template_vars = {
-            "messages": [HumanMessage(content=enhanced_query)],
-        }
-
-        response = await with_message_history.ainvoke(template_vars, config=config_dict)
-
-        # Ensure we return a string
-        raw = getattr(response, "content", response)
-        if not isinstance(raw, str):
-            try:
-                raw = raw.decode("utf-8", errors="replace")
-            except Exception:
-                raw = str(raw)
-        # Log complete LLM response for conversation viewing
-        logger.info(
-            "LLM raw response",
-            extra={
-                "query": query,
-                "llm_response": raw,
-                "session_id": self.session_data.get("session_id"),
-                "attack_detected": bool(attack_analysis.get("attack_types")),
-                "threat_score": attack_analysis.get("threat_score", 0),
-            },
-        )
-        return raw
 
     def _parse_llm_response(self, llm_response: str, query: str) -> Any:  # type: ignore
         """Parse LLM response into MySQL result set with proper formatting"""
@@ -2443,117 +1916,59 @@ class MySQLHoneypotSession(Session):
         return None
 
     def _format_show_databases(self, parsed: Any) -> Any:
-        """Format SHOW DATABASES response"""
+        """Format SHOW DATABASES response - LLM generates everything"""
         if isinstance(parsed, list) and parsed:
             if isinstance(parsed[0], str):
                 rows = [(db,) for db in parsed]
             elif isinstance(parsed[0], dict) and "Database" in parsed[0]:
                 rows = [(row["Database"],) for row in parsed]
             else:
-                rows = [
-                    ("information_schema",),
-                    ("mysql",),
-                    ("performance_schema",),
-                    ("nexus_gamedev",),
-                ]
+                rows = []
 
-            logger.info(f"SHOW DATABASES returned {len(rows)} databases")
+            logger.info(f"SHOW DATABASES returned {len(rows)} databases (from LLM)")
             return ResultSet(
                 rows=rows, columns=[ResultColumn(name="Database", type=253)]
             )
         return ResultSet(rows=[], columns=[])
 
     def _format_show_tables(self, parsed: Any) -> Any:
-        """Format SHOW TABLES response with proper column naming"""
+        """Format SHOW TABLES response - LLM generates everything"""
         if isinstance(parsed, list) and parsed:
-            # If parsed is an error object from LLM, return it as an error row
+            # If parsed is an error object from LLM, return it as-is
             if len(parsed) > 0 and isinstance(parsed[0], dict) and "Error" in parsed[0]:
                 return ResultSet(
                     rows=[(parsed[0]["Error"],)],
                     columns=[ResultColumn(name="Error", type=253)],
                 )
 
-            # Determine current database: prefer explicit attribute, then session_data
-            db_name = getattr(self, "current_database", None) or self.session_data.get(
-                "database"
-            )
-            # Normalize empty values
-            if db_name in (None, "", "none"):
-                logger.warning("SHOW TABLES called without database context")
-                return ResultSet(
-                    rows=[("ERROR 1046 (3D000): No database selected",)],
-                    columns=[ResultColumn(name="Error", type=253)],
-                )
-
-            # Confirm the database exists in available list (avoid hallucinated tables)
-            available_databases = None
-            try:
-                # Try to get from config if it's a ConfigParser object
-                if hasattr(self, "config") and hasattr(self.config, "get"):
-                    try:
-                        # For ConfigParser, try getting from a specific section
-                        if hasattr(self.config, "options"):
-                            available_databases = self.config.get("mysql", "available_databases", fallback=None)
-                    except Exception:
-                        available_databases = None
-                # Fallback to hardcoded list
-                if available_databases is None:
-                    available_databases = {
-                        "nexus_gamedev",
-                        "information_schema",
-                        "mysql",
-                        "performance_schema",
-                    }
-                else:
-                    available_databases = set(available_databases) if isinstance(available_databases, str) else available_databases
-            except Exception:
-                available_databases = {
-                    "nexus_gamedev",
-                    "information_schema",
-                    "mysql",
-                    "performance_schema",
-                }
-            
-            # Include global created DBs
-            if hasattr(MySQLHoneypotSession, "_global_databases"):
-                available_databases |= set(MySQLHoneypotSession._global_databases)
-
-            if db_name not in available_databases:
-                logger.warning(
-                    "SHOW TABLES for non-existent database", extra={"db": db_name}
-                )
-                return ResultSet(
-                    rows=[(f"ERROR 1049 (42000): Unknown database '{db_name}'",)],
-                    columns=[ResultColumn(name="Error", type=253)],
-                )
-
-            col_name = f"Tables_in_{db_name}"
-
+            # Process LLM response for SHOW TABLES
             if isinstance(parsed[0], str):
+                # Simple list of table names
                 rows = [(table,) for table in parsed]
+                col_name = "Tables_in_database"
             elif isinstance(parsed[0], dict):
-                # Look for Tables_in_ key first
+                # Look for Tables_in_ key (LLM provides proper column name with database)
                 key = None
+                col_name = "Tables_in_database"
+                
                 for k in parsed[0].keys():
                     if k.startswith("Tables_in_"):
                         key = k
-                        # Use the LLM's column name as-is to preserve database name
                         col_name = k
                         break
+                
                 if not key:
-                    # Fallback: look for any table-related key
-                    key = next(
-                        (k for k in parsed[0].keys() if "table" in k.lower()),
-                        list(parsed[0].keys())[0] if parsed[0].keys() else "table",
-                    )
-                rows = [(row[key],) for row in parsed]
+                    # Fallback: use first available key
+                    key = next(iter(parsed[0].keys())) if parsed[0] else "table"
+                
+                rows = [(row.get(key, ""),) for row in parsed]
             else:
-                rows = [("players",), ("games",), ("achievements",), ("sessions",)]
+                rows = []
 
-            logger.info(
-                f"SHOW TABLES returned {len(rows)} tables for database {db_name}"
+            logger.info(f"SHOW TABLES returned {len(rows)} tables (from LLM)")
+            return ResultSet(
+                rows=rows, columns=[ResultColumn(name=col_name, type=253)]
             )
-            return ResultSet(rows=rows, columns=[ResultColumn(name=col_name, type=253)])
         return ResultSet(rows=[], columns=[])
 
     def _format_describe(self, parsed: Any) -> Any:
@@ -3070,6 +2485,28 @@ class MySQLHoneypotServer:
         self.schema_evolution = config["database_simulation"].getboolean(
             "schema_evolution", True
         )
+
+        # LLM configuration - all dynamically loaded
+        self.llm_provider = config["llm"].get("llm_provider", "ollama")
+        self.model_name = config["llm"].get("model_name", "llama3.2")
+        self.temperature = config["llm"].getfloat("temperature", 0.2)
+        self.max_response_tokens = config["llm"].getint("max_response_tokens", 2048)
+        self.context_awareness = config["llm"].getboolean("context_awareness", True)
+        self.threat_adaptation = config["llm"].getboolean("threat_adaptation", True)
+        self.creativity_level = config["llm"].getfloat("creativity_level", 0.4)
+        self.system_prompt = config["llm"].get("system_prompt", "You are a MySQL 8.0.32 database server.")
+
+        # ML configuration - all dynamically loaded
+        self.ml_enabled = config["ml"].getboolean("enabled", True) if "ml" in config else False
+        self.anomaly_threshold = config["ml"].getfloat("anomaly_threshold", 0.95) if "ml" in config else 0.95
+        self.max_inference_ms = config["ml"].getint("max_inference_ms", 15) if "ml" in config else 15
+        self.ml_fallback_on_error = config["ml"].getboolean("fallback_on_error", True) if "ml" in config else True
+        self.embedding_model = config["ml"].get("embedding_model", "sentence-transformers/all-MiniLM-L6-v2") if "ml" in config else "sentence-transformers/all-MiniLM-L6-v2"
+        self.batch_size = config["ml"].getint("batch_size", 32) if "ml" in config else 32
+        self.cache_embeddings = config["ml"].getboolean("cache_embeddings", True) if "ml" in config else True
+        self.use_gpu = config["ml"].getboolean("use_gpu", False) if "ml" in config else False
+        self.model_update_interval = config["ml"].getint("model_update_interval", 3600) if "ml" in config else 3600
+        self.min_training_samples = config["ml"].getint("min_training_samples", 100) if "ml" in config else 100
 
         # Initialize components
         self.attack_analyzer = MySQLAttackAnalyzer()
