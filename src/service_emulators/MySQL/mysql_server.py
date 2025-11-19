@@ -1504,12 +1504,19 @@ class MySQLHoneypotSession(Session):
         return None
 
     def _handle_use_database(self, query: str) -> Optional[Any]:
-        """Handle USE database commands - just return empty result, let LLM handle it"""
+        """Handle USE database commands - update session context"""
         if query.lower().startswith("use "):
-            # Don't track database - let LLM handle all context
-            logger.info("USE database command received", extra={"query": query})
-            # Successful USE returns no rows
-            return ResultSet(rows=[], columns=[])
+            try:
+                # Extract database name (handle quotes if present)
+                parts = query.split(maxsplit=1)
+                if len(parts) > 1:
+                    db_name = parts[1].strip().strip(";'\"`")
+                    self.session_data["database"] = db_name
+                    logger.info(f"USE database command: switched to {db_name}", extra={"query": query})
+                    # Successful USE returns no rows
+                    return ResultSet(rows=[], columns=[])
+            except Exception as e:
+                logger.error(f"Error handling USE command: {e}")
         return None
 
     def _log_query_info(self, query: str) -> Dict[str, Any]:
@@ -1664,6 +1671,10 @@ class MySQLHoneypotSession(Session):
         # DEBUG: Log current state before processing
         logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
 
+        # Syntax check
+        if self._is_syntax_error(query):
+            return self._generate_syntax_error(query)
+
         # Check for session termination queries
         termination_result = self._handle_termination_query(query)
         if termination_result is not None:
@@ -1740,7 +1751,8 @@ class MySQLHoneypotSession(Session):
         # Build context if context_awareness is enabled (from config)
         context_info = ""
         if self.config["llm"].getboolean("context_awareness", True):
-            context_info = f"\nContext: User={username}, Session={session_id[:8]}"
+            current_db = self.session_data.get("database", "None")
+            context_info = f"\nContext: User={username}, Session={session_id[:8]}, Current Database={current_db}"
 
         # Add threat adaptation context if enabled (from config)
         threat_context = ""
@@ -1751,26 +1763,28 @@ class MySQLHoneypotSession(Session):
                     threat_level = latest_attack.get("severity", "low")
                     threat_context = f"\nThreat Level: {threat_level}"
 
-        # Get system prompt from config (dynamically loaded)
-        system_prompt = self.config["llm"].get(
-            "system_prompt",
-            "You are a MySQL 8.0.32 database server. Respond ONLY with valid JSON arrays."
-        )
+        # Get system prompt from prompt.txt or config
+        system_prompt = ""
+        try:
+            prompt_path = Path(__file__).parent / "prompt.txt"
+            if prompt_path.exists():
+                with open(prompt_path, "r", encoding="utf-8") as f:
+                    system_prompt = f.read().strip()
+                logger.info("Loaded system prompt from prompt.txt")
+        except Exception as e:
+            logger.warning(f"Failed to load prompt.txt: {e}")
+
+        if not system_prompt:
+            system_prompt = self.config["llm"].get(
+                "system_prompt",
+                "You are a MySQL 8.0.32 database server. Respond ONLY with valid JSON arrays."
+            )
 
         # Build the prompt with all dynamic config parameters
         # Use triple braces to escape JSON in f-string
         prompt = f"""{system_prompt}
 
 User Query: {query}{context_info}{threat_context}
-
-Rules:
-- SHOW DATABASES -> [{{"Database":"db1"}},{{"Database":"db2"}}]
-- SHOW TABLES -> [{{"Tables_in_dbname":"table1"}},{{"Tables_in_dbname":"table2"}}]
-- SELECT -> [{{"col1":"value1","col2":"value2"}}]
-- CREATE/INSERT/UPDATE/DELETE -> []
-- USE database -> []
-- Errors -> [{{"Error":"ERROR message"}}]
-- Version queries -> [{{"@@version":"8.0.32"}}]
 
 Respond ONLY with valid JSON array format. No text, markdown, or explanations."""
 
@@ -1907,12 +1921,17 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
     def _format_empty_result(self, parsed: Any, query_lower: str) -> Optional[Any]:
         """Handle empty array results (DDL operations)"""
         if isinstance(parsed, list) and len(parsed) == 0:
-            if any(
-                cmd in query_lower
-                for cmd in ["create", "insert", "update", "delete", "drop", "alter"]
-            ):
-                logger.info(f"DDL operation completed: {query_lower[:50]}")
-            return ResultSet(rows=[], columns=[])
+            # Only return empty result for valid DDL/DML commands
+            # This prevents invalid commands (e.g. 'show tals') from returning "Query OK"
+            valid_verbs = ["create", "insert", "update", "delete", "drop", "alter", "use", "set", "grant", "revoke", "truncate", "start", "begin", "commit", "rollback"]
+            
+            # Check if query starts with any valid verb
+            if any(query_lower.startswith(verb) for verb in valid_verbs):
+                logger.info(f"DDL/DML operation completed: {query_lower[:50]}")
+                return ResultSet(rows=[], columns=[])
+            
+            # If it's not a valid DDL/DML verb, return None to trigger error generation
+            return None
         return None
 
     def _format_show_databases(self, parsed: Any) -> Any:
@@ -1942,10 +1961,43 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
                 )
 
             # Process LLM response for SHOW TABLES
+            # Process LLM response for SHOW TABLES
+            # Flatten nested lists if present (e.g. [['table1']])
+            if isinstance(parsed[0], list):
+                parsed = [item for sublist in parsed for item in sublist]
+            
+            # Filter out empty strings or non-string items
+            parsed = [p for p in parsed if isinstance(p, str) and p.strip()]
+
+            if not parsed:
+                return ResultSet(rows=[], columns=[])
+
             if isinstance(parsed[0], str):
-                # Simple list of table names
-                rows = [(table,) for table in parsed]
-                col_name = "Tables_in_database"
+                # Fix: Handle comma-separated string or stringified list from LLM
+                table_names = []
+                first_item = parsed[0].strip()
+                
+                if first_item.startswith("[") and first_item.endswith("]"):
+                    # Handle stringified list: "['table1', 'table2']"
+                    try:
+                        # Use ast.literal_eval for safe parsing, or simple json/regex
+                        import ast
+                        evaluated = ast.literal_eval(first_item)
+                        if isinstance(evaluated, list):
+                            table_names = [str(t) for t in evaluated]
+                    except Exception:
+                        # Fallback to simple strip/split if eval fails
+                        content = first_item[1:-1]
+                        table_names = [t.strip().strip("'\"") for t in content.split(",")]
+                elif "," in first_item:
+                    # Handle comma-separated string: "table1, table2"
+                    table_names = [t.strip() for t in first_item.split(",")]
+                else:
+                    # Simple list of table names (already parsed as list of strings)
+                    table_names = parsed
+
+                rows = [(table,) for table in table_names]
+                col_name = f"Tables_in_{self.session_data.get('database', 'database')}"
             elif isinstance(parsed[0], dict):
                 # Look for Tables_in_ key (LLM provides proper column name with database)
                 key = None
@@ -1958,10 +2010,13 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
                         break
                 
                 if not key:
-                    # Fallback: use first available key
-                    key = next(iter(parsed[0].keys())) if parsed[0] else "table"
+                    # Fallback: use first available key or default
+                    if parsed[0]:
+                        key = next(iter(parsed[0].keys()))
+                    else:
+                        key = "table"
                 
-                rows = [(row.get(key, ""),) for row in parsed]
+                rows = [(row.get(key, "") if isinstance(row, dict) else str(row),) for row in parsed]
             else:
                 rows = []
 
@@ -2004,10 +2059,17 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
         if isinstance(parsed, list) and parsed:
             if isinstance(parsed[0], dict):
                 columns = list(parsed[0].keys())
-                rows = [tuple(row.get(col) for col in columns) for row in parsed]
+                # Safely extract values from each row, handling non-dict items
+                rows = []
+                for row in parsed:
+                    if isinstance(row, dict):
+                        rows.append(tuple(row.get(col) for col in columns))
+                    else:
+                        # If row is not a dict, return empty values
+                        rows.append(tuple([None] * len(columns)))
 
                 result_columns = [
-                    ResultColumn(name=col, type=infer_type(parsed[0].get(col)))
+                    ResultColumn(name=col, type=infer_type(parsed[0].get(col) if isinstance(parsed[0], dict) else None))
                     for col in columns
                 ]
 
@@ -2076,7 +2138,15 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
         # Default handling for other queries
         if isinstance(parsed, list) and parsed and isinstance(parsed[0], dict):
             columns = list(parsed[0].keys())
-            rows = [tuple(row.get(col) for col in columns) for row in parsed]
+            # Fix: Handle non-dict rows safely
+            rows = []
+            for row in parsed:
+                if isinstance(row, dict):
+                    rows.append(tuple(row.get(col) for col in columns))
+                else:
+                    # Fallback for non-dict rows (e.g. if LLM returns mixed types)
+                    rows.append(tuple([None] * len(columns)))
+            
             result_columns = [
                 ResultColumn(name=col, type=infer_type(parsed[0].get(col)))
                 for col in columns
@@ -2093,16 +2163,7 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
                 db_names = re.findall(
                     r'["\']([a-zA-Z_][a-zA-Z0-9_]*)["\']', llm_response
                 )
-                if not db_names:
-                    db_names = [
-                        "information_schema",
-                        "mysql",
-                        "performance_schema",
-                        "nexus_gamedev",
-                        "player_data",
-                        "game_analytics",
-                    ]
-
+                # No hardcoded fallback - let LLM handle it or return empty
                 rows = [(name,) for name in db_names]
                 logger.info(f"Fallback SHOW DATABASES returned {len(rows)} databases")
                 return ResultSet(
@@ -2114,16 +2175,8 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
                 table_names = re.findall(
                     r'["\']([a-zA-Z_][a-zA-Z0-9_]*)["\']', llm_response
                 )
-                if not table_names:
-                    table_names = [
-                        "players",
-                        "games",
-                        "achievements",
-                        "sessions",
-                        "leaderboards",
-                        "user_profiles",
-                    ]
-
+                # No hardcoded fallback
+                
                 db_name = self.session_data.get("database", "database")
                 col_name = f"Tables_in_{db_name}"
                 rows = [(name,) for name in table_names]
@@ -2134,7 +2187,7 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
 
             # For version queries
             elif "@@version" in query_lower:
-                version = "8.0.32-0ubuntu0.20.04.2"
+                version = "8.0.32"
                 if "comment" in query_lower:
                     version = "(Ubuntu)"
 
