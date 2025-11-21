@@ -10,6 +10,7 @@ import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 from collections import defaultdict, Counter
+import numpy as np
 
 # Add parent directory to path for imports
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -234,7 +235,8 @@ class HTTPHoneypotReportGenerator:
             'detailed_sessions': self._get_detailed_sessions(),
             'attack_timeline': self._generate_attack_timeline(),
             'geographic_analysis': self._analyze_geography(),
-            'recommendations': self._generate_recommendations()
+            'recommendations': self._generate_recommendations(),
+            'ml_analysis': self.report_data.get('ml_analysis', {})
         }
     
     def _get_time_range(self) -> Dict[str, str]:
@@ -501,18 +503,148 @@ class HTTPHoneypotReportGenerator:
         ])
         
         return recommendations
+    
+    def _generate_ml_analysis(self):
+        """Generate comprehensive ML analysis from session data"""
+        if not self.ml_detector or not ML_AVAILABLE:
+            self.report_data['ml_analysis'] = {
+                'enabled': False,
+                'reason': 'ML components not available',
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'attack_vectors': {},
+                'risk_analysis': {},
+                'ml_insights': ['ML analysis is not enabled or available']
+            }
+            return
+        
+        sessions = self.sessions_data
+        
+        # Aggregate ML metrics across all sessions
+        all_ml_scores = []
+        all_attack_vectors = []
+        risk_level_counts = Counter()
+        ml_label_counts = Counter()
+        session_ml_analyses = []
+        
+        for session in sessions:
+            requests = session.get('requests', [])
+            
+            for req in requests:
+                attack_analysis = req.get('attack_analysis', {})
+                
+                # Collect ML scores
+                ml_score = attack_analysis.get('ml_anomaly_score', 0.0)
+                if ml_score > 0:
+                    all_ml_scores.append(ml_score)
+                
+                # Collect ML labels
+                for label in attack_analysis.get('ml_labels', []):
+                    ml_label_counts[label] += 1
+                
+                # Collect risk levels
+                risk_level = attack_analysis.get('ml_risk_level', 'low')
+                risk_level_counts[risk_level] += 1
+                
+                # Collect attack vectors
+                for vector in attack_analysis.get('attack_vectors', []):
+                    all_attack_vectors.append(vector)
+            
+            # Perform session-level ML analysis
+            if self.ml_detector and requests:
+                try:
+                    session_ml = self.ml_detector.analyze_session(session)
+                    session_ml_analyses.append({
+                        'session_id': session.get('session_id', 'unknown'),
+                        **session_ml
+                    })
+                except Exception as e:
+                    print(f"Session ML analysis failed: {e}")
+        
+        # Calculate aggregate statistics
+        avg_ml_score = np.mean(all_ml_scores) if all_ml_scores else 0.0
+        max_ml_score = np.max(all_ml_scores) if all_ml_scores else 0.0
+        high_risk_requests = sum(1 for score in all_ml_scores if score > 0.7)
+        
+        # Aggregate attack vectors by type
+        vector_types = Counter()
+        vector_techniques = Counter()
+        mitre_tactics = Counter()
+        
+        for vector in all_attack_vectors:
+            vector_types[vector.get('type', 'unknown')] += 1
+            vector_techniques[vector.get('technique', 'unknown')] += 1
+            mitre_tactics[vector.get('mitre_id', 'unknown')] += 1
+        
+        # Generate ML insights
+        ml_insights = []
+        
+        if avg_ml_score > 0.6:
+            ml_insights.append(f"High average ML anomaly score ({avg_ml_score:.2f}) indicates significant malicious activity")
+        elif avg_ml_score > 0.4:
+            ml_insights.append(f"Medium average ML anomaly score ({avg_ml_score:.2f}) suggests suspicious behavior patterns")
+        else:
+            ml_insights.append(f"Low average ML anomaly score ({avg_ml_score:.2f}) indicates mostly normal activity")
+        
+        if high_risk_requests > 0:
+            ml_insights.append(f"Detected {high_risk_requests} high-risk requests with ML scores > 0.7")
+        
+        if all_attack_vectors:
+            ml_insights.append(f"Identified {len(all_attack_vectors)} attack vector instances across {len(vector_types)} unique types")
+            top_vector = vector_types.most_common(1)[0] if vector_types else None
+            if top_vector:
+                ml_insights.append(f"Most common attack vector: {top_vector[0]} ({top_vector[1]} occurrences)")
+        
+        if risk_level_counts.get('critical', 0) > 0:
+            ml_insights.append(f"CRITICAL: {risk_level_counts['critical']} requests classified as critical risk")
+        
+        # Store ML analysis in report data
+        self.report_data['ml_analysis'] = {
+            'enabled': True,
+            'model_version': self.ml_detector.model_version if hasattr(self.ml_detector, 'model_version') else 'unknown',
+            'anomaly_detection': {
+                'average_score': round(float(avg_ml_score), 3),
+                'max_score': round(float(max_ml_score), 3),
+                'total_requests_analyzed': len(all_ml_scores),
+                'high_risk_requests': high_risk_requests,
+                'score_distribution': {
+                    'critical (>0.8)': sum(1 for s in all_ml_scores if s > 0.8),
+                    'high (0.6-0.8)': sum(1 for s in all_ml_scores if 0.6 < s <= 0.8),
+                    'medium (0.4-0.6)': sum(1 for s in all_ml_scores if 0.4 < s <= 0.6),
+                    'low (<0.4)': sum(1 for s in all_ml_scores if s <= 0.4)
+                }
+            },
+            'threat_classification': {
+                'top_labels': dict(ml_label_counts.most_common(10)),
+                'risk_levels': dict(risk_level_counts),
+                'total_threats_detected': sum(ml_label_counts.values())
+            },
+            'attack_vectors': {
+                'types': dict(vector_types),
+                'techniques': dict(vector_techniques),
+                'mitre_tactics': dict(mitre_tactics)
+            },
+            'risk_analysis': {
+                'overall_risk_score': self._calculate_overall_risk(avg_ml_score, high_risk_requests, len(all_attack_vectors)),
+                'risk_factors': self._identify_risk_factors(avg_ml_score, high_risk_requests, vector_types)
+            },
+            'ml_insights': ml_insights,
+            'session_analysis': session_ml_analyses
+        }
 
-    def generate_comprehensive_report(self, output_dir: str = "reports", format_type: str = "both") -> Dict[str, str]:
-        """Generate comprehensive security report"""
-        output_path = Path(output_dir)
-        output_path.mkdir(parents=True, exist_ok=True)
-        
-        # Generate report data
-        report_data = self._generate_report_data()
-        
-        result = {}
-        
-        # Generate JSON report
+    def _calculate_overall_risk(self, avg_score, high_risk_count, vector_count):
+        # Simple risk calculation logic
+        base_risk = avg_score * 10
+        risk_modifiers = (high_risk_count * 0.5) + (vector_count * 0.2)
+        return min(10.0, base_risk + risk_modifiers)
+
+    def _identify_risk_factors(self, avg_score, high_risk_count, vector_types):
+        factors = []
+        if avg_score > 0.5: factors.append("Elevated Anomaly Scores")
+        if high_risk_count > 5: factors.append("Frequent High-Risk Activity")
+        if 'injection' in str(vector_types).lower(): factors.append("Injection Attacks Detected")
+        return factors
+
         if format_type in ['json', 'both']:
             json_file = output_path / f"http_security_report_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             with open(json_file, 'w', encoding='utf-8') as f:

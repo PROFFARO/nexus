@@ -11,6 +11,7 @@ import datetime
 from typing import Dict, List, Any, Optional
 import logging
 from collections import defaultdict, Counter
+import numpy as np
 import base64
 from pathlib import Path
 
@@ -36,6 +37,7 @@ class FTPHoneypotReportGenerator:
         self.vulnerability_stats = defaultdict(int)
         self.ip_stats = defaultdict(int)
         self.command_stats = defaultdict(int)
+        self.report_data = {}
         
         # Initialize ML detector for enhanced analysis
         self.ml_detector = None
@@ -149,6 +151,9 @@ class FTPHoneypotReportGenerator:
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
         
+        # Generate ML analysis first
+        self._generate_ml_analysis()
+        
         # Generate report data
         report_data = self._generate_report_data()
         
@@ -209,121 +214,39 @@ class FTPHoneypotReportGenerator:
         
         # Geographic analysis (placeholder)
         geographic_data = self._analyze_geography()
-        
         return {
             'report_metadata': {
                 'generated_at': datetime.datetime.now().isoformat(),
                 'report_type': 'FTP Honeypot Security Analysis',
-                'time_range': time_range,
-                'total_sessions': total_sessions,
-                'sessions_directory': str(self.sessions_dir)
+                'sessions_analyzed': total_sessions,
+                'data_source': str(self.sessions_dir),
+                'generator_version': '1.0.0',
+                'time_range': time_range
             },
             'executive_summary': {
                 'total_sessions': total_sessions,
+                'total_commands': sum(len(s.get('commands', [])) for s in self.sessions_data),
                 'unique_attackers': len(self.ip_stats),
                 'total_attacks': sum(self.attack_stats.values()),
                 'total_vulnerabilities': sum(self.vulnerability_stats.values()),
-                'total_commands': sum(self.command_stats.values()),
-                'most_common_attack': max(self.attack_stats.items(), key=lambda x: x[1])[0] if self.attack_stats else 'none',
-                'most_targeted_vulnerability': max(self.vulnerability_stats.items(), key=lambda x: x[1])[0] if self.vulnerability_stats else 'none'
-            },
-            'ml_analysis': {
-                'enabled': ML_AVAILABLE and hasattr(self, 'ml_detector') and self.ml_detector is not None,
-                'anomaly_detection': {},
-                'threat_classification': {},
-                'confidence_scores': {},
-                'ml_insights': [],
-                'total_ml_analyzed': 0,
-                'high_anomaly_sessions': 0,
-                'ml_detected_threats': []
+                'most_common_attack': max(self.attack_stats.items(), key=lambda x: x[1])[0] if self.attack_stats else 'None'
             },
             'attack_statistics': {
                 'top_attackers': top_attackers,
                 'top_attacks': top_attacks,
-                'top_vulnerabilities': top_vulnerabilities,
                 'top_commands': top_commands,
-                'attack_distribution': dict(self.attack_stats),
-                'vulnerability_distribution': dict(self.vulnerability_stats)
+                'top_vulnerabilities': top_vulnerabilities
             },
-            'session_analysis': session_analysis,
+            'sessions': self.sessions_data,
+            'attacks': self._extract_attacks(),
+            'vulnerabilities': self._extract_vulnerabilities(),
+            'files': self._extract_files(),
+            'detailed_sessions': self._get_detailed_sessions(),
             'attack_timeline': attack_timeline,
             'geographic_analysis': geographic_data,
-            'detailed_sessions': self._get_detailed_sessions(),
-            'recommendations': self._generate_recommendations()
+            'recommendations': self._generate_recommendations(),
+            'ml_analysis': self.report_data.get('ml_analysis', {})
         }
-    
-    def _analyze_sessions(self) -> Dict[str, Any]:
-        """Analyze session patterns and behaviors"""
-        session_durations = []
-        commands_per_session = []
-        attacks_per_session = []
-        
-        for session in self.sessions_data:
-            # Calculate session duration
-            if session.get('start_time') and session.get('end_time'):
-                try:
-                    start = datetime.datetime.fromisoformat(session['start_time'].replace('Z', '+00:00'))
-                    end = datetime.datetime.fromisoformat(session['end_time'].replace('Z', '+00:00'))
-                    duration = (end - start).total_seconds()
-                    session_durations.append(duration)
-                except:
-                    pass
-                    
-            # Count commands and attacks
-            commands_per_session.append(len(session.get('commands', [])))
-            attacks_per_session.append(len(session.get('attack_analysis', [])))
-            
-        return {
-            'average_session_duration': sum(session_durations) / len(session_durations) if session_durations else 0,
-            'average_commands_per_session': sum(commands_per_session) / len(commands_per_session) if commands_per_session else 0,
-            'average_attacks_per_session': sum(attacks_per_session) / len(attacks_per_session) if attacks_per_session else 0,
-            'session_duration_distribution': {
-                'min': min(session_durations) if session_durations else 0,
-                'max': max(session_durations) if session_durations else 0,
-                'median': sorted(session_durations)[len(session_durations)//2] if session_durations else 0
-            }
-        }
-        
-    def _generate_attack_timeline(self) -> List[Dict[str, Any]]:
-        """Generate chronological attack timeline"""
-        timeline = []
-        
-        for session in self.sessions_data:
-            session_start = session.get('start_time', '')
-            client_ip = session.get('client_info', {}).get('ip', 'unknown')
-            if not client_ip or client_ip == 'unknown':
-                # Try to get IP from forensic data
-                forensic_data = session.get('forensic_data', {})
-                for event in forensic_data.get('events', []):
-                    if event.get('event_type') == 'connection_established':
-                        client_ip = event.get('data', {}).get('src_ip', 'unknown')
-                        break
-            
-            for command in session.get('commands', []):
-                if command.get('attack_analysis', {}).get('attack_types'):
-                    timeline.append({
-                        'timestamp': command.get('timestamp', session_start),
-                        'client_ip': client_ip,
-                        'command': command.get('command', ''),
-                        'attack_types': command['attack_analysis']['attack_types'],
-                        'severity': command['attack_analysis'].get('severity', 'low'),
-                        'threat_score': command['attack_analysis'].get('threat_score', 0)
-                    })
-                    
-        # Sort by timestamp
-        timeline.sort(key=lambda x: x.get('timestamp', ''))
-        return timeline[:100]  # Limit to most recent 100 events
-        
-    def _analyze_geography(self) -> Dict[str, Any]:
-        """Analyze geographic distribution of attacks"""
-        # Placeholder for geographic analysis
-        # In a real implementation, you would use IP geolocation services
-        return {
-            'countries': {'Unknown': len(self.ip_stats)},
-            'regions': {'Unknown': len(self.ip_stats)},
-            'cities': {'Unknown': len(self.ip_stats)}
-        }
-        
     def _get_detailed_sessions(self) -> List[Dict[str, Any]]:
         """Get comprehensive detailed information about all sessions"""
         detailed = []
@@ -457,6 +380,147 @@ class FTPHoneypotReportGenerator:
             recommendations.append("Continue monitoring FTP traffic for emerging attack patterns")
             
         return recommendations
+
+    def _generate_ml_analysis(self):
+        """Generate comprehensive ML analysis from session data"""
+        if not self.ml_detector or not ML_AVAILABLE:
+            self.report_data['ml_analysis'] = {
+                'enabled': False,
+                'reason': 'ML components not available',
+                'anomaly_detection': {},
+                'threat_classification': {},
+                'attack_vectors': {},
+                'risk_analysis': {},
+                'ml_insights': ['ML analysis is not enabled or available']
+            }
+            return
+        
+        sessions = self.sessions_data
+        
+        # Aggregate ML metrics across all sessions
+        all_ml_scores = []
+        all_attack_vectors = []
+        risk_level_counts = Counter()
+        ml_label_counts = Counter()
+        session_ml_analyses = []
+        
+        for session in sessions:
+            commands = session.get('commands', [])
+            
+            for cmd in commands:
+                attack_analysis = cmd.get('attack_analysis', {})
+                
+                # Collect ML scores
+                ml_score = attack_analysis.get('ml_anomaly_score', 0.0)
+                if ml_score > 0:
+                    all_ml_scores.append(ml_score)
+                
+                # Collect ML labels
+                for label in attack_analysis.get('ml_labels', []):
+                    ml_label_counts[label] += 1
+                
+                # Collect risk levels
+                risk_level = attack_analysis.get('ml_risk_level', 'low')
+                risk_level_counts[risk_level] += 1
+                
+                # Collect attack vectors
+                for vector in attack_analysis.get('attack_vectors', []):
+                    all_attack_vectors.append(vector)
+            
+            # Perform session-level ML analysis
+            if self.ml_detector and commands:
+                try:
+                    session_ml = self.ml_detector.analyze_session(session)
+                    session_ml_analyses.append({
+                        'session_id': session.get('session_id', 'unknown'),
+                        **session_ml
+                    })
+                except Exception as e:
+                    print(f"Session ML analysis failed: {e}")
+        
+        # Calculate aggregate statistics
+        avg_ml_score = np.mean(all_ml_scores) if all_ml_scores else 0.0
+        max_ml_score = np.max(all_ml_scores) if all_ml_scores else 0.0
+        high_risk_commands = sum(1 for score in all_ml_scores if score > 0.7)
+        
+        # Aggregate attack vectors by type
+        vector_types = Counter()
+        vector_techniques = Counter()
+        mitre_tactics = Counter()
+        
+        for vector in all_attack_vectors:
+            vector_types[vector.get('type', 'unknown')] += 1
+            vector_techniques[vector.get('technique', 'unknown')] += 1
+            mitre_tactics[vector.get('mitre_id', 'unknown')] += 1
+        
+        # Generate ML insights
+        ml_insights = []
+        
+        if avg_ml_score > 0.6:
+            ml_insights.append(f"High average ML anomaly score ({avg_ml_score:.2f}) indicates significant malicious activity")
+        elif avg_ml_score > 0.4:
+            ml_insights.append(f"Medium average ML anomaly score ({avg_ml_score:.2f}) suggests suspicious behavior patterns")
+        else:
+            ml_insights.append(f"Low average ML anomaly score ({avg_ml_score:.2f}) indicates mostly normal activity")
+        
+        if high_risk_commands > 0:
+            ml_insights.append(f"Detected {high_risk_commands} high-risk commands with ML scores > 0.7")
+        
+        if all_attack_vectors:
+            ml_insights.append(f"Identified {len(all_attack_vectors)} attack vector instances across {len(vector_types)} unique types")
+            top_vector = vector_types.most_common(1)[0] if vector_types else None
+            if top_vector:
+                ml_insights.append(f"Most common attack vector: {top_vector[0]} ({top_vector[1]} occurrences)")
+        
+        if risk_level_counts.get('critical', 0) > 0:
+            ml_insights.append(f"CRITICAL: {risk_level_counts['critical']} commands classified as critical risk")
+        
+        # Store ML analysis in report data
+        self.report_data['ml_analysis'] = {
+            'enabled': True,
+            'model_version': self.ml_detector.model_version if hasattr(self.ml_detector, 'model_version') else 'unknown',
+            'anomaly_detection': {
+                'average_score': round(float(avg_ml_score), 3),
+                'max_score': round(float(max_ml_score), 3),
+                'total_commands_analyzed': len(all_ml_scores),
+                'high_risk_commands': high_risk_commands,
+                'score_distribution': {
+                    'critical (>0.8)': sum(1 for s in all_ml_scores if s > 0.8),
+                    'high (0.6-0.8)': sum(1 for s in all_ml_scores if 0.6 < s <= 0.8),
+                    'medium (0.4-0.6)': sum(1 for s in all_ml_scores if 0.4 < s <= 0.6),
+                    'low (<0.4)': sum(1 for s in all_ml_scores if s <= 0.4)
+                }
+            },
+            'threat_classification': {
+                'top_labels': dict(ml_label_counts.most_common(10)),
+                'risk_levels': dict(risk_level_counts),
+                'total_threats_detected': sum(ml_label_counts.values())
+            },
+            'attack_vectors': {
+                'types': dict(vector_types),
+                'techniques': dict(vector_techniques),
+                'mitre_tactics': dict(mitre_tactics)
+            },
+            'risk_analysis': {
+                'overall_risk_score': self._calculate_overall_risk(avg_ml_score, high_risk_commands, len(all_attack_vectors)),
+                'risk_factors': self._identify_risk_factors(avg_ml_score, high_risk_commands, vector_types)
+            },
+            'ml_insights': ml_insights,
+            'session_analysis': session_ml_analyses
+        }
+
+    def _calculate_overall_risk(self, avg_score, high_risk_count, vector_count):
+        # Simple risk calculation logic
+        base_risk = avg_score * 10
+        risk_modifiers = (high_risk_count * 0.5) + (vector_count * 0.2)
+        return min(10.0, base_risk + risk_modifiers)
+
+    def _identify_risk_factors(self, avg_score, high_risk_count, vector_types):
+        factors = []
+        if avg_score > 0.5: factors.append("Elevated Anomaly Scores")
+        if high_risk_count > 5: factors.append("Frequent High-Risk Activity")
+        if 'injection' in str(vector_types).lower(): factors.append("Injection Attacks Detected")
+        return factors
         
     # Helper methods for detailed session analysis
     def _calculate_session_duration_detailed(self, session: Dict[str, Any]) -> str:

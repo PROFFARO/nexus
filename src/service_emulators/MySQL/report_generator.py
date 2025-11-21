@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 
 import json
+import numpy as np
 import os
 import sys
 from pathlib import Path
@@ -1908,18 +1909,6 @@ class MySQLHoneypotReportGenerator:
         return datetime.datetime.now().strftime('%Y-%m-%d %H:%M UTC')
     
     def _get_avg_inference_time(self) -> str:
-        """Get average ML inference time"""
-        return "11"  # Placeholder - would be calculated from actual metrics
-    
-    def _get_ml_accuracy(self) -> str:
-        """Get ML model accuracy"""
-        return "95.3"  # Placeholder - would be from model evaluation
-    
-    def _generate_ml_query_anomalies_table(self) -> str:
-        """Generate ML query anomalies table"""
-        # Extract ML results from session data
-        ml_anomalies = []
-        
         # Process session files to find ML anomaly results
         for session in self.sessions_data:
             queries = session.get('queries', [])
