@@ -374,9 +374,25 @@ class AttackAnalyzer:
                 analysis["ml_cluster"] = ml_results.get("ml_cluster", -1)
                 analysis["ml_reason"] = ml_results.get("ml_reason", "No ML analysis")
                 analysis["ml_confidence"] = ml_results.get("ml_confidence", 0.0)
+                analysis["ml_risk_score"] = ml_results.get("ml_risk_score", 0.0)
                 analysis["ml_inference_time_ms"] = ml_results.get(
                     "ml_inference_time_ms", 0
                 )
+
+                # Calculate risk level using new ML method
+                ml_score = ml_results.get("ml_anomaly_score", 0)
+                risk_info = self.ml_detector.calculate_risk_level(
+                    ml_score,
+                    attack_types=analysis["attack_types"],
+                    severity=analysis["severity"]
+                )
+                analysis["ml_risk_level"] = risk_info["risk_level"]
+                analysis["ml_threat_score"] = risk_info["threat_score"]
+                analysis["ml_risk_color"] = risk_info["color"]
+                
+                # Detect attack vectors using new ML method
+                attack_vectors = self.ml_detector.detect_attack_vectors(ml_data, ml_results)
+                analysis["attack_vectors"] = attack_vectors
 
                 # Enhance severity based on ML anomaly score
                 ml_score = ml_results.get("ml_anomaly_score", 0)
@@ -395,8 +411,16 @@ class AttackAnalyzer:
                         f"ML Anomaly Detection: {ml_results.get('ml_reason', 'Unknown')}"
                     )
 
+                # Add attack vector indicators
+                if attack_vectors:
+                    for vector in attack_vectors:
+                        analysis["indicators"].append(
+                            f"Attack Vector: {vector['technique']} (MITRE {vector['mitre_id']}) - Confidence: {vector['confidence']:.2f}"
+                        )
+
                 logging.info(
-                    f"MySQL ML Analysis: Score={ml_score:.3f}, Labels={ml_results.get('ml_labels', [])}, Confidence={ml_results.get('ml_confidence', 0):.3f}"
+                    f"MySQL ML Analysis: Score={ml_score:.3f}, Risk={risk_info['risk_level']}, "
+                    f"Vectors={len(attack_vectors)}, Labels={ml_results.get('ml_labels', [])}"
                 )
 
             except Exception as e:
@@ -405,6 +429,7 @@ class AttackAnalyzer:
                 analysis["ml_error"] = str(e)
                 analysis["ml_anomaly_score"] = 0.0
                 analysis["ml_labels"] = ["ml_error"]
+                analysis["attack_vectors"] = []
 
         return analysis
 

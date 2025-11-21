@@ -383,6 +383,373 @@ class MLDetector:
         """Score multiple data points efficiently"""
         return [self.score(data) for data in data_list]
     
+    def calculate_risk_level(self, ml_score: float, attack_types: List[str] = None, severity: str = 'low') -> Dict[str, Any]:
+        """Calculate comprehensive risk level from ML score and context"""
+        attack_types = attack_types or []
+        
+        # Risk level thresholds
+        risk_levels = {
+            'critical': {'min_score': 0.8, 'color': '#dc3545', 'priority': 4},
+            'high': {'min_score': 0.6, 'color': '#fd7e14', 'priority': 3},
+            'medium': {'min_score': 0.4, 'color': '#ffc107', 'priority': 2},
+            'low': {'min_score': 0.0, 'color': '#28a745', 'priority': 1}
+        }
+        
+        # Determine base risk level from ML score
+        risk_level = 'low'
+        for level, config in sorted(risk_levels.items(), key=lambda x: x[1]['priority'], reverse=True):
+            if ml_score >= config['min_score']:
+                risk_level = level
+                break
+        
+        # Adjust based on severity
+        severity_boost = {'critical': 0.3, 'high': 0.2, 'medium': 0.1, 'low': 0.0}
+        adjusted_score = min(1.0, ml_score + severity_boost.get(severity, 0.0))
+        
+        # Recalculate with adjusted score
+        for level, config in sorted(risk_levels.items(), key=lambda x: x[1]['priority'], reverse=True):
+            if adjusted_score >= config['min_score']:
+                risk_level = level
+                break
+        
+        # Calculate threat score (0-100)
+        threat_score = int(adjusted_score * 100)
+        
+        return {
+            'risk_level': risk_level,
+            'risk_score': round(adjusted_score, 3),
+            'threat_score': threat_score,
+            'color': risk_levels[risk_level]['color'],
+            'priority': risk_levels[risk_level]['priority'],
+            'ml_contribution': round(ml_score, 3),
+            'severity_contribution': round(severity_boost.get(severity, 0.0), 3)
+        }
+    
+    def detect_attack_vectors(self, data: Dict[str, Any], ml_results: Dict[str, Any]) -> List[Dict[str, Any]]:
+        """Detect specific attack vectors based on service type and ML analysis"""
+        attack_vectors = []
+        command = data.get('command', '')
+        ml_score = ml_results.get('ml_anomaly_score', 0.0)
+        
+        # Service-specific attack vector detection
+        if self.service_type == 'ssh':
+            attack_vectors.extend(self._detect_ssh_attack_vectors(command, ml_score))
+        elif self.service_type == 'http':
+            attack_vectors.extend(self._detect_http_attack_vectors(command, ml_score))
+        elif self.service_type == 'ftp':
+            attack_vectors.extend(self._detect_ftp_attack_vectors(command, ml_score))
+        elif self.service_type == 'mysql':
+            attack_vectors.extend(self._detect_mysql_attack_vectors(command, ml_score))
+        elif self.service_type == 'smb':
+            attack_vectors.extend(self._detect_smb_attack_vectors(command, ml_score))
+        
+        return attack_vectors
+    
+    def _detect_ssh_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
+        """Detect SSH-specific attack vectors"""
+        vectors = []
+        cmd_lower = command.lower()
+        
+        # Brute force / credential stuffing
+        if any(pattern in cmd_lower for pattern in ['passwd', 'shadow', 'ssh-keygen']):
+            vectors.append({
+                'type': 'credential_access',
+                'technique': 'Credential Dumping',
+                'mitre_id': 'T1003',
+                'confidence': min(0.9, ml_score + 0.2),
+                'description': 'Attempt to access credential files'
+            })
+        
+        # Malware deployment
+        if any(pattern in cmd_lower for pattern in ['wget', 'curl']) and any(ext in cmd_lower for ext in ['.sh', '.py', '.elf']):
+            vectors.append({
+                'type': 'malware_deployment',
+                'technique': 'Ingress Tool Transfer',
+                'mitre_id': 'T1105',
+                'confidence': min(0.95, ml_score + 0.3),
+                'description': 'Downloading potentially malicious files'
+            })
+        
+        # Privilege escalation
+        if any(pattern in cmd_lower for pattern in ['sudo', 'su -', 'chmod +s']):
+            vectors.append({
+                'type': 'privilege_escalation',
+                'technique': 'Sudo and Sudo Caching',
+                'mitre_id': 'T1548.003',
+                'confidence': min(0.85, ml_score + 0.25),
+                'description': 'Privilege escalation attempt detected'
+            })
+        
+        # Persistence
+        if any(pattern in cmd_lower for pattern in ['crontab', 'systemctl', '.bashrc', '.profile']):
+            vectors.append({
+                'type': 'persistence',
+                'technique': 'Scheduled Task/Job',
+                'mitre_id': 'T1053',
+                'confidence': min(0.8, ml_score + 0.2),
+                'description': 'Persistence mechanism creation'
+            })
+        
+        # Reconnaissance
+        if any(pattern in cmd_lower for pattern in ['whoami', 'uname', 'netstat', 'ps aux', 'ifconfig']):
+            vectors.append({
+                'type': 'reconnaissance',
+                'technique': 'System Information Discovery',
+                'mitre_id': 'T1082',
+                'confidence': min(0.7, ml_score + 0.1),
+                'description': 'System reconnaissance activity'
+            })
+        
+        return vectors
+    
+    def _detect_http_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
+        """Detect HTTP-specific attack vectors"""
+        vectors = []
+        cmd_lower = command.lower()
+        
+        # XSS
+        if any(pattern in cmd_lower for pattern in ['<script', 'alert(', 'onerror=', 'javascript:']):
+            vectors.append({
+                'type': 'xss',
+                'technique': 'Cross-Site Scripting',
+                'mitre_id': 'T1059.007',
+                'confidence': min(0.9, ml_score + 0.3),
+                'description': 'Cross-site scripting attempt'
+            })
+        
+        # SQL Injection
+        if any(pattern in cmd_lower for pattern in ['union select', "' or '1'='1", 'drop table', '--', 'information_schema']):
+            vectors.append({
+                'type': 'sql_injection',
+                'technique': 'SQL Injection',
+                'mitre_id': 'T1190',
+                'confidence': min(0.95, ml_score + 0.35),
+                'description': 'SQL injection attack detected'
+            })
+        
+        # Path traversal
+        if '../' in command or '..\\' in command:
+            vectors.append({
+                'type': 'path_traversal',
+                'technique': 'Path Traversal',
+                'mitre_id': 'T1083',
+                'confidence': min(0.85, ml_score + 0.25),
+                'description': 'Directory traversal attempt'
+            })
+        
+        # Command injection
+        if any(pattern in command for pattern in ['|', ';', '&&', '`', '$(' ]):
+            vectors.append({
+                'type': 'command_injection',
+                'technique': 'Command Injection',
+                'mitre_id': 'T1059',
+                'confidence': min(0.8, ml_score + 0.2),
+                'description': 'Command injection attempt'
+            })
+        
+        return vectors
+    
+    def _detect_ftp_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
+        """Detect FTP-specific attack vectors"""
+        vectors = []
+        cmd_upper = command.upper()
+        
+        # Path traversal
+        if '../' in command or '..\\' in command:
+            vectors.append({
+                'type': 'path_traversal',
+                'technique': 'File and Directory Discovery',
+                'mitre_id': 'T1083',
+                'confidence': min(0.9, ml_score + 0.3),
+                'description': 'FTP path traversal attempt'
+            })
+        
+        # Sensitive file access
+        if any(pattern in command.lower() for pattern in ['passwd', 'shadow', '.ssh', 'config', '.env']):
+            vectors.append({
+                'type': 'data_exfiltration',
+                'technique': 'Data from Local System',
+                'mitre_id': 'T1005',
+                'confidence': min(0.85, ml_score + 0.25),
+                'description': 'Attempt to access sensitive files'
+            })
+        
+        # Anonymous login abuse
+        if 'USER anonymous' in cmd_upper or 'USER ftp' in cmd_upper:
+            vectors.append({
+                'type': 'anonymous_access',
+                'technique': 'Valid Accounts',
+                'mitre_id': 'T1078',
+                'confidence': min(0.6, ml_score + 0.1),
+                'description': 'Anonymous FTP access attempt'
+            })
+        
+        return vectors
+    
+    def _detect_mysql_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
+        """Detect MySQL-specific attack vectors"""
+        vectors = []
+        cmd_lower = command.lower()
+        
+        # SQL Injection
+        if any(pattern in cmd_lower for pattern in ['union select', "' or '", 'drop table', 'drop database']):
+            vectors.append({
+                'type': 'sql_injection',
+                'technique': 'SQL Injection',
+                'mitre_id': 'T1190',
+                'confidence': min(0.95, ml_score + 0.4),
+                'description': 'SQL injection attack'
+            })
+        
+        # Information disclosure
+        if 'information_schema' in cmd_lower or 'mysql.user' in cmd_lower:
+            vectors.append({
+                'type': 'information_disclosure',
+                'technique': 'Data from Information Repositories',
+                'mitre_id': 'T1213',
+                'confidence': min(0.85, ml_score + 0.3),
+                'description': 'Database schema enumeration'
+            })
+        
+        # Privilege escalation
+        if any(pattern in cmd_lower for pattern in ['grant all', 'create user', 'alter user']):
+            vectors.append({
+                'type': 'privilege_escalation',
+                'technique': 'Valid Accounts',
+                'mitre_id': 'T1078',
+                'confidence': min(0.9, ml_score + 0.35),
+                'description': 'Database privilege escalation'
+            })
+        
+        # Data exfiltration
+        if any(pattern in cmd_lower for pattern in ['into outfile', 'load_file', 'select * from']):
+            vectors.append({
+                'type': 'data_exfiltration',
+                'technique': 'Automated Exfiltration',
+                'mitre_id': 'T1020',
+                'confidence': min(0.8, ml_score + 0.25),
+                'description': 'Potential data exfiltration'
+            })
+        
+        return vectors
+    
+    def _detect_smb_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
+        """Detect SMB-specific attack vectors"""
+        vectors = []
+        cmd_upper = command.upper()
+        
+        # EternalBlue / SMB exploits
+        if any(pattern in cmd_upper for pattern in ['SMB_COM_TRANSACTION', 'NT_TRANSACT', 'TRANS2']):
+            vectors.append({
+                'type': 'exploit',
+                'technique': 'Exploitation for Client Execution',
+                'mitre_id': 'T1203',
+                'confidence': min(0.95, ml_score + 0.4),
+                'description': 'SMB exploit attempt (potential EternalBlue)'
+            })
+        
+        # Share enumeration
+        if 'TREE_CONNECT' in cmd_upper or 'NET_SHARE_ENUM' in cmd_upper:
+            vectors.append({
+                'type': 'reconnaissance',
+                'technique': 'Network Share Discovery',
+                'mitre_id': 'T1135',
+                'confidence': min(0.75, ml_score + 0.2),
+                'description': 'SMB share enumeration'
+            })
+        
+        # Path traversal
+        if '../' in command or '..\\' in command:
+            vectors.append({
+                'type': 'path_traversal',
+                'technique': 'File and Directory Discovery',
+                'mitre_id': 'T1083',
+                'confidence': min(0.85, ml_score + 0.3),
+                'description': 'SMB path traversal attempt'
+            })
+        
+        return vectors
+    
+    def analyze_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Perform session-level ML analysis by aggregating command-level results"""
+        commands = session_data.get('commands', [])
+        
+        if not commands:
+            return {
+                'session_ml_score': 0.0,
+                'session_risk_level': 'low',
+                'session_threat_score': 0,
+                'total_commands': 0,
+                'malicious_commands': 0,
+                'attack_vectors': [],
+                'ml_insights': ['No commands to analyze']
+            }
+        
+        # Aggregate ML scores
+        ml_scores = []
+        attack_vectors_all = []
+        malicious_count = 0
+        
+        for cmd in commands:
+            attack_analysis = cmd.get('attack_analysis', {})
+            ml_score = attack_analysis.get('ml_anomaly_score', 0.0)
+            ml_scores.append(ml_score)
+            
+            # Count malicious commands (score > 0.5)
+            if ml_score > 0.5:
+                malicious_count += 1
+            
+            # Collect attack vectors
+            if 'attack_vectors' in attack_analysis:
+                attack_vectors_all.extend(attack_analysis['attack_vectors'])
+        
+        # Calculate session-level metrics
+        avg_ml_score = np.mean(ml_scores) if ml_scores else 0.0
+        max_ml_score = np.max(ml_scores) if ml_scores else 0.0
+        
+        # Session score is weighted average of mean and max
+        session_ml_score = (avg_ml_score * 0.4) + (max_ml_score * 0.6)
+        
+        # Calculate risk level
+        risk_info = self.calculate_risk_level(
+            session_ml_score,
+            attack_types=[],
+            severity='high' if malicious_count > len(commands) * 0.5 else 'medium'
+        )
+        
+        # Deduplicate attack vectors by type
+        unique_vectors = {}
+        for vector in attack_vectors_all:
+            vec_type = vector.get('type', 'unknown')
+            if vec_type not in unique_vectors or vector.get('confidence', 0) > unique_vectors[vec_type].get('confidence', 0):
+                unique_vectors[vec_type] = vector
+        
+        # Generate insights
+        insights = []
+        if session_ml_score > 0.7:
+            insights.append(f'High-risk session detected with {malicious_count}/{len(commands)} malicious commands')
+        elif session_ml_score > 0.5:
+            insights.append(f'Medium-risk session with {malicious_count}/{len(commands)} suspicious commands')
+        else:
+            insights.append(f'Low-risk session with {malicious_count}/{len(commands)} flagged commands')
+        
+        if unique_vectors:
+            insights.append(f'Detected {len(unique_vectors)} unique attack vector types')
+        
+        return {
+            'session_ml_score': round(session_ml_score, 3),
+            'session_risk_level': risk_info['risk_level'],
+            'session_threat_score': risk_info['threat_score'],
+            'session_risk_color': risk_info['color'],
+            'total_commands': len(commands),
+            'malicious_commands': malicious_count,
+            'avg_ml_score': round(avg_ml_score, 3),
+            'max_ml_score': round(max_ml_score, 3),
+            'attack_vectors': list(unique_vectors.values()),
+            'ml_insights': insights,
+            'ml_model_version': self.model_version
+        }
+    
     def save_models(self):
         """Save trained models to disk"""
         try:

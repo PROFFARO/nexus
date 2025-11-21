@@ -75,6 +75,26 @@ except ImportError:
             print(f"Warning: ML components not available: {e}")
 
 
+# Import newly created SMB components
+NEW_COMPONENTS_AVAILABLE = False
+try:
+    from smb_logger import SMBRichLogger, SMBSessionTracker, thread_local
+    from smb_session_manager import SMBSessionManager, SMBSession
+    from smb_llm_integration import (
+        LLMFileSystemGenerator,
+        LLMFileContentGenerator,
+        LLMCommandResponseGenerator
+    )
+    NEW_COMPONENTS_AVAILABLE = True
+    if __name__ == "__main__":
+        print("✓ New SMB components loaded successfully")
+except ImportError as e:
+    NEW_COMPONENTS_AVAILABLE = False
+    if __name__ == "__main__":
+        print(f"⚠ Warning: New SMB components not available: {e}")
+        print("  Running with fallback implementations - LLM features disabled")
+
+
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
     
@@ -223,15 +243,31 @@ class AttackAnalyzer:
                         'ml_confidence': 0.0,
                         'ml_inference_time_ms': 0
                     }
+                
                 analysis['ml_anomaly_score'] = ml_results.get('ml_anomaly_score', 0.0)
                 analysis['ml_labels'] = ml_results.get('ml_labels', [])
                 analysis['ml_cluster'] = ml_results.get('ml_cluster', -1)
                 analysis['ml_reason'] = ml_results.get('ml_reason', 'No ML analysis')
                 analysis['ml_confidence'] = ml_results.get('ml_confidence', 0.0)
+                analysis['ml_risk_score'] = ml_results.get('ml_risk_score', 0.0)
                 analysis['ml_inference_time_ms'] = ml_results.get('ml_inference_time_ms', 0)
                 
-                # Enhance severity based on ML anomaly score
+                # Calculate risk level using new ML method
                 ml_score = ml_results.get('ml_anomaly_score', 0)
+                risk_info = self.ml_detector.calculate_risk_level(
+                    ml_score,
+                    attack_types=analysis['attack_types'],
+                    severity=analysis['severity']
+                )
+                analysis['ml_risk_level'] = risk_info['risk_level']
+                analysis['ml_threat_score'] = risk_info['threat_score']
+                analysis['ml_risk_color'] = risk_info['color']
+                
+                # Detect attack vectors using new ML method
+                attack_vectors = self.ml_detector.detect_attack_vectors(ml_data, ml_results)
+                analysis['attack_vectors'] = attack_vectors
+                
+                # Enhance severity based on ML anomaly score
                 if ml_score > 0.8:
                     if analysis['severity'] in ['low', 'medium']:
                         analysis['severity'] = 'high'
@@ -245,7 +281,15 @@ class AttackAnalyzer:
                 if 'anomaly' in ml_results.get('ml_labels', []):
                     analysis['indicators'].append(f"ML Anomaly Detection: {ml_results.get('ml_reason', 'Unknown')}")
                 
-                logging.info(f"SMB ML Analysis: Score={ml_score:.3f}, Labels={ml_results.get('ml_labels', [])}, Confidence={ml_results.get('ml_confidence', 0):.3f}")
+                # Add attack vector indicators
+                if attack_vectors:
+                    for vector in attack_vectors:
+                        analysis['indicators'].append(
+                            f"Attack Vector: {vector['technique']} (MITRE {vector['mitre_id']}) - Confidence: {vector['confidence']:.2f}"
+                        )
+                
+                logging.info(f"SMB ML Analysis: Score={ml_score:.3f}, Risk={risk_info['risk_level']}, "
+                            f"Vectors={len(attack_vectors)}, Labels={ml_results.get('ml_labels', [])}")
                         
             except Exception as e:
                 logging.error(f"ML analysis failed: {e}")
@@ -253,6 +297,7 @@ class AttackAnalyzer:
                 analysis['ml_error'] = str(e)
                 analysis['ml_anomaly_score'] = 0.0
                 analysis['ml_labels'] = ['ml_error']
+                analysis['attack_vectors'] = []  # Initialize empty list on error
                 if not config.get('ml', {}).get('fallback_on_error', True):
                     raise
         
@@ -620,6 +665,46 @@ class SMBHoneypot:
     def __init__(self):
         self.sessions = {}
         self.active_sessions = {}
+
+        try:
+            # 1. Rich Logger
+            if NEW_COMPONENTS_AVAILABLE:
+                self.rich_logger = SMBRichLogger(config)
+                logging.info("Initialized SMB Rich Logger")
+                
+                # 2. Session Manager
+                self.session_manager = SMBSessionManager(str(sessions_dir))
+            logging.info("Initialized SMB Session Manager")
+            
+            # 3. LLM Client Initialization
+            self.llm = self._initialize_llm()
+            
+            # 4. LLM Generators
+            if self.llm:
+                self.fs_generator = LLMFileSystemGenerator(self.llm, config)
+                self.content_generator = LLMFileContentGenerator(self.llm, config)
+                self.response_generator = LLMCommandResponseGenerator(self.llm, config)
+                logging.info("Initialized LLM-driven SMB components")
+            elif NEW_COMPONENTS_AVAILABLE:
+                logging.warning("LLM not initialized, using static fallbacks")
+                self.fs_generator = None
+                self.content_generator = None
+                self.response_generator = None
+            else:
+                logging.warning("New components not available, skipping initialization")
+                self.rich_logger = None
+                self.session_manager = None
+                self.fs_generator = None
+                self.content_generator = None
+            self.response_generator = None
+            
+        except Exception as e:
+            logging.error(f"Failed to initialize new SMB components: {e}")
+            self.rich_logger = None
+            self.session_manager = None
+            self.fs_generator = None
+            self.content_generator = None
+        self.response_generator = None
         
         # SMB server configuration
         self.server_name = config['smb'].get('server_name', 'NEXUS-FS-01')
@@ -693,10 +778,45 @@ class SMBHoneypot:
             self.forensic_logger = ForensicChainLogger(str(self.session_dir)) if config['forensics'].getboolean('chain_of_custody', True) else None
         except Exception as e:
             logger.error(f"Failed to initialize SMB honeypot components: {e}")
-            self.attack_analyzer = None
-            self.file_handler = None
-            self.vuln_logger = None
-            self.forensic_logger = None
+            
+            if provider == 'ollama':
+                base_url = config['llm'].get('api_base', 'http://localhost:11434')
+                return ChatOllama(
+                    model=model_name,
+                    temperature=temperature,
+                    base_url=base_url
+                )
+            elif provider == 'openai':
+                return ChatOpenAI(
+                    model=model_name,
+                    temperature=temperature,
+                    api_key=api_key
+                )
+            elif provider == 'azure':
+                return AzureChatOpenAI(
+                    azure_deployment=config['llm'].get('azure_deployment'),
+                    api_version=config['llm'].get('api_version', '2023-05-15'),
+                    temperature=temperature,
+                    api_key=api_key
+                )
+            elif provider == 'google':
+                return ChatGoogleGenerativeAI(
+                    model=model_name,
+                    temperature=temperature,
+                    google_api_key=api_key
+                )
+            elif provider == 'aws':
+                return ChatBedrock(
+                    model_id=model_name,
+                    model_kwargs={"temperature": temperature}
+                )
+            else:
+                logging.warning(f"Unknown LLM provider: {provider}")
+                return None
+                
+        except Exception as e:
+            logging.error(f"Failed to initialize LLM: {e}")
+            return None
     
     def _load_user_accounts(self) -> Dict[str, str]:
         """Load user accounts from config.ini"""
