@@ -43,32 +43,7 @@ class NexusCLI:
         parser = argparse.ArgumentParser(
             description='NEXUS AI-Enhanced Honeypot Platform',
             formatter_class=argparse.RawDescriptionHelpFormatter,
-            epilog="""
-Examples:
-  # Start services
-  nexus_cli.py ssh --port 2222 --llm-provider ollama
-  nexus_cli.py ssh --config custom.ini --log-file ssh.log
-  
-  # Generate reports
-  nexus_cli.py report ssh --output reports/ --format html
-  nexus_cli.py report ssh --ml-enhanced --include-ml-insights
-  nexus_cli.py report ssh --sessions-dir custom/sessions --severity high
-  
-  # Analyze logs with ML
-  nexus_cli.py logs ssh --ml-analysis --ml-insights
-  nexus_cli.py logs http --high-risk-only --anomaly-threshold 0.8
-  nexus_cli.py logs mysql --filter anomalies --ml-analysis
-  
-  # ML operations
-  nexus_cli.py ml train ssh --algorithm all
-  nexus_cli.py ml predict ssh --input "rm -rf /"
-  nexus_cli.py ml eval ssh --test-data test.json
-  
-  # Management
-  nexus_cli.py list
-  nexus_cli.py status
-  nexus_cli.py start-all --llm-provider ollama
-            """
+            epilog='Use "nexus_cli.py <command> --help" for more information on a specific command.'
         )
         
         subparsers = parser.add_subparsers(dest='command', help='Available commands')
@@ -1334,14 +1309,7 @@ except Exception as e:
                     print(f"  PID {proc['pid']}: {proc['name']}")
             else:
                 print("\n🔄 No emulators running currently")
-            
-            processes = self.find_service_processes()
-            if processes:
-                print("\n🔄 Running Processes:")
-                for proc in processes:
-                    print(f"  PID {proc['pid']}: {proc['name']}")
-            else:
-                print("\n🔄 No emulators running currently")
+        
         
         return 0
     
@@ -1609,7 +1577,11 @@ except Exception as e:
                 
                 # Print results
                 for algo, result in results.items():
-                    print(f" {algo}: {result.get('accuracy', 'N/A'):.3f} accuracy")
+                    accuracy = result.get('accuracy', 'N/A')
+                    if isinstance(accuracy, (int, float)):
+                        print(f" {algo}: {accuracy:.3f} accuracy")
+                    else:
+                        print(f" {algo}: {accuracy} accuracy")
                 
             except Exception as e:
                 print(f" Error training {service}: {e}")
@@ -1760,8 +1732,7 @@ except Exception as e:
                 if args.model_path:
                     # Copy new models from specified path
                     import shutil
-                    import os
-                    source_path = os.path.join(args.model_path, service)
+                    source_path = Path(args.model_path) / service
                     target_path = config.models_dir / service
                     
                     if source_path.exists():

@@ -38,6 +38,18 @@ class FeatureExtractor:
         self.scaler = StandardScaler()
         self.label_encoder = LabelEncoder()
     
+    def _ensure_string(self, value: Any) -> str:
+        """Ensure value is a string"""
+        if value is None:
+            return ""
+        if isinstance(value, str):
+            return value
+        if isinstance(value, (int, float)):
+            if pd.isna(value):  # Handle NaN
+                return ""
+            return str(value)
+        return str(value)
+    
     def is_vectorizer_fitted(self) -> bool:
         """Check if the TF-IDF vectorizer is fitted"""
         try:
@@ -64,7 +76,7 @@ class FeatureExtractor:
     
     def _extract_ssh_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract SSH-specific features"""
-        command = data.get('command', '')
+        command = self._ensure_string(data.get('command', ''))
         session_data = data.get('session_data', {})
         
         features = {
@@ -107,10 +119,10 @@ class FeatureExtractor:
                 'suspicious_extensions': 0
             }
         
-        request = data.get('request', '')
+        request = self._ensure_string(data.get('request', ''))
         headers = data.get('headers', {})
-        url = data.get('url', '')
-        method = data.get('method', 'GET')
+        url = self._ensure_string(data.get('url', ''))
+        method = self._ensure_string(data.get('method', 'GET'))
         
         parsed_url = urlparse(url)
         query_params = parse_qs(parsed_url.query)
@@ -137,8 +149,8 @@ class FeatureExtractor:
     
     def _extract_ftp_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract FTP-specific features"""
-        command = data.get('command', '')
-        filename = data.get('filename', '')
+        command = self._ensure_string(data.get('command', ''))
+        filename = self._ensure_string(data.get('filename', ''))
         session_data = data.get('session_data', {})
         
         features = {
@@ -162,7 +174,7 @@ class FeatureExtractor:
     
     def _extract_mysql_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract MySQL-specific features"""
-        query = data.get('query', '')
+        query = self._ensure_string(data.get('query', ''))
         session_data = data.get('session_data', {})
         
         # Parse query type
@@ -195,8 +207,8 @@ class FeatureExtractor:
     
     def _extract_smb_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract SMB-specific features"""
-        command = data.get('command', '')
-        path = data.get('path', '')
+        command = self._ensure_string(data.get('command', ''))
+        path = self._ensure_string(data.get('path', ''))
         session_data = data.get('session_data', {})
         
         features = {
@@ -220,7 +232,7 @@ class FeatureExtractor:
     
     def _extract_generic_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract generic features for unknown service types"""
-        text_data = str(data.get('text', ''))
+        text_data = self._ensure_string(data.get('text', ''))
         
         features = {
             'text_features': text_data,

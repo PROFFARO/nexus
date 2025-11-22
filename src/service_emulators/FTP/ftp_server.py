@@ -1009,6 +1009,10 @@ class FTPSession:
                 )
                 enhanced_vuln["threat_score"] = attack_analysis.get("threat_score", 0)
 
+                # Rename "name" to "vuln_name" to avoid LogRecord attribute conflict
+                if "name" in enhanced_vuln:
+                    enhanced_vuln["vuln_name"] = enhanced_vuln.pop("name")
+
                 # Check alert threshold for vulnerabilities
                 alert_threshold = config["attack_detection"].getint(
                     "alert_threshold", 70
@@ -1149,13 +1153,16 @@ Important: Start your response with a 3-digit FTP code."""
 
         try:
             # Get AI response for the command with session persistence
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=ai_prompt)],
-                    "username": self.username or "anonymous",
-                    "interactive": True,
-                },
-                config={"configurable": {"session_id": self.llm_session_id}},
+            llm_response = await asyncio.wait_for(
+                with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=ai_prompt)],
+                        "username": self.username or "anonymous",
+                        "interactive": True,
+                    },
+                    config={"configurable": {"session_id": self.llm_session_id}},
+                ),
+                timeout=30.0,  # Generous timeout for LLM response
             )
 
             ai_output = llm_response.content.strip() if llm_response else ""
@@ -1220,6 +1227,13 @@ Important: Start your response with a 3-digit FTP code."""
                         self.writer.write(response.encode())
                         await self.writer.drain()
 
+        except asyncio.TimeoutError:
+            logger.warning(
+                f"LLM command processing timed out for '{full_command}'",
+                extra={"command": full_command, "username": self.username},
+            )
+            # Use default FTP response on timeout
+            await self.send_response(200, "Command okay")
         except Exception as e:
             logger.error(
                 f"LLM command processing failed for '{full_command}': {e}",
@@ -1836,23 +1850,23 @@ async def start_server():
     llm_provider = config["llm"].get("llm_provider", "openai")
     model_name = config["llm"].get("model_name", "gpt-4o-mini")
 
-    print(f"\n✅ FTP Honeypot Starting...")
-    print(f"📡 Port: {port}")
-    print(f"🤖 LLM Provider: {llm_provider}")
-    print(f"📊 Model: {model_name}")
-    print(f"🔍 Sensor: {sensor_name}")
-    print(f"📁 Log File: {config['honeypot'].get('log_file', 'ftp_log.log')}")
-    print(f"⚠️  Press Ctrl+C to stop\n")
+    print(f"\n[+] FTP Honeypot Starting...")
+    print(f"[*] Port: {port}")
+    print(f"[*] LLM Provider: {llm_provider}")
+    print(f"[*] Model: {model_name}")
+    print(f"[*] Sensor: {sensor_name}")
+    print(f"[*] Log File: {config['honeypot'].get('log_file', 'ftp_log.log')}")
+    print(f"[!] Press Ctrl+C to stop\n")
 
     logger.info(f"FTP honeypot started on 127.0.0.1:{port}")
-    print(f"✅ FTP honeypot listening on 127.0.0.1:{port}")
-    print("📡 Ready for connections...")
+    print(f"[+] FTP honeypot listening on 127.0.0.1:{port}")
+    print("[*] Ready for connections...")
 
     try:
         async with server:
             await server.serve_forever()
     except (KeyboardInterrupt, asyncio.CancelledError):
-        print("\n🛑 FTP honeypot stopped by user")
+        print("\n[-] FTP honeypot stopped by user")
         logger.info("FTP honeypot stopped by user")
         raise
 
@@ -2027,10 +2041,19 @@ try:
             sys.exit(1)
         config.read(args.config)
     else:
-        default_config = "config.ini"
-        if os.path.exists(default_config):
-            config.read(default_config)
-        else:
+        # Try multiple config file locations (relative to script dir)
+        config_paths = [
+            "config.ini",  # Current directory
+            Path(__file__).parent / "config.ini",  # Same directory as script
+        ]
+        config_found = False
+        for config_path in config_paths:
+            if os.path.exists(config_path):
+                config.read(config_path)
+                config_found = True
+                break
+        
+        if not config_found:
             # Use defaults when no config file found
             default_log_file = str(
                 Path(__file__).parent.parent.parent / "logs" / "ftp_log.log"
@@ -2170,7 +2193,7 @@ try:
     try:
         loop.run_until_complete(start_server())
     except (KeyboardInterrupt, asyncio.CancelledError):
-        print("\n🛑 FTP honeypot stopped by user")
+        print("\n[-] FTP honeypot stopped by user")
         logger.info("FTP honeypot stopped by user")
     finally:
         try:
@@ -2179,7 +2202,7 @@ try:
             pass
 
 except (KeyboardInterrupt, asyncio.CancelledError):
-    print("\n🛑 FTP honeypot stopped by user")
+    print("\n[-] FTP honeypot stopped by user")
     logger.info("FTP honeypot stopped by user")
 except Exception as e:
     print(f"Error: {e}", file=sys.stderr)
