@@ -6,7 +6,7 @@
 
 📚 **Documentation** 📚
 ======================
-[Quick Start](#quick-start) • [Features](#core-features) • [Installation](#installation--setup) • [CLI Guide](#cli-reference) • [Configuration](#configuration) • [Development](#development-guide)
+[Quick Start](#-quick-start) • [Features](#-core-features) • [Installation](#-installation--setup) • [CLI Guide](#-cli-reference) • [Configuration](#️-configuration) • [Contributing](#-contributing-to-nexus) • [Docs](#-documentation)
 
 </div>
 
