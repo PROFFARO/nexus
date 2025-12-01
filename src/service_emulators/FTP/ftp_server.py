@@ -1841,16 +1841,18 @@ async def start_server():
     """Start the FTP server"""
     server_instance = MyFTPServer()
 
+    host = config["ftp"].get("host", "0.0.0.0")
     port = config["ftp"].getint("port", 2121)
 
     server = await asyncio.start_server(
-        server_instance.handle_client, host="127.0.0.1", port=port, reuse_address=True
+        server_instance.handle_client, host=host, port=port, reuse_address=True
     )
 
     llm_provider = config["llm"].get("llm_provider", "openai")
     model_name = config["llm"].get("model_name", "gpt-4o-mini")
 
     print(f"\n[+] FTP Honeypot Starting...")
+    print(f"[*] Host: {host}")
     print(f"[*] Port: {port}")
     print(f"[*] LLM Provider: {llm_provider}")
     print(f"[*] Model: {model_name}")
@@ -1858,8 +1860,8 @@ async def start_server():
     print(f"[*] Log File: {config['honeypot'].get('log_file', 'ftp_log.log')}")
     print(f"[!] Press Ctrl+C to stop\n")
 
-    logger.info(f"FTP honeypot started on 127.0.0.1:{port}")
-    print(f"[+] FTP honeypot listening on 127.0.0.1:{port}")
+    logger.info(f"FTP honeypot started on {host}:{port}")
+    print(f"[+] FTP honeypot listening on {host}:{port}")
     print("[*] Ready for connections...")
 
     try:
@@ -2062,7 +2064,7 @@ try:
                 "log_file": default_log_file,
                 "sensor_name": socket.gethostname(),
             }
-            config["ftp"] = {"port": "2121"}
+            config["ftp"] = {"host": "0.0.0.0", "port": "2121"}
             config["llm"] = {
                 "llm_provider": "openai",
                 "model_name": "gpt-3.5-turbo",
@@ -2083,6 +2085,8 @@ try:
         config["llm"]["system_prompt"] = args.system_prompt
     if args.temperature is not None:
         config["llm"]["temperature"] = str(args.temperature)
+    if args.host:
+        config["ftp"]["host"] = args.host
     if args.port:
         config["ftp"]["port"] = str(args.port)
     if args.log_file:

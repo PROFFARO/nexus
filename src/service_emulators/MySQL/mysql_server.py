@@ -2466,7 +2466,7 @@ class MySQLHoneypotServer:
     def __init__(self, config: ConfigParser):
         self.config = config
         self.host = config["mysql"].get("host", "0.0.0.0")
-        self.port = config["mysql"].getint("port", 3306)
+        self.port = config["mysql"].getint("port", 3326)
         self.accounts = self._load_accounts()
         self.server_version = config["mysql"].get(
             "server_version", "8.0.32-0ubuntu0.20.04.2"
@@ -3125,6 +3125,8 @@ def _load_config(args) -> ConfigParser:
         config = _create_default_config()
 
     # Override with command line arguments
+    if args.host:
+        config["mysql"]["host"] = args.host
     if args.port:
         config["mysql"]["port"] = str(args.port)
     if args.log_file:
@@ -3270,6 +3272,7 @@ async def main():
     parser.add_argument(
         "-c", "--config", type=str, default="config.ini", help="Configuration file path"
     )
+    parser.add_argument("--host", type=str, help="Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)")
     parser.add_argument("--port", type=int, help="Port to listen on")
     parser.add_argument("--log-file", type=str, help="Log file path")
     parser.add_argument("--sensor-name", type=str, help="Sensor name for logging")

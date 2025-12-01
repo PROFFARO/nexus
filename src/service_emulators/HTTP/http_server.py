@@ -1277,6 +1277,7 @@ try:
     parser.add_argument('-t', '--trimmer-max-tokens', type=int, help='The maximum number of tokens to send to the LLM backend in a single request')
     parser.add_argument('-s', '--system-prompt', type=str, help='System prompt for the LLM')
     parser.add_argument('-r', '--temperature', type=float, help='Temperature parameter for controlling randomness in LLM responses (0.0-2.0)')
+    parser.add_argument('-H', '--host', type=str, help='The host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
     parser.add_argument('-P', '--port', type=int, help='The port the HTTP honeypot will listen on')
     parser.add_argument('-L', '--log-file', type=str, help='The name of the file you wish to write the honeypot log to')
     parser.add_argument('-S', '--sensor-name', type=str, help='The name of the sensor, used to identify this honeypot in the logs')
@@ -1310,6 +1311,7 @@ try:
                 'adaptive_responses': 'true'
             }
             config['http'] = {
+                'host': '0.0.0.0',
                 'port': '8080',
                 'server_name': 'Apache/2.4.41 (Ubuntu)',
                 'document_root': '/var/www/nexusgames',
@@ -1403,6 +1405,8 @@ try:
         config['llm']['system_prompt'] = args.system_prompt
     if args.temperature is not None:
         config['llm']['temperature'] = str(args.temperature)
+    if args.host:
+        config['http']['host'] = args.host
     if args.port:
         config['http']['port'] = str(args.port)
     if args.log_file:
@@ -1505,6 +1509,7 @@ try:
     thread_local = threading.local()
 
     # Start the server
+    host = config['http'].get('host', '0.0.0.0')
     port = config['http'].getint('port', 8080)
     llm_provider = config['llm'].get('llm_provider', 'openai')
     model_name = config['llm'].get('model_name', 'gpt-4o-mini')
@@ -1513,6 +1518,7 @@ try:
     honeypot_instance = HTTPHoneypot()
     
     print(f"\n[INFO] HTTP Honeypot Starting...")
+    print(f"[INFO] Host: {host}")
     print(f"[INFO] Port: {port}")
     print(f"[INFO] Server: {honeypot_instance.server_name}")
     print(f"[INFO] Document Root: {honeypot_instance.document_root}")
@@ -1529,13 +1535,13 @@ try:
     print(f"[INFO] Adaptive Responses: {'Enabled' if honeypot_instance.adaptive_responses else 'Disabled'}")
     print(f"[INFO] Press Ctrl+C to stop\n")
     
-    logger.info(f"HTTP honeypot started on 127.0.0.1:{port}")
-    print(f"[SUCCESS] HTTP honeypot listening on 127.0.0.1:{port}")
+    logger.info(f"HTTP honeypot started on {host}:{port}")
+    print(f"[SUCCESS] HTTP honeypot listening on {host}:{port}")
     print("[INFO] Ready for connections...")
     
     try:
         app = asyncio.run(create_app())
-        web.run_app(app, host='127.0.0.1', port=port)
+        web.run_app(app, host=host, port=port)
     except (KeyboardInterrupt, asyncio.CancelledError):
         print("\n[INFO] HTTP honeypot stopped by user")
         logger.info("HTTP honeypot stopped by user")

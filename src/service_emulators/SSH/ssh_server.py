@@ -1948,11 +1948,13 @@ def handle_file_creation(command: str, server: MySSHServer):
 async def start_server() -> None:
     server_instance = MySSHServer()
 
+    host = config["ssh"].get("host", "0.0.0.0")
     port = config["ssh"].getint("port", 8022)
     llm_provider = config["llm"].get("llm_provider", "openai")
     model_name = config["llm"].get("model_name", "gpt-4o-mini")
 
     print(f"\n[INFO] SSH Honeypot Starting...")
+    print(f"[INFO] Host: {host}")
     print(f"[INFO] Port: {port}")
     print(f"[INFO] LLM Provider: {llm_provider}")
     print(f"[INFO] Model: {model_name}")
@@ -1964,6 +1966,7 @@ async def start_server() -> None:
         await handle_client(process, server_instance)
 
     await asyncssh.listen(
+        host=host,
         port=port,
         reuse_address=True,
         server_factory=lambda: server_instance,
@@ -1977,7 +1980,7 @@ async def start_server() -> None:
         login_timeout=3600,
     )
 
-    print(f"[SUCCESS] SSH honeypot listening on 127.0.0.1:{port}")
+    print(f"[SUCCESS] SSH honeypot listening on {host}:{port}")
     print("[INFO] Ready for connections...")
 
 
@@ -2132,6 +2135,9 @@ try:
         help="Temperature parameter for controlling randomness in LLM responses (0.0-2.0)",
     )
     parser.add_argument(
+        "-H", "--host", type=str, help="The host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)"
+    )
+    parser.add_argument(
         "-P", "--port", type=int, help="The port the SSH honeypot will listen on"
     )
     parser.add_argument(
@@ -2188,6 +2194,7 @@ try:
                 "sensor_name": socket.gethostname(),
             }
             config["ssh"] = {
+                "host": "0.0.0.0",
                 "port": "8022",
                 "host_priv_key": "ssh_host_key",
                 "server_version_string": "SSH-2.0-OpenSSH_8.2p1 Ubuntu-4ubuntu0.3",
@@ -2212,6 +2219,8 @@ try:
         config["llm"]["system_prompt"] = args.system_prompt
     if args.temperature is not None:
         config["llm"]["temperature"] = str(args.temperature)
+    if args.host:
+        config["ssh"]["host"] = args.host
     if args.port:
         config["ssh"]["port"] = str(args.port)
     if args.host_priv_key:

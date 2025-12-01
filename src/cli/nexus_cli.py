@@ -165,6 +165,7 @@ class NexusCLI:
         """Add FTP-specific arguments"""
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-H', '--host', help='Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
         parser.add_argument('-P', '--port', type=int, help='FTP port (default: 2121)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
@@ -198,6 +199,7 @@ class NexusCLI:
         """Add HTTP-specific arguments"""
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-H', '--host', help='Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
         parser.add_argument('-P', '--port', type=int, help='HTTP port (default: 8080)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
@@ -236,6 +238,7 @@ class NexusCLI:
         """Add SSH-specific arguments"""
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-H', '--host', help='Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
         parser.add_argument('-P', '--port', type=int, help='SSH port (default: 8022)')
         parser.add_argument('-k', '--host-key', help='SSH host private key file')
         parser.add_argument('-v', '--server-version', help='SSH server version string')
@@ -271,6 +274,7 @@ class NexusCLI:
         """Add MySQL-specific arguments"""
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
+        parser.add_argument('-H', '--host', help='Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
         parser.add_argument('-P', '--port', type=int, help='MySQL port (default: 3306)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
@@ -306,6 +310,7 @@ class NexusCLI:
         
         arg_mappings = [
             (args.config, ['-c', args.config]),
+            (args.host, ['-H', args.host]),
             (args.port, ['-P', str(args.port)]),
             (args.host_key, ['-k', args.host_key]),
             (args.server_version, ['-v', args.server_version]),
@@ -368,162 +373,6 @@ class NexusCLI:
             print("\nSSH honeypot stopped")
         except Exception as e:
             print(f"Error running SSH honeypot: {e}")
-            return 1
-        
-        return 0
-
-    def _build_mysql_command(self, args, mysql_script):
-        """Build MySQL command arguments"""
-        cmd = [sys.executable, str(mysql_script)]
-        
-        arg_mappings = [
-            (args.config, ['-c', args.config]),
-            (args.port, ['--port', str(args.port)]),
-            (args.log_file, ['--log-file', args.log_file]),
-            (args.sensor_name, ['--sensor-name', args.sensor_name]),
-            (args.llm_provider, ['--llm-provider', args.llm_provider]),
-            (args.model_name, ['--model-name', args.model_name]),
-            (args.temperature is not None, ['--temperature', str(args.temperature)]),
-            (args.max_tokens, ['--max-tokens', str(args.max_tokens)]),
-            (args.prompt, ['--prompt', args.prompt]),
-            (args.prompt_file, ['--prompt-file', args.prompt_file])
-        ]
-        
-        for condition, extension in arg_mappings:
-            if condition:
-                cmd.extend(extension)
-        
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['--user-account', account])
-        
-        return cmd
-
-    def run_mysql_service(self, args):
-        """Run MySQL honeypot with provided arguments"""
-        if not self.services['mysql']['implemented']:
-            print("Error: MySQL service not implemented")
-            return 1
-            
-        mysql_script = self.services['mysql']['path']
-        if not mysql_script.exists():
-            print(f"Error: MySQL script not found at {mysql_script}")
-            return 1
-        
-        cmd = self._build_mysql_command(args, mysql_script)
-        env = self._setup_environment(args)
-        mysql_dir = self.services['mysql']['path'].parent
-        
-        try:
-            subprocess.run(cmd, cwd=mysql_dir, env=env)
-        except KeyboardInterrupt:
-            print("\nMySQL honeypot stopped")
-        except Exception as e:
-            print(f"Error running MySQL honeypot: {e}")
-            return 1
-        
-        return 0
-
-    def _build_ftp_command(self, args, ftp_script):
-        """Build FTP command arguments"""
-        cmd = [sys.executable, str(ftp_script)]
-        
-        arg_mappings = [
-            (args.config, ['-c', args.config]),
-            (args.port, ['-P', str(args.port)]),
-            (args.log_file, ['-L', args.log_file]),
-            (args.sensor_name, ['-S', args.sensor_name]),
-            (args.llm_provider, ['-l', args.llm_provider]),
-            (args.model_name, ['-m', args.model_name]),
-            (args.temperature is not None, ['-r', str(args.temperature)]),
-            (args.max_tokens, ['-t', str(args.max_tokens)]),
-            (args.prompt, ['-p', args.prompt]),
-            (args.prompt_file, ['-f', args.prompt_file])
-        ]
-        
-        for condition, extension in arg_mappings:
-            if condition:
-                cmd.extend(extension)
-        
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        return cmd
-
-    def run_ftp_service(self, args):
-        """Run FTP honeypot with provided arguments"""
-        if not self.services['ftp']['implemented']:
-            print("Error: FTP service not implemented")
-            return 1
-            
-        ftp_script = self.services['ftp']['path']
-        if not ftp_script.exists():
-            print(f"Error: FTP script not found at {ftp_script}")
-            return 1
-        
-        cmd = self._build_ftp_command(args, ftp_script)
-        env = self._setup_environment(args)
-        ftp_dir = self.services['ftp']['path'].parent
-        
-        try:
-            subprocess.run(cmd, cwd=ftp_dir, env=env)
-        except KeyboardInterrupt:
-            print("\nFTP honeypot stopped")
-        except Exception as e:
-            print(f"Error running FTP honeypot: {e}")
-            return 1
-        
-        return 0
-
-    def _build_http_command(self, args, http_script):
-        """Build HTTP command arguments"""
-        cmd = [sys.executable, str(http_script)]
-        
-        arg_mappings = [
-            (args.config, ['-c', args.config]),
-            (args.port, ['-P', str(args.port)]),
-            (args.log_file, ['-L', args.log_file]),
-            (args.sensor_name, ['-S', args.sensor_name]),
-            (args.llm_provider, ['-l', args.llm_provider]),
-            (args.model_name, ['-m', args.model_name]),
-            (args.temperature is not None, ['-r', str(args.temperature)]),
-            (args.max_tokens, ['-t', str(args.max_tokens)]),
-            (args.prompt, ['-p', args.prompt]),
-            (args.prompt_file, ['-f', args.prompt_file])
-        ]
-        
-        for condition, extension in arg_mappings:
-            if condition:
-                cmd.extend(extension)
-        
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        return cmd
-
-    def run_http_service(self, args):
-        """Run HTTP honeypot with provided arguments"""
-        if not self.services['http']['implemented']:
-            print("Error: HTTP service not implemented")
-            return 1
-            
-        http_script = self.services['http']['path']
-        if not http_script.exists():
-            print(f"Error: HTTP script not found at {http_script}")
-            return 1
-        
-        cmd = self._build_http_command(args, http_script)
-        env = self._setup_environment(args)
-        http_dir = self.services['http']['path'].parent
-        
-        try:
-            subprocess.run(cmd, cwd=http_dir, env=env)
-        except KeyboardInterrupt:
-            print("\nHTTP honeypot stopped")
-        except Exception as e:
-            print(f"Error running HTTP honeypot: {e}")
             return 1
         
         return 0
