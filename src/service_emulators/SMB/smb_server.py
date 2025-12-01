@@ -665,11 +665,21 @@ class SMBHoneypot:
     def __init__(self):
         self.sessions = {}
         self.active_sessions = {}
+        
+        # Initialize sessions directory first
+        sessions_dir = Path(config['honeypot'].get('sessions_dir', 'sessions'))
+        sessions_dir.mkdir(parents=True, exist_ok=True)
 
         try:
             # 1. Rich Logger
             if NEW_COMPONENTS_AVAILABLE:
                 self.rich_logger = SMBRichLogger(config)
+                # Store references to specialized loggers
+                self.connection_logger = self.rich_logger.connection_logger
+                self.auth_logger = self.rich_logger.auth_logger
+                self.file_ops_logger = self.rich_logger.file_ops_logger
+                self.attack_logger = self.rich_logger.attack_logger
+                self.llm_logger = self.rich_logger.llm_logger
                 logging.info("Initialized SMB Rich Logger")
                 
                 # 2. Session Manager
@@ -766,7 +776,6 @@ class SMBHoneypot:
         
         # Create session directory
         session_id = f"smb_session_{datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}"
-        sessions_dir = Path(config['honeypot'].get('sessions_dir', 'sessions'))
         self.session_dir = sessions_dir / session_id
         self.session_dir.mkdir(parents=True, exist_ok=True)
         
@@ -908,6 +917,10 @@ class SMBHoneypot:
         
         logger.info("SMB connection received", extra=connection_info)
         
+        # Log to connection logger if available
+        if hasattr(self, 'connection_logger'):
+            self.connection_logger.info(f"SMB connection received from {src_ip}:{src_port}", extra=connection_info)
+        
         # Create SMB session
         smb_session = SMBSession()
         
@@ -976,6 +989,18 @@ class SMBHoneypot:
                     'file_transfers': len(session_data['files_transferred'])
                 }
             
+            # Add ML analysis to session
+            self._add_ml_analysis_to_session(session_data)
+            
+            # Generate AI summary if enabled
+            if self.ai_attack_summaries and session_data.get('attack_analysis'):
+                try:
+                    summary = await self._generate_session_summary(session_data, session_key)
+                    session_data['ai_summary'] = summary
+                except Exception as e:
+                    logger.debug(f"Failed to generate AI summary: {e}")
+                    session_data['ai_summary'] = self._generate_fallback_summary(session_data)
+            
             session_file = self.session_dir / f"session_{uuid.uuid4().hex[:8]}.json"
             with open(session_file, 'w') as f:
                 json.dump(session_data, f, indent=2)
@@ -996,12 +1021,24 @@ class SMBHoneypot:
                         f.write("\n")
                 
             logger.info("SMB connection closed", extra={"session_key": session_key, "active_connections": self.connection_count})
+            
+            # Log to connection logger if available
+            if hasattr(self, 'connection_logger'):
+                self.connection_logger.info(f"SMB connection closed from {src_ip}:{src_port}", extra={"session_key": session_key, "active_connections": self.connection_count})
 
     async def _process_smb_packet(self, data: bytes, smb_session: SMBSession, session_data: Dict) -> Optional[bytes]:
         """Process SMB packet and generate response"""
         try:
             if len(data) < 4:
                 return None
+            
+            # Detect attacks in packet
+            attack_analysis = self._detect_attacks(data, session_data)
+            if attack_analysis:
+                session_data['attack_analysis'].append(attack_analysis)
+                # Log to attack logger if available
+                if hasattr(self, 'attack_logger'):
+                    self.attack_logger.warning(f"Attack detected: {attack_analysis.get('attack_types', [])}", extra=attack_analysis)
             
             # Check for NetBIOS session request first
             if data[0] == 0x81:  # NetBIOS session request
@@ -1109,11 +1146,17 @@ class SMBHoneypot:
                 smb_session.username = username
                 auth_info['success'] = True
                 logger.info(f"SMB1 authentication successful for user: {username}")
-                return self._create_smb1_session_setup_response(True)
+                # Log to auth logger if available
+                if hasattr(self, 'auth_logger'):
+                    self.auth_logger.info(f"SMB1 AUTH SUCCESS: {username}", extra=auth_info)
+                return self._create_smb1_session_setup_response(True, smb_session.session_id)
             else:
                 logger.warning(f"SMB1 authentication failed for user: {username}")
                 session_data['auth_attempts'] = session_data.get('auth_attempts', []) + [auth_info]
-                return self._create_smb1_session_setup_response(False)
+                # Log to auth logger if available
+                if hasattr(self, 'auth_logger'):
+                    self.auth_logger.warning(f"SMB1 AUTH FAILED: {username}", extra=auth_info)
+                return self._create_smb1_session_setup_response(False, 0)
                 
         except Exception as e:
             logger.error(f"Error in SMB1 session setup: {e}")
@@ -1138,10 +1181,16 @@ class SMBHoneypot:
                 smb_session.username = username
                 auth_info['success'] = True
                 logger.info(f"SMB2 authentication successful for user: {username}")
+                # Log to auth logger if available
+                if hasattr(self, 'auth_logger'):
+                    self.auth_logger.info(f"SMB2 AUTH SUCCESS: {username}", extra=auth_info)
                 return self._create_smb2_session_setup_response(True, smb_session.session_id)
             else:
                 logger.warning(f"SMB2 authentication failed for user: {username}")
                 session_data['auth_attempts'] = session_data.get('auth_attempts', []) + [auth_info]
+                # Log to auth logger if available
+                if hasattr(self, 'auth_logger'):
+                    self.auth_logger.warning(f"SMB2 AUTH FAILED: {username}", extra=auth_info)
                 return self._create_smb2_session_setup_response(False, 0)
                 
         except Exception as e:
@@ -1475,6 +1524,135 @@ Generate realistic SMB server response for NexusGames Studio file server."""
             'category': 'unknown' if reputation_score == 50 else 'trusted' if reputation_score > 70 else 'suspicious',
             'last_updated': datetime.datetime.now(datetime.timezone.utc).isoformat()
         }
+
+    def _detect_attacks(self, data: bytes, session_data: Dict) -> Optional[Dict[str, Any]]:
+        """Detect attacks in SMB packets"""
+        try:
+            text_data = data.decode('utf-8', errors='ignore').lower()
+            attack_types = []
+            severity = 'low'
+            threat_score = 0
+            
+            # CVE-2017-0144 (EternalBlue)
+            if 'eternalblue' in text_data or 'ms17-010' in text_data:
+                attack_types.append('CVE-2017-0144_EternalBlue')
+                severity = 'critical'
+                threat_score = 95
+            
+            # SMB Relay
+            if 'ntlmrelayx' in text_data or 'smbrelay' in text_data:
+                attack_types.append('SMB_Relay')
+                severity = 'high'
+                threat_score = max(threat_score, 85)
+            
+            # Directory Traversal
+            if '..' in text_data and ('\\' in text_data or '/' in text_data):
+                attack_types.append('Directory_Traversal')
+                severity = 'high' if severity == 'low' else severity
+                threat_score = max(threat_score, 75)
+            
+            # LLM Injection
+            if any(inj in text_data for inj in ['drop table', 'delete from', 'union select', 'exec(', 'eval(']):
+                attack_types.append('LLM_Injection')
+                severity = 'high' if severity == 'low' else severity
+                threat_score = max(threat_score, 80)
+            
+            # Privilege Escalation attempts
+            if any(priv in text_data for priv in ['system', 'admin', 'root', 'privilege']):
+                attack_types.append('Privilege_Escalation_Attempt')
+                severity = 'medium' if severity == 'low' else severity
+                threat_score = max(threat_score, 60)
+            
+            if attack_types:
+                return {
+                    'timestamp': datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                    'attack_types': attack_types,
+                    'severity': severity,
+                    'threat_score': threat_score,
+                    'payload_sample': text_data[:100]
+                }
+        except Exception as e:
+            logger.debug(f"Attack detection error: {e}")
+        
+        return None
+    
+    async def _generate_session_summary(self, session_data: Dict, session_key: str) -> str:
+        """Generate AI-powered session summary"""
+        try:
+            if not self.llm:
+                return self._generate_fallback_summary(session_data)
+            
+            # Prepare summary context
+            summary_context = f"""
+Session Summary for SMB Honeypot:
+- Client: {session_data.get('client_info', {}).get('ip', 'Unknown')}
+- Duration: {session_data.get('end_time', 'N/A')}
+- Commands: {len(session_data.get('commands', []))}
+- Attacks Detected: {len(session_data.get('attack_analysis', []))}
+- Attack Types: {', '.join(set(att.get('attack_type', 'Unknown') for att in session_data.get('attack_analysis', [])))}
+- Vulnerabilities: {len(session_data.get('vulnerabilities', []))}
+
+Provide a brief security analysis of this session.
+"""
+            
+            # Generate summary via LLM
+            try:
+                response = self.llm.invoke([
+                    SystemMessage(content="You are a security analyst. Provide brief threat assessments."),
+                    HumanMessage(content=summary_context)
+                ])
+                summary = response.content
+                
+                # Log to LLM logger
+                if hasattr(self, 'llm_logger'):
+                    self.llm_logger.info(f"Session summary generated for {session_key}", extra={
+                        'session_key': session_key,
+                        'summary_length': len(summary)
+                    })
+                
+                return summary
+            except Exception as e:
+                logger.debug(f"LLM summary generation failed: {e}")
+                return self._generate_fallback_summary(session_data)
+        except Exception as e:
+            logger.error(f"Error generating session summary: {e}")
+            return self._generate_fallback_summary(session_data)
+    
+    def _generate_fallback_summary(self, session_data: Dict) -> str:
+        """Generate fallback summary without LLM"""
+        attacks = session_data.get('attack_analysis', [])
+        vulns = session_data.get('vulnerabilities', [])
+        
+        summary = f"""
+SESSION SECURITY SUMMARY
+=======================
+Total Attacks Detected: {len(attacks)}
+Total Vulnerabilities: {len(vulns)}
+Commands Executed: {len(session_data.get('commands', []))}
+Files Transferred: {len(session_data.get('files_transferred', []))}
+
+Risk Assessment: {'CRITICAL' if len(attacks) > 5 else 'HIGH' if len(attacks) > 2 else 'MEDIUM' if len(attacks) > 0 else 'LOW'}
+"""
+        return summary
+    
+    def _add_ml_analysis_to_session(self, session_data: Dict) -> None:
+        """Add ML-based analysis to session data"""
+        try:
+            if not hasattr(self, 'attack_analyzer') or not self.attack_analyzer:
+                return
+            
+            # Add ML threat scoring
+            attacks = session_data.get('attack_analysis', [])
+            if attacks:
+                avg_threat_score = sum(a.get('threat_score', 0) for a in attacks) / len(attacks)
+                session_data['ml_analysis'] = {
+                    'threat_score': avg_threat_score,
+                    'anomaly_detected': avg_threat_score > 50,
+                    'attack_confidence': min(100, avg_threat_score + 20),
+                    'risk_level': 'CRITICAL' if avg_threat_score > 80 else 'HIGH' if avg_threat_score > 60 else 'MEDIUM' if avg_threat_score > 40 else 'LOW'
+                }
+        except Exception as e:
+            logger.debug(f"ML analysis error: {e}")
 
 async def start_server():
     """Start the SMB honeypot server"""
