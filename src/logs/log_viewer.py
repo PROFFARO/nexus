@@ -3,7 +3,7 @@
 NEXUS Honeypot Log Viewer - Comprehensive protocol analysis with command timelines,
 session summaries, attack detection, ML anomaly detection, and detailed protocol specifics
 
-Supports: SSH, FTP, HTTP, MySQL, SMB
+Supports: SSH, FTP, HTTP, MySQL
 Features: Command/request timelines, session summaries, protocol details, attack analysis,
 ML-based anomaly detection, text and JSON output formats
 """
@@ -182,34 +182,6 @@ class MySQLAnalyzer(ProtocolAnalyzer):
         return f"  {query_short}"
 
 
-class SMBAnalyzer(ProtocolAnalyzer):
-    """SMB Protocol specific analyzer"""
-    
-    def extract_protocol_details(self, log_entry: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract SMB-specific details"""
-        details = {
-            'username': log_entry.get('username', 'unknown'),
-            'operation': log_entry.get('operation', ''),
-            'path': log_entry.get('path', ''),
-            'share': log_entry.get('share', ''),
-            'src_port': log_entry.get('src_port'),
-            'dst_port': log_entry.get('dst_port'),
-        }
-        
-        if 'attack_types' in log_entry:
-            details['attack_types'] = log_entry['attack_types']
-            details['severity'] = log_entry.get('severity', 'unknown')
-        
-        return details
-    
-    def format_command_details(self, entry: Dict[str, Any]) -> str:
-        """Format SMB operation details"""
-        pd = entry.get('protocol_details', {})
-        op = pd.get('operation', 'N/A')
-        path = pd.get('path', '')
-        return f"  {op} {path}"
-
-
 class SessionReader:
     """Helper class to read session data from session directories"""
     
@@ -256,7 +228,6 @@ class LogViewer:
         'ftp': FTPAnalyzer,
         'http': HTTPAnalyzer,
         'mysql': MySQLAnalyzer,
-        'smb': SMBAnalyzer,
     }
     
     def __init__(self, service: str):
@@ -382,11 +353,6 @@ class LogViewer:
         """Parse MySQL logs (backward compatibility)"""
         return self.parse_logs(log_file, session_id, decode, filter_type)
     
-    def parse_smb_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
-                      filter_type: str = 'all') -> Dict[str, Any]:
-        """Parse SMB logs (backward compatibility)"""
-        return self.parse_logs(log_file, session_id, decode, filter_type)
-    
     def get_ml_insights(self, conversations: Dict[str, Any]) -> Dict[str, Any]:
         """Generate ML insights from conversations"""
         if not self.ml_detector:
@@ -447,9 +413,6 @@ class LogViewer:
         elif self.service == 'ftp':
             cmd = pd.get('command', '')
             return {'command': cmd, 'path': pd.get('path', '')} if cmd else None
-        elif self.service == 'smb':
-            op = pd.get('operation', '')
-            return {'operation': op, 'path': pd.get('path', '')} if op else None
         
         return None
     
@@ -638,7 +601,7 @@ class LogViewer:
 
 def main():
     parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer with ML Analysis')
-    parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql', 'smb'],
+    parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'],
                        help='Service to view logs for')
     parser.add_argument('--log-file', '-f', help='Log file path')
     parser.add_argument('--session-id', '-i', help='Specific session ID')
@@ -661,7 +624,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.service not in ['ssh', 'ftp', 'http', 'mysql', 'smb']:
+    if args.service not in ['ssh', 'ftp', 'http', 'mysql']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
@@ -682,9 +645,6 @@ def main():
         elif args.service == 'mysql':
             new_log_path = base_dir / 'logs' / 'mysql_log.log'
             old_log_path = base_dir / 'service_emulators' / 'MySQL' / 'mysql_log.log'
-        elif args.service == 'smb':
-            new_log_path = base_dir / 'logs' / 'smb_log.log'
-            old_log_path = base_dir / 'service_emulators' / 'SMB' / 'smb_log.log'
         
         if new_log_path and new_log_path.exists():
             args.log_file = str(new_log_path)
@@ -710,10 +670,6 @@ def main():
             )
         elif args.service == 'mysql':
             conversations = viewer.parse_mysql_logs(
-                args.log_file, args.session_id, args.decode, args.filter
-            )
-        elif args.service == 'smb':
-            conversations = viewer.parse_smb_logs(
                 args.log_file, args.session_id, args.decode, args.filter
             )
         if not conversations:

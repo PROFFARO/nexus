@@ -31,11 +31,6 @@ class NexusCLI:
                 'path': self.base_dir / 'service_emulators' / 'MySQL' / 'mysql_server.py',
                 'implemented': True,
                 'description': 'MySQL database honeypot with AI-powered responses'
-            },
-            'smb': {
-                'path': self.base_dir / 'service_emulators' / 'SMB' / 'smb_server.py',
-                'implemented': True,
-                'description': 'SMB file share honeypot with AI-powered responses'
             }
         }
 
@@ -53,7 +48,7 @@ class NexusCLI:
         
         # Report generation command
         report_parser = subparsers.add_parser('report', help='Generate security reports')
-        report_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql', 'smb'], 
+        report_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'], 
                                  help='Service to generate report for')
         report_parser.add_argument('--output', '-o', default='reports', help='Output directory')
         report_parser.add_argument('--sessions-dir', '-s', help='Sessions directory (default: service-specific)')
@@ -73,7 +68,7 @@ class NexusCLI:
         
         # Logs command for viewing session conversations
         logs_parser = subparsers.add_parser('logs', help='View and analyze session logs')
-        logs_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql', 'smb'],
+        logs_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'],
                                help='Service to view logs for')
         logs_parser.add_argument('--session-id', '-i', help='Specific session ID to view')
         logs_parser.add_argument('--log-file', '-f', help='Log file path (default: service-specific)')
@@ -110,24 +105,20 @@ class NexusCLI:
         mysql_parser = subparsers.add_parser('mysql', help='Start MySQL honeypot')
         self._add_mysql_arguments(mysql_parser)
         
-        # SMB service parser
-        smb_parser = subparsers.add_parser('smb', help='Start SMB honeypot')
-        self._add_smb_arguments(smb_parser)
-        
         # ML commands
         ml_parser = subparsers.add_parser('ml', help='Machine Learning operations')
         ml_subparsers = ml_parser.add_subparsers(dest='ml_command', help='ML commands')
         
         # ML extract command
         extract_parser = ml_subparsers.add_parser('extract', help='Extract features from datasets')
-        extract_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+        extract_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
                                   help='Service to extract features for')
         extract_parser.add_argument('--datasets-dir', default='datasets', help='Datasets directory')
         extract_parser.add_argument('--output', '-o', help='Output file path')
         
         # ML train command
         train_parser = ml_subparsers.add_parser('train', help='Train ML models')
-        train_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+        train_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
                                 help='Service to train models for')
         train_parser.add_argument('--algorithm', choices=['isolation_forest', 'one_class_svm', 'lof', 'hdbscan', 'kmeans', 'xgboost', 'all'],
                                 default='all', help='ML algorithm to train')
@@ -136,21 +127,21 @@ class NexusCLI:
         
         # ML evaluate command
         eval_parser = ml_subparsers.add_parser('eval', help='Evaluate trained models')
-        eval_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb'],
+        eval_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql'],
                                help='Service to evaluate models for')
         eval_parser.add_argument('--test-data', help='Test data file path')
         eval_parser.add_argument('--model', help='Specific model to evaluate')
         
         # ML predict command
         predict_parser = ml_subparsers.add_parser('predict', help='Make predictions with trained models')
-        predict_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb'],
+        predict_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql'],
                                   help='Service to make predictions for')
         predict_parser.add_argument('--input', required=True, help='Input data file or single command/query')
         predict_parser.add_argument('--output', help='Output file for predictions')
         
         # ML update-models command
         update_parser = ml_subparsers.add_parser('update-models', help='Update/retrain models')
-        update_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'],
+        update_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
                                  help='Service to update models for')
         update_parser.add_argument('--model-path', help='Path to new model files')
         update_parser.add_argument('--force', action='store_true', help='Force model update')
@@ -281,39 +272,6 @@ class NexusCLI:
         # Configuration
         parser.add_argument('-c', '--config', help='Configuration file path')
         parser.add_argument('-P', '--port', type=int, help='MySQL port (default: 3306)')
-        parser.add_argument('-L', '--log-file', help='Log file path')
-        parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
-        
-        # LLM Configuration
-        parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
-                          help='LLM provider')
-        parser.add_argument('--model-name', help='LLM model name')
-        parser.add_argument('--temperature', type=float, help='LLM temperature (0.0-2.0)')
-        parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
-        parser.add_argument('--base-url', help='Base URL for Ollama/custom providers')
-        
-        # Azure OpenAI specific
-        parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
-        parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint')
-        parser.add_argument('--azure-api-version', help='Azure OpenAI API version')
-        
-        # AWS specific
-        parser.add_argument('--aws-region', help='AWS region')
-        parser.add_argument('--aws-profile', help='AWS credentials profile')
-        
-        # User accounts
-        parser.add_argument('-u', '--user-account', action='append',
-                          help='User account (username=password). Can be repeated')
-        
-        # Prompts
-        parser.add_argument('-p', '--prompt', help='System prompt text')
-        parser.add_argument('-f', '--prompt-file', help='System prompt file')
-
-    def _add_smb_arguments(self, parser):
-        """Add SMB-specific arguments"""
-        # Configuration
-        parser.add_argument('-c', '--config', help='Configuration file path')
-        parser.add_argument('-P', '--port', type=int, help='SMB port (default: 445)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
         
@@ -591,8 +549,6 @@ class NexusCLI:
             return self._generate_http_report(args)
         elif args.service == 'mysql':
             return self._generate_mysql_report(args)
-        elif args.service == 'smb':
-            return self._generate_smb_report(args)
         else:
             print(f"Error: Report generation not implemented for {args.service}")
             return 1

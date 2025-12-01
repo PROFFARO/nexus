@@ -32,7 +32,7 @@
 | **📊 ML-Enhanced Reporting** | Interactive dashboards with ML insights, anomaly scores, and threat intelligence | ✅ Production |
 | **🎯 Anomaly Scoring** | Configurable ML-based anomaly detection with real-time threat scoring (0.0-1.0) | ✅ Production |
 | **🔐 Forensic Chain** | Complete evidence tracking with integrity verification and ML analysis | ✅ Production |
-| **🌐 Multi-Protocol Support** | SSH, FTP, HTTP/HTTPS, MySQL, SMB (5/5 Services) with ML integration | ✅ Production |
+| **🌐 Multi-Protocol Support** | SSH, FTP, HTTP/HTTPS, MySQL (4/4 Services) with ML integration | ✅ Production |
 | **⚡ Enterprise Deployment** | CLI interface with ML commands, Docker support, multi-service orchestration | ✅ Production |
 | **📈 Scalability** | Horizontal scaling, load balancing, distributed deployment with ML models | ✅ Production |
 | **🎛️ ML Operations** | Complete MLOps pipeline: train, evaluate, predict, update models | ✅ Production |
@@ -45,7 +45,7 @@
 - **🤖 Multi-LLM Architecture**: Vendor-agnostic AI with full support for multiple parameter tweaking
 - **🏢 Corporate Environment Simulation**: Realistic NexusGames Studio environment with authentic data
 - **⚡ Real-time Threat Intelligence**: Live attack pattern updates and comprehensive log generation
-- **🎯 Production-Ready ML**: Complete MLOps pipeline with trained models for all 5 services
+- **🎯 Production-Ready ML**: Complete MLOps pipeline with trained models for all 4 services
 
 ---
 
@@ -105,20 +105,19 @@ nexus_cli.py ml update-models all --force
 
 ### 🔧 **Trained Models**
 
-Pre-trained models are included for all 5 services:
+Pre-trained models are included for all 4 services:
 
 ```
 models/
-├── ssh/                    # SSH-specific ML models
-│   ├── anomaly_detectors/  # Isolation Forest, One-Class SVM, LOF
-│   ├── clustering/         # HDBSCAN, K-Means
-│   ├── supervised/         # XGBoost classifier
-│   ├── embeddings/         # Command embeddings
-│   └── scalers/           # Feature scalers
+├── ssh/                   # SSH-specific ML models
+│   ├── anomaly_detectors/ # Isolation Forest, One-Class SVM, LOF
+│   ├── clustering/        # HDBSCAN, K-Means
+│   ├── supervised/        # XGBoost classifier
+│   ├── embeddings/        # Command embeddings
+│   └── scalers/          # Feature scalers
 ├── ftp/                   # FTP-specific ML models
 ├── http/                  # HTTP-specific ML models
-├── mysql/                 # MySQL-specific ML models
-└── smb/                   # SMB-specific ML models
+└── mysql/                 # MySQL-specific ML models
 ```
 
 ---
@@ -242,35 +241,6 @@ models/
 
 </details>
 
-### ✅ SMB File Share Honeypot - **FULLY OPERATIONAL WITH ML**
-<details>
-<summary><strong>🔍 Click to expand SMB details</strong></summary>
-
-**Status**: Production-ready with full AI + ML integration and SMB protocol implementation
-
-**Features**:
-- 🤖 AI-powered adaptive SMB responses using multiple LLM providers
-- 🧠 **ML-powered real-time SMB attack detection** and classification
-- 🎯 **Dynamic threat scoring** for file operations and SMB commands
-- 🔍 Real-time SMB attack pattern recognition and vulnerability detection
-- 🛡️ Advanced file share exploitation detection and logging
-- 📊 **ML-enhanced file access analysis** with behavioral profiling
-- 📝 Forensic chain of custody logging with complete session recording
-- 📊 SMB protocol compliance with proper authentication mechanisms
-- 💻 Support for standard SMB clients (Windows Explorer, smbclient)
-- 🗂️ Dynamic file share simulation based on attack context
-- 🔐 Multi-user authentication with configurable accounts
-- 📈 Comprehensive file access analysis and threat scoring
-- 🎭 Corporate file share environment simulation (NexusGames Studio)
-- 📈 **ML insights for SMB attack patterns** and recommendations
-
-**Location**: `src/service_emulators/SMB/`  
-**Default Port**: 445 (configurable)  
-**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost  
-**Client Support**: Windows Explorer, smbclient, Linux CIFS, macOS SMB
-
-</details>
 
 ---
 
@@ -323,7 +293,6 @@ cp src/service_emulators/SSH/.env.example src/service_emulators/SSH/.env
 cp src/service_emulators/FTP/.env.example src/service_emulators/FTP/.env
 cp src/service_emulators/HTTP/.env.example src/service_emulators/HTTP/.env
 cp src/service_emulators/MySQL/.env.example src/service_emulators/MySQL/.env
-cp src/service_emulators/SMB/.env.example src/service_emulators/SMB/.env
 
 # Edit .env files with your API keys
 # Example for OpenAI:
@@ -370,7 +339,6 @@ python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai
 python src/cli/nexus_cli.py ftp --port 2121 --llm-provider gemini
 python src/cli/nexus_cli.py http --port 8080 --llm-provider ollama
 python src/cli/nexus_cli.py mysql --port 3306 --llm-provider openai
-python src/cli/nexus_cli.py smb --port 445 --llm-provider azure
 
 # 🧠 ML-Enhanced Log Analysis
 python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
@@ -412,7 +380,6 @@ python src/cli/nexus_cli.py <command> [options]
 | `ftp` | Start FTP honeypot | `nexus_cli.py ftp --port 2121` |
 | `http` | Start HTTP honeypot | `nexus_cli.py http --port 8080` |
 | `mysql` | Start MySQL honeypot | `nexus_cli.py mysql --port 3306` |
-| `smb` | Start SMB honeypot | `nexus_cli.py smb --port 445` |
 | `report` | Generate security reports | `nexus_cli.py report ssh --output reports/` |
 | `logs` | View session logs | `nexus_cli.py logs ssh --conversation` |
 | `ml` | ML operations (train/predict/eval) | `nexus_cli.py ml train ssh --algorithm all` |
@@ -565,23 +532,6 @@ python src/cli/nexus_cli.py mysql [OPTIONS]
 | `--max-tokens` | int | Maximum tokens | `--max-tokens 2500` |
 | `--user-account` | str | User account | `--user-account root=* --user-account admin=admin` |
 
-#### SMB Honeypot Flags
-
-```bash
-python src/cli/nexus_cli.py smb [OPTIONS]
-```
-
-| Flag | Short | Type | Description | Example |
-|------|-------|------|-------------|---------|
-| `--config` | `-c` | str | Configuration file path | `-c custom.ini` |
-| `--port` | `-P` | int | SMB port (default: 445) | `-P 446` |
-| `--log-file` | `-L` | str | Log file path | `-L smb.log` |
-| `--sensor-name` | `-S` | str | Sensor name | `-S "SMB-Sensor-01"` |
-| `--llm-provider` | `-l` | str | LLM provider | `-l azure` |
-| `--model-name` | `-m` | str | LLM model name | `-m gpt-4o` |
-| `--temperature` | `-r` | float | LLM temperature | `-r 0.3` |
-| `--max-tokens` | `-t` | int | Maximum tokens | `-t 2000` |
-| `--user-account` | `-u` | str | User account | `-u guest=guest` |
 
 ### 📊 Report Generation
 
@@ -652,7 +602,6 @@ python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
 python src/cli/nexus_cli.py report http --output reports/ --format json
 python src/cli/nexus_cli.py report mysql --output reports/ --format both
-python src/cli/nexus_cli.py report smb --output reports/ --format both
 
 # Advanced filtering
 python src/cli/nexus_cli.py report ssh --severity critical --period 7d
@@ -667,7 +616,6 @@ python src/cli/nexus_cli.py logs ssh --conversation --decode
 python src/cli/nexus_cli.py logs ftp --conversation --save ftp_session.txt
 python src/cli/nexus_cli.py logs http --filter attacks --format json
 python src/cli/nexus_cli.py logs mysql --conversation --save mysql_session.txt
-python src/cli/nexus_cli.py logs smb --conversation --decode
 
 # Advanced filtering
 python src/cli/nexus_cli.py logs ssh --filter attacks --severity critical
@@ -804,7 +752,7 @@ aws_credentials_profile = default
 
 **Usage:**
 ```bash
-python src/cli/nexus_cli.py smb --llm-provider aws --model-name anthropic.claude-3-5-sonnet-20240620-v1:0 \
+python src/cli/nexus_cli.py mysql --llm-provider aws --model-name anthropic.claude-3-5-sonnet-20240620-v1:0 \
   --aws-region us-east-1
 ```
 
@@ -818,7 +766,6 @@ Each service has detailed configuration options in their respective `config.ini`
 - **FTP**: `src/service_emulators/FTP/config.ini`
 - **HTTP**: `src/service_emulators/HTTP/config.ini`
 - **MySQL**: `src/service_emulators/MySQL/config.ini`
-- **SMB**: `src/service_emulators/SMB/config.ini`
 
 ### 🎭 Custom User Accounts
 
@@ -834,8 +781,6 @@ python src/cli/nexus_cli.py ftp -u webmaster=nexus2024 -u developer=devpass
 # MySQL with database accounts
 python src/cli/nexus_cli.py mysql -u root=* -u admin=admin -u developer=dev123
 
-# SMB with file share accounts
-python src/cli/nexus_cli.py smb -u administrator=admin -u guest=guest
 ```
 
 ---
@@ -871,7 +816,6 @@ python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
 python src/cli/nexus_cli.py report http --output reports/ --format json
 python src/cli/nexus_cli.py report mysql --output reports/ --format both
-python src/cli/nexus_cli.py report smb --output reports/ --format both
 
 # Advanced filtering
 python src/cli/nexus_cli.py report ssh --severity critical --period 7d
@@ -911,7 +855,6 @@ python src/cli/nexus_cli.py ssh --llm-provider openai --model-name gpt-4o
 python src/cli/nexus_cli.py ftp --llm-provider gemini --model-name gemini-2.0-flash-exp
 python src/cli/nexus_cli.py http --llm-provider ollama --model-name llama3.2
 python src/cli/nexus_cli.py mysql --llm-provider azure --model-name gpt-4o
-python src/cli/nexus_cli.py smb --llm-provider aws --model-name anthropic.claude-3-5-sonnet-20240620-v1:0
 ```
 
 ### 🏢 Enterprise Deployment
@@ -926,7 +869,7 @@ python src/cli/nexus_cli.py start-all --config-dir configs/ --llm-provider opena
 python src/cli/nexus_cli.py status
 
 # Generate comprehensive reports
-for service in ssh ftp http mysql smb; do
+for service in ssh ftp http mysql; do
   python src/cli/nexus_cli.py report $service --output reports/ --format both
 done
 ```
@@ -980,7 +923,6 @@ nexus-development/
 │       ├── FTP/               # FTP honeypot with ML integration
 │       ├── HTTP/              # HTTP/Web honeypot with ML integration
 │       ├── MySQL/             # MySQL honeypot with ML integration
-│       └── SMB/               # SMB honeypot with ML integration
 ├── models/                    # 🎯 Pre-trained ML Models
 │   ├── ssh/                   # SSH-specific ML models
 │   │   ├── anomaly_detectors/ # Isolation Forest, One-Class SVM, LOF
@@ -991,8 +933,7 @@ nexus-development/
 │   ├── ftp/                   # FTP-specific ML models
 │   ├── http/                  # HTTP-specific ML models
 │   ├── mysql/                 # MySQL-specific ML models
-│   └── smb/                   # SMB-specific ML models
-├── datasets/                  # 📊 Training datasets
+├── datasets/                  # Training datasets
 ├── configs/                   # Centralized configurations
 ├── tests/                     # ML integration tests
 ├── research-papers/           # Academic research papers
@@ -1037,7 +978,6 @@ nexus-development/
 - [x] FTP honeypot with AI integration
 - [x] HTTP/Web honeypot with AI integration
 - [x] MySQL database honeypot
-- [x] SMB file share honeypot
 - [x] Centralized CLI interface
 - [x] Comprehensive reporting system
 - [x] Forensic chain of custody
@@ -1139,7 +1079,6 @@ cat src/service_emulators/SSH/.env
 cat src/service_emulators/FTP/.env
 cat src/service_emulators/HTTP/.env
 cat src/service_emulators/MySQL/.env
-cat src/service_emulators/SMB/.env
 
 # Test API connectivity
 python -c "import openai; print('OpenAI API key valid')"
@@ -1156,14 +1095,12 @@ netstat -an | grep :8022  # SSH
 netstat -an | grep :2121  # FTP
 netstat -an | grep :8080  # HTTP
 netstat -an | grep :3306  # MySQL
-netstat -an | grep :445   # SMB
 
 # Use different ports
 python src/cli/nexus_cli.py ssh --port 2222
 python src/cli/nexus_cli.py ftp --port 2122
 python src/cli/nexus_cli.py http --port 8081
 python src/cli/nexus_cli.py mysql --port 3307
-python src/cli/nexus_cli.py smb --port 446
 ```
 
 </details>
@@ -1177,7 +1114,6 @@ ls -la src/service_emulators/SSH/
 ls -la src/service_emulators/FTP/
 ls -la src/service_emulators/HTTP/
 ls -la src/service_emulators/MySQL/
-ls -la src/service_emulators/SMB/
 
 # Fix permissions if needed
 chmod +x src/cli/nexus_cli.py
@@ -1210,10 +1146,6 @@ curl http://localhost:8080/
 # Test MySQL honeypot
 mysql -h localhost -P 3306 -u root -p
 # Or: mysql -h localhost -P 3306 -u admin -padmin
-
-# Test SMB honeypot
-smbclient -L localhost -p 445
-# Or: net use \\localhost\share
 ```
 
 ---
