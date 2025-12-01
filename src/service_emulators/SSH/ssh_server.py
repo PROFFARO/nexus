@@ -1952,13 +1952,13 @@ async def start_server() -> None:
     llm_provider = config["llm"].get("llm_provider", "openai")
     model_name = config["llm"].get("model_name", "gpt-4o-mini")
 
-    print(f"\n✅ SSH Honeypot Starting...")
-    print(f"📡 Port: {port}")
-    print(f"🤖 LLM Provider: {llm_provider}")
-    print(f"📊 Model: {model_name}")
-    print(f"🔍 Sensor: {sensor_name}")
-    print(f"📁 Log File: {config['honeypot'].get('log_file', 'ssh_log.log')}")
-    print(f"⚠️  Press Ctrl+C to stop\n")
+    print(f"\n[INFO] SSH Honeypot Starting...")
+    print(f"[INFO] Port: {port}")
+    print(f"[INFO] LLM Provider: {llm_provider}")
+    print(f"[INFO] Model: {model_name}")
+    print(f"[INFO] Sensor: {sensor_name}")
+    print(f"[INFO] Log File: {config['honeypot'].get('log_file', 'ssh_log.log')}")
+    print(f"[INFO] Press Ctrl+C to stop\n")
 
     async def process_factory(process: asyncssh.SSHServerProcess) -> None:
         await handle_client(process, server_instance)
@@ -1977,8 +1977,8 @@ async def start_server() -> None:
         login_timeout=3600,
     )
 
-    print(f"✅ SSH honeypot listening on 127.0.0.1:{port}")
-    print("📡 Ready for connections...")
+    print(f"[SUCCESS] SSH honeypot listening on 127.0.0.1:{port}")
+    print("[INFO] Ready for connections...")
 
 
 class ContextFilter(logging.Filter):

@@ -1868,10 +1868,10 @@ def main():
     
     args = parser.parse_args()
     
-    print(f"🌐 HTTP Honeypot Report Generator")
-    print(f"📁 Sessions Directory: {args.sessions_dir}")
-    print(f"📊 Output Directory: {args.output_dir}")
-    print(f"📄 Format: {args.format}")
+    print(f"[INFO] HTTP Honeypot Report Generator")
+    print(f"[INFO] Sessions Directory: {args.sessions_dir}")
+    print(f"[INFO] Output Directory: {args.output_dir}")
+    print(f"[INFO] Format: {args.format}")
     print("-" * 50)
     
     try:
@@ -1879,36 +1879,36 @@ def main():
         generator = HTTPHoneypotReportGenerator(args.sessions_dir)
         
         if not generator.sessions_data:
-            print("❌ No session data found. Please check the sessions directory.")
+            print("[ERROR] No session data found. Please check the sessions directory.")
             return
         
-        print(f"✅ Loaded {len(generator.sessions_data)} HTTP sessions")
-        print(f"📋 Loaded {len(generator.log_entries)} log entries")
+        print(f"[SUCCESS] Loaded {len(generator.sessions_data)} HTTP sessions")
+        print(f"[INFO] Loaded {len(generator.log_entries)} log entries")
         
         # Generate comprehensive report
         result = generator.generate_comprehensive_report(args.output_dir, args.format)
         
-        print("\n📋 Report Generation Complete!")
+        print("\n[SUCCESS] Report Generation Complete!")
         for format_type, file_path in result.items():
-            print(f"  📄 {format_type.upper()}: {file_path}")
+            print(f"  [INFO] {format_type.upper()}: {file_path}")
             
-        print("\n📊 Report Summary:")
-        print(f"  🔍 Total Sessions: {len(generator.sessions_data)}")
-        print(f"  🌐 Unique IPs: {len(generator.ip_stats)}")
-        print(f"  ⚠️  Total Attacks: {sum(generator.attack_stats.values())}")
-        print(f"  🔧 HTTP Methods: {len(generator.method_stats)}")
-        print(f"  📍 Unique Paths: {len(generator.path_stats)}")
+        print("\n[SUMMARY] Report Statistics:")
+        print(f"  Total Sessions: {len(generator.sessions_data)}")
+        print(f"  Unique IPs: {len(generator.ip_stats)}")
+        print(f"  Total Attacks: {sum(generator.attack_stats.values())}")
+        print(f"  HTTP Methods: {len(generator.method_stats)}")
+        print(f"  Unique Paths: {len(generator.path_stats)}")
         
         if generator.attack_stats:
             top_attack = max(generator.attack_stats.items(), key=lambda x: x[1])
-            print(f"  🎯 Top Attack: {top_attack[0]} ({top_attack[1]} times)")
+            print(f"  Top Attack: {top_attack[0]} ({top_attack[1]} times)")
             
         if generator.ip_stats:
             top_attacker = max(generator.ip_stats.items(), key=lambda x: x[1])
-            print(f"  🥇 Top Attacker: {top_attacker[0]} ({top_attacker[1]} sessions)")
+            print(f"  Top Attacker: {top_attacker[0]} ({top_attacker[1]} sessions)")
         
     except Exception as e:
-        print(f"❌ Error generating report: {e}")
+        print(f"[ERROR] Error generating report: {e}")
         import traceback
         traceback.print_exc()
 

@@ -26,7 +26,7 @@ def main():
     
     args = parser.parse_args()
     
-    print("🚀 ML Training with Enhanced Progress Tracking")
+    print("[INFO] ML Training with Enhanced Progress Tracking")
     print("=" * 60)
     print(f"Service: {args.service}")
     print(f"Algorithm: {args.algorithm}")
@@ -61,10 +61,10 @@ def main():
                 train_data, _ = processor.get_training_data(service, args.test_size)
             
             if not train_data:
-                print(f"⚠️  No training data available for {service}")
+                print(f"[WARNING] No training data available for {service}")
                 continue
             
-            print(f"📊 Training with {len(train_data)} samples\n")
+            print(f"[INFO] Training with {len(train_data)} samples\n")
             
             # Train models
             if args.algorithm == 'all':
@@ -78,12 +78,12 @@ def main():
                     results = {args.algorithm: trainer.train_clustering_model(train_data, args.algorithm)}
             
             # Save models
-            print("\n💾 Saving trained models...")
+            print("\n[INFO] Saving trained models...")
             trainer.save_models()
             
             # Print results summary
-            print(f"\n✅ Training completed for {service.upper()}")
-            print("\n📈 Results Summary:")
+            print(f"\n[SUCCESS] Training completed for {service.upper()}")
+            print("\n[SUMMARY] Results Summary:")
             for algo, result in results.items():
                 accuracy = result.get('accuracy', 'N/A')
                 if isinstance(accuracy, (int, float)):
@@ -92,12 +92,12 @@ def main():
                     print(f"  {algo}: {accuracy}")
             
         except Exception as e:
-            print(f"❌ Error training {service}: {e}")
+            print(f"[ERROR] Error training {service}: {e}")
             import traceback
             traceback.print_exc()
     
     print(f"\n{'='*60}")
-    print("✅ All training complete!")
+    print("[SUCCESS] All training complete!")
     print(f"{'='*60}\n")
 
 if __name__ == '__main__':

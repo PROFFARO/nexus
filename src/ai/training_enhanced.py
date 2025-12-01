@@ -14,7 +14,7 @@ try:
     TQDM_AVAILABLE = True
 except ImportError:
     TQDM_AVAILABLE = False
-    print("⚠️  tqdm not available - install with: pip install tqdm")
+    print("[WARNING] tqdm not available - install with: pip install tqdm")
 
 # Resource monitoring
 try:
@@ -22,7 +22,7 @@ try:
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
-    print("⚠️  psutil not available - install with: pip install psutil")
+    print("[WARNING] psutil not available - install with: pip install psutil")
 
 from .training import ModelTrainer as BaseModelTrainer
 
@@ -59,15 +59,15 @@ class EnhancedModelTrainer(BaseModelTrainer):
         if level == 'info':
             logging.info(message)
             if self.verbose:
-                print(f"✓ {message}")
+                print(f"[INFO] {message}")
         elif level == 'warning':
             logging.warning(message)
             if self.verbose:
-                print(f"⚠️  {message}")
+                print(f"[WARNING] {message}")
         elif level == 'error':
             logging.error(message)
             if self.verbose:
-                print(f"❌ {message}")
+                print(f"[ERROR] {message}")
     
     def _start_timer(self, operation: str):
         """Start timing an operation"""
@@ -162,10 +162,10 @@ class EnhancedModelTrainer(BaseModelTrainer):
                 elif model_key == 'embeddings':
                     all_results[model_key] = self.train_embedding_similarity(data)
                     
-                self._log_progress(f"✓ {model_name} completed successfully")
+                self._log_progress(f"[SUCCESS] {model_name} completed successfully")
                 
             except Exception as e:
-                self._log_progress(f"✗ {model_name} failed: {e}", 'warning')
+                self._log_progress(f"[FAILED] {model_name} failed: {e}", 'warning')
                 logging.exception(f"Detailed error for {model_name}")
         
         self._log_progress(f"Training summary: {len(all_results)}/{len(models_to_train)} models trained successfully")
@@ -173,7 +173,7 @@ class EnhancedModelTrainer(BaseModelTrainer):
         
         # Print timing summary
         if self.verbose and self.operation_times:
-            print("\n📊 Training Time Summary:")
+            print("\n[SUMMARY] Training Time Summary:")
             for operation, duration in self.operation_times.items():
                 print(f"  {operation}: {duration:.2f}s")
         

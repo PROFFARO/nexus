@@ -606,10 +606,10 @@ except Exception as e:
         cmd = [sys.executable, temp_script]
         
         try:
-            print(f"Generating SSH security report...")
-            print(f"Sessions directory: {sessions_dir}")
-            print(f"Output directory: {args.output}")
-            print(f"Format: {args.format}")
+            print(f"[INFO] Generating SSH security report...")
+            print(f"[INFO] Sessions directory: {sessions_dir}")
+            print(f"[INFO] Output directory: {args.output}")
+            print(f"[INFO] Format: {args.format}")
             
             result = subprocess.run(cmd, cwd=ssh_dir, capture_output=True, text=True, encoding='utf-8')
             
@@ -620,11 +620,11 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Report generation failed with exit code {result.returncode}")
+                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         finally:
             # Clean up temporary file
@@ -634,7 +634,7 @@ except Exception as e:
                 pass
         
         return 0
-    
+
     def _generate_ftp_report(self, args):
         """Generate FTP-specific security report"""
         ftp_dir = self.services['ftp']['path'].parent
@@ -661,17 +661,17 @@ try:
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
-        print(f"Error: {{report_files['error']}}")
+        print(f"[ERROR] {{report_files['error']}}")
         sys.exit(1)
     
-    print("FTP Security Report Generated Successfully!")
+    print("[SUCCESS] FTP Security Report Generated Successfully!")
     if "{args.format}" in ["json", "both"]:
-        print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
-        print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
     
 except Exception as e:
-    print(f"Error: {{e}}")
+    print(f"[ERROR] {{e}}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -685,10 +685,10 @@ except Exception as e:
         cmd = [sys.executable, temp_script]
         
         try:
-            print(f"Generating FTP security report...")
-            print(f"Sessions directory: {sessions_dir}")
-            print(f"Output directory: {args.output}")
-            print(f"Format: {args.format}")
+            print(f"[INFO] Generating FTP security report...")
+            print(f"[INFO] Sessions directory: {sessions_dir}")
+            print(f"[INFO] Output directory: {args.output}")
+            print(f"[INFO] Format: {args.format}")
             
             result = subprocess.run(cmd, cwd=ftp_dir, capture_output=True, text=True, encoding='utf-8')
             
@@ -699,11 +699,11 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Report generation failed with exit code {result.returncode}")
+                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         finally:
             # Clean up temporary file
@@ -740,17 +740,17 @@ try:
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
-        print(f"Error: {{report_files['error']}}")
+        print(f"[ERROR] {{report_files['error']}}")
         sys.exit(1)
     
-    print("HTTP Security Report Generated Successfully!")
+    print("[SUCCESS] HTTP Security Report Generated Successfully!")
     if "{args.format}" in ["json", "both"]:
-        print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
-        print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
     
 except Exception as e:
-    print(f"Error: {{e}}")
+    print(f"[ERROR] {{e}}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -764,10 +764,10 @@ except Exception as e:
         cmd = [sys.executable, temp_script]
         
         try:
-            print(f"Generating HTTP security report...")
-            print(f"Sessions directory: {sessions_dir}")
-            print(f"Output directory: {args.output}")
-            print(f"Format: {args.format}")
+            print(f"[INFO] Generating HTTP security report...")
+            print(f"[INFO] Sessions directory: {sessions_dir}")
+            print(f"[INFO] Output directory: {args.output}")
+            print(f"[INFO] Format: {args.format}")
             
             result = subprocess.run(cmd, cwd=http_dir, capture_output=True, text=True, encoding='utf-8')
             
@@ -778,11 +778,11 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Report generation failed with exit code {result.returncode}")
+                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         finally:
             # Clean up temporary file
@@ -820,14 +820,14 @@ try:
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
-        print(f"Error: {{report_files['error']}}")
+        print(f"[ERROR] {{report_files['error']}}")
         sys.exit(1)
     
-    print("MySQL Security Report Generated Successfully!")
+    print("[SUCCESS] MySQL Security Report Generated Successfully!")
     if "{args.format}" in ["json", "both"]:
-        print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
-        print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
     
     # Verify HTML file was created and has content
     html_file = report_files.get('html')
@@ -835,12 +835,12 @@ try:
         with open(html_file, 'r', encoding='utf-8') as f:
             content = f.read()
         if len(content) < 100:
-            print(f"Warning: HTML file appears to be empty or truncated")
+            print(f"[WARNING] HTML file appears to be empty or truncated")
         else:
-            print(f"HTML report verified: {{len(content)}} characters")
+            print(f"[INFO] HTML report verified: {{len(content)}} characters")
     
 except Exception as e:
-    print(f"Error: {{e}}")
+    print(f"[ERROR] {{e}}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -853,10 +853,10 @@ except Exception as e:
             temp_script = f.name
         
         try:
-            print(f"Generating MySQL security report...")
-            print(f"Sessions directory: {sessions_dir}")
-            print(f"Output directory: {args.output}")
-            print(f"Format: {args.format}")
+            print(f"[INFO] Generating MySQL security report...")
+            print(f"[INFO] Sessions directory: {sessions_dir}")
+            print(f"[INFO] Output directory: {args.output}")
+            print(f"[INFO] Format: {args.format}")
             
             # Run the temporary script
             result = subprocess.run([sys.executable, temp_script], 
@@ -873,11 +873,11 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Report generation failed with exit code {result.returncode}")
+                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         finally:
             # Clean up temporary file
@@ -914,17 +914,17 @@ try:
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
     
     if "error" in report_files:
-        print(f"Error: {{report_files['error']}}")
+        print(f"[ERROR] {{report_files['error']}}")
         sys.exit(1)
     
-    print("SMB Security Report Generated Successfully!")
+    print("[SUCCESS] SMB Security Report Generated Successfully!")
     if "{args.format}" in ["json", "both"]:
-        print(f"JSON Report: {{report_files.get('json', 'Not generated')}}")
+        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
     if "{args.format}" in ["html", "both"]:
-        print(f"HTML Report: {{report_files.get('html', 'Not generated')}}")
+        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
     
 except Exception as e:
-    print(f"Error: {{e}}")
+    print(f"[ERROR] {{e}}")
     import traceback
     traceback.print_exc()
     sys.exit(1)
@@ -938,10 +938,10 @@ except Exception as e:
         cmd = [sys.executable, temp_script]
         
         try:
-            print(f"Generating SMB security report...")
-            print(f"Sessions directory: {sessions_dir}")
-            print(f"Output directory: {args.output}")
-            print(f"Format: {args.format}")
+            print(f"[INFO] Generating SMB security report...")
+            print(f"[INFO] Sessions directory: {sessions_dir}")
+            print(f"[INFO] Output directory: {args.output}")
+            print(f"[INFO] Format: {args.format}")
             
             result = subprocess.run(cmd, cwd=smb_dir, capture_output=True, text=True, encoding='utf-8')
             
@@ -952,11 +952,11 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Report generation failed with exit code {result.returncode}")
+                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         finally:
             # Clean up temporary file
@@ -969,40 +969,44 @@ except Exception as e:
 
     def list_services(self):
         """List all available services"""
-        print("NEXUS Honeypot Services:")
-        print("=" * 50)
+        print("\n" + "=" * 80)
+        print("NEXUS Honeypot Services")
+        print("=" * 80)
+        print()
         
         for service, info in self.services.items():
-            status = "✅ IMPLEMENTED" if info['implemented'] else "🚧 PLANNED"
-            print(f"{service.upper():<8} {status:<15} {info['description']}")
+            status = "[IMPLEMENTED]" if info['implemented'] else "[PLANNED]"
+            print(f"  {service.upper():<12} {status:<15} {info['description']}")
         
-        print("\nUsage:")
+        print()
+        print("Usage:")
         print("  nexus_cli.py <service> [options]")
         print("  nexus_cli.py report --service <service>")
+        print("=" * 80 + "\n")
 
     def run_placeholder_service(self, service_name):
         """Handle placeholder services"""
-        print(f"Error: {service_name.upper()} honeypot is not yet implemented")
-        print(f"Service location: {self.services[service_name]['path']}")
-        print("This service is planned for future development.")
+        print(f"[ERROR] {service_name.upper()} honeypot is not yet implemented")
+        print(f"[INFO] Service location: {self.services[service_name]['path']}")
+        print("[INFO] This service is planned for future development.")
         return 1
     
     def view_logs(self, args):
         """View and analyze session logs using dedicated log viewer module"""
         service_info = self.services.get(args.service)
         if not service_info:
-            print(f"Error: Unknown service {args.service}")
+            print(f"[ERROR] Unknown service {args.service}")
             return 1
             
         if not service_info['implemented']:
-            print(f"Error: Log viewing for {args.service} not implemented")
-            print(f"Service {args.service.upper()} is planned but not yet available")
+            print(f"[ERROR] Log viewing for {args.service} not implemented")
+            print(f"[INFO] Service {args.service.upper()} is planned but not yet available")
             return 1
         
         # Use dedicated log viewer module
         log_viewer_script = self.base_dir / 'logs' / 'log_viewer.py'
         if not log_viewer_script.exists():
-            print(f"Error: Log viewer not found at {log_viewer_script}")
+            print(f"[ERROR] Log viewer not found at {log_viewer_script}")
             return 1
         
         # Build command for log viewer
@@ -1017,7 +1021,7 @@ except Exception as e:
                 log_path.relative_to(Path.cwd())
                 cmd.extend(['--log-file', str(log_path)])
             except ValueError:
-                print(f"Error: Log file path must be within current directory")
+                print(f"[ERROR] Log file path must be within current directory")
                 return 1
         if args.decode:
             cmd.append('--decode')
@@ -1031,7 +1035,7 @@ except Exception as e:
                 save_path.relative_to(Path.cwd())
                 cmd.extend(['--save', str(save_path)])
             except ValueError:
-                print(f"Error: Save path must be within current directory")
+                print(f"[ERROR] Save path must be within current directory")
                 return 1
         if args.format:
             cmd.extend(['--format', args.format])
@@ -1058,16 +1062,16 @@ except Exception as e:
                 print(result.stderr, file=sys.stderr)
             
             if result.returncode != 0:
-                print(f"Log viewer failed with exit code {result.returncode}")
+                print(f"[ERROR] Log viewer failed with exit code {result.returncode}")
                 return 1
                 
         except Exception as e:
-            print(f"Unexpected error: {e}")
+            print(f"[ERROR] Unexpected error: {e}")
             return 1
         
         return 0
 
-    def main(self):
+    def main():
         parser = self.create_parser()
         args = parser.parse_args()
         
@@ -1228,16 +1232,16 @@ except Exception as e:
             return 0
         
         return stopped_count
-    
+
     def show_status(self, args):
         """Show service status"""
         if args.service:
             if args.service not in self.services:
-                print(f"Unknown service: {args.service}")
+                print(f"[ERROR] Unknown service: {args.service}")
                 return 1
             
             if not self.services[args.service]['implemented']:
-                print(f"Service {args.service} is not implemented")
+                print(f"[INFO] Service {args.service} is not implemented")
                 return 1
             
             status = self.check_service_status(args.service)
@@ -1247,38 +1251,38 @@ except Exception as e:
             if status['pid']:
                 print(f"  PID: {status['pid']}")
         else:
-            print("\n📊 NEXUS Services Status:")
+            print("\n[INFO] NEXUS Services Status:")
             print("=" * 40)
             
             for service_name, service_info in self.services.items():
                 if service_info['implemented']:
                     status = self.check_service_status(service_name)
-                    status_icon = "✅" if status['status'] == 'running' else "❌"
-                    print(f"{status_icon} {service_name.upper():<8} {status['status']:<10} Port: {status['port']}")
+                    status_text = "[RUNNING]" if status['status'] == 'running' else "[STOPPED]"
+                    print(f"  {service_name.upper():<12} {status_text:<15} Port: {status['port']}")
                 else:
-                    print(f"⚠️  {service_name.upper():<8} {'not implemented':<10}")
+                    print(f"  {service_name.upper():<12} [NOT IMPLEMENTED]")
             
             processes = self.find_service_processes()
             if processes:
-                print("\n🔄 Running Processes:")
+                print("\n[INFO] Running Processes:")
                 for proc in processes:
                     print(f"  PID {proc['pid']}: {proc['name']}")
             else:
-                print("\n🔄 No emulators running currently")
+                print("\n[INFO] No emulators running currently")
         
         
         return 0
     
     def stop_all(self, args):
         """Stop all services"""
-        print("🛑 Stopping all service emulators...")
+        print("[INFO] Stopping all service emulators...")
         
         stopped_count = self.stop_all_services()
         
         if stopped_count > 0:
-            print(f"✅ Stopped {stopped_count} service(s)")
+            print(f"[SUCCESS] Stopped {stopped_count} service(s)")
         else:
-            print("ℹ️  No running services found")
+            print("[INFO] No running services found")
         
         return 0
     
@@ -1311,10 +1315,10 @@ except Exception as e:
         """Start a single service and return success status"""
         status = self.check_service_status(service_name)
         if status['status'] == 'running':
-            print(f"ℹ️  {service_name.upper()} already running on port {status['port']}")
+            print(f"[INFO] {service_name.upper()} already running on port {status['port']}")
             return True
         
-        print(f"🚀 Starting {service_name.upper()}...")
+        print(f"[INFO] Starting {service_name.upper()}...")
         
         try:
             cmd = self._build_service_command(service_name, service_info, args)
@@ -1327,7 +1331,7 @@ except Exception as e:
                 try:
                     subprocess.run(cmd, cwd=service_info['path'].parent)
                 except Exception as e:
-                    print(f"❌ Error running {service_name}: {e}")
+                    print(f"[ERROR] {{e}}")
             
             thread = threading.Thread(target=run_service, daemon=True)
             thread.start()
@@ -1335,18 +1339,18 @@ except Exception as e:
             
             new_status = self.check_service_status(service_name)
             if new_status['status'] == 'running':
-                print(f"✅ {service_name.upper()} started on port {new_status['port']}")
+                print(f"[SUCCESS] {service_name.upper()} started on port {new_status['port']}")
                 return True
             else:
-                print(f"❌ Failed to start {service_name.upper()}")
+                print(f"[ERROR] Failed to start {service_name.upper()}")
                 return False
         except Exception as e:
-            print(f"❌ Error starting {service_name}: {e}")
+            print(f"[ERROR] {{e}}")
             return False
 
     def start_all(self, args):
         """Start all implemented services"""
-        print("⚙️  Starting all service emulators...")
+        print("[INFO] Starting all service emulators...")
         started_count = 0
         failed_count = 0
         
@@ -1359,10 +1363,10 @@ except Exception as e:
             else:
                 failed_count += 1
         
-        print(f"\n📊 Summary:")
-        print(f"✅ Started: {started_count} service(s)")
+        print(f"\n[SUMMARY]")
+        print(f"  Started: {started_count} service(s)")
         if failed_count > 0:
-            print(f"❌ Failed: {failed_count} service(s)")
+            print(f"  Failed: {failed_count} service(s)")
         
         return 0 if failed_count == 0 else 1
 
@@ -1433,7 +1437,7 @@ except Exception as e:
     
     def _ml_extract_features(self, args):
         """Extract features from datasets"""
-        print(f"🔍 Extracting features for {args.service}...")
+        print(f"[INFO] Extracting features for {args.service}...")
         
         datasets_dir = Path(args.datasets_dir)
         if not datasets_dir.exists():
@@ -1449,13 +1453,13 @@ except Exception as e:
             services = [args.service]
         
         for service in services:
-            print(f"\n Processing {service.upper()} data...")
+            print(f"\n[INFO] Processing {service.upper()} data...")
             try:
                 data = processor.get_processed_data(service)
                 service_data = data.get(service, [])
                 
                 if service_data:
-                    print(f" Extracted {len(service_data)} samples for {service}")
+                    print(f"[INFO] Extracted {len(service_data)} samples for {service}")
                     
                     if args.output:
                         output_file = Path(args.output) / f"{service}_features.json"
@@ -1464,18 +1468,18 @@ except Exception as e:
                         import json
                         with open(output_file, 'w') as f:
                             json.dump(service_data, f, indent=2)
-                        print(f" Saved to {output_file}")
+                        print(f"[INFO] Saved to {output_file}")
                 else:
-                    print(f"  No data found for {service}")
+                    print(f"[INFO] No data found for {service}")
                     
             except Exception as e:
-                print(f" Error processing {service}: {e}")
+                print(f"[ERROR] Error processing {service}: {e}")
         
         return 0
     
     def _ml_train_models(self, args):
         """Train ML models"""
-        print(f"🚀 Training ML models for {args.service}...")
+        print(f"[INFO] Training ML models for {args.service}...")
         
         from ai.training import ModelTrainer
         from ai.data_processor import DataProcessor
@@ -1488,7 +1492,7 @@ except Exception as e:
         processor = DataProcessor()
         
         for service in services:
-            print(f"\n Training models for {service.upper()}...")
+            print(f"\n[INFO] Training models for {service.upper()}...")
             
             try:
                 trainer = ModelTrainer(service)
@@ -1510,10 +1514,10 @@ except Exception as e:
                     train_data, test_data = processor.get_training_data(service, args.test_size)
 
                 if not train_data:
-                    print(f"  No training data available for {service}")
+                    print(f"[INFO] No training data available for {service}")
                     continue
 
-                print(f" Training with {len(train_data)} samples...")
+                print(f"[INFO] Training with {len(train_data)} samples...")
                 
                 if args.algorithm == 'all':
                     results = trainer.train_all_models(train_data)
@@ -1525,7 +1529,7 @@ except Exception as e:
                     elif args.algorithm in ['hdbscan', 'kmeans']:
                         results = {args.algorithm: trainer.train_clustering_model(train_data, args.algorithm)}
                     else:
-                        print(f" Unknown algorithm: {args.algorithm}")
+                        print(f"[ERROR] Unknown algorithm: {args.algorithm}")
                         continue
                 
                 # Save models
@@ -1535,12 +1539,12 @@ except Exception as e:
                 for algo, result in results.items():
                     accuracy = result.get('accuracy', 'N/A')
                     if isinstance(accuracy, (int, float)):
-                        print(f" {algo}: {accuracy:.3f} accuracy")
+                        print(f"[INFO] {algo}: {accuracy:.3f} accuracy")
                     else:
-                        print(f" {algo}: {accuracy} accuracy")
+                        print(f"[INFO] {algo}: {accuracy} accuracy")
                 
             except Exception as e:
-                print(f" Error training {service}: {e}")
+                print(f"[ERROR] Error training {service}: {e}")
                 import traceback
                 traceback.print_exc()
         
@@ -1548,7 +1552,7 @@ except Exception as e:
     
     def _ml_evaluate_models(self, args):
         """Evaluate trained models"""
-        print(f"📊 Evaluating ML models for {args.service}...")
+        print(f"[INFO] Evaluating ML models for {args.service}...")
         
         from ai.training import ModelTrainer
         from ai.data_processor import DataProcessor
@@ -1566,44 +1570,44 @@ except Exception as e:
                 _, test_data = processor.get_training_data(args.service, 0.2)
             
             if not test_data:
-                print(f"  No test data available for {args.service}")
+                print(f"[INFO] No test data available for {args.service}")
                 return 1
             
-            print(f" Evaluating with {len(test_data)} test samples...")
+            print(f"[INFO] Evaluating with {len(test_data)} test samples...")
             
             # Evaluate models
             if args.model:
                 results = trainer.evaluate_model(args.model, test_data)
-                print(f" {args.model} Results:")
+                print(f"[INFO] {args.model} Results:")
                 for metric, value in results.items():
                     if isinstance(value, float):
-                        print(f"  {metric}: {value:.3f}")
+                        print(f"[INFO]  {metric}: {value:.3f}")
                     else:
-                        print(f"  {metric}: {value}")
+                        print(f"[INFO]  {metric}: {value}")
             else:
                 # Evaluate all available models
                 for model_name in trainer.models.keys():
                     try:
                         results = trainer.evaluate_model(model_name, test_data)
-                        print(f" {model_name} Results:")
+                        print(f"[INFO] {model_name} Results:")
                         for metric, value in results.items():
                             if isinstance(value, float):
-                                print(f"  {metric}: {value:.3f}")
+                                print(f"[INFO]  {metric}: {value:.3f}")
                             else:
-                                print(f"  {metric}: {value}")
+                                print(f"[INFO]  {metric}: {value}")
                         print()
                     except Exception as e:
-                        print(f" Error evaluating {model_name}: {e}")
+                        print(f"[ERROR] Error evaluating {model_name}: {e}")
             
         except Exception as e:
-            print(f" Error during evaluation: {e}")
+            print(f"[ERROR] Error during evaluation: {e}")
             return 1
         
         return 0
     
     def _ml_predict(self, args):
         """Make predictions with trained models"""
-        print(f"🔮 Making predictions for {args.service}...")
+        print(f"[INFO] Making predictions for {args.service}...")
         
         from ai.detectors import MLDetector
         from ai.config import MLConfig
@@ -1671,7 +1675,7 @@ except Exception as e:
     
     def _ml_update_models(self, args):
         """Update/retrain models"""
-        print(f"🔄 Updating ML models for {args.service}...")
+        print(f"[INFO] Updating ML models for {args.service}...")
         
         if args.service == 'all':
             services = ['ssh', 'http', 'ftp', 'mysql', 'smb']

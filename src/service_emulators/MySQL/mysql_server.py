@@ -2740,37 +2740,37 @@ class MySQLHoneypotServer:
         model_name = self.config["llm"].get("model_name", "gpt-4o-mini")
         sensor_name = self.config["honeypot"].get("sensor_name", "nexus-mysql-honeypot")
 
-        print(f"\n✅ MySQL Honeypot Starting...")
-        print(f"📡 Host: {self.host}:{self.port}")
-        print(f"🗄️  Server Version: {self.server_version}")
-        print(f"🎯 Default Database: {self.default_database}")
-        print(f"🔤 Charset: {self.charset} ({self.collation})")
-        print(f"🤖 LLM Provider: {llm_provider}")
-        print(f"📊 Model: {model_name}")
-        print(f"🔍 Sensor: {sensor_name}")
+        print(f"\n[INFO] MySQL Honeypot Starting...")
+        print(f"[INFO] Host: {self.host}:{self.port}")
+        print(f"[INFO] Server Version: {self.server_version}")
+        print(f"[INFO] Default Database: {self.default_database}")
+        print(f"[INFO] Charset: {self.charset} ({self.collation})")
+        print(f"[INFO] LLM Provider: {llm_provider}")
+        print(f"[INFO] Model: {model_name}")
+        print(f"[INFO] Sensor: {sensor_name}")
         print(
-            f"📁 Log File: {self.config['honeypot'].get('log_file', 'mysql_log.log')}"
+            f"[INFO] Log File: {self.config['honeypot'].get('log_file', 'mysql_log.log')}"
         )
-        print(f"🔗 Max Connections: {self.max_connections}")
+        print(f"[INFO] Max Connections: {self.max_connections}")
         print(
-            f"⏱️  Connection Timeout: {self.connect_timeout}s / Query Timeout: {self.query_timeout}s"
+            f"[INFO] Connection Timeout: {self.connect_timeout}s / Query Timeout: {self.query_timeout}s"
         )
-        print(f"🛡️  Rate Limiting: {'Enabled' if self.rate_limiting else 'Disabled'}")
+        print(f"[INFO] Rate Limiting: {'Enabled' if self.rate_limiting else 'Disabled'}")
         print(
-            f"🔍 SQL Injection Detection: {'Enabled' if self.sql_injection_detection else 'Disabled'}"
-        )
-        print(
-            f"🎭 Behavioral Analysis: {'Enabled' if self.behavioral_analysis else 'Disabled'}"
+            f"[INFO] SQL Injection Detection: {'Enabled' if self.sql_injection_detection else 'Disabled'}"
         )
         print(
-            f"🤖 Adaptive Responses: {'Enabled' if self.adaptive_responses else 'Disabled'}"
+            f"[INFO] Behavioral Analysis: {'Enabled' if self.behavioral_analysis else 'Disabled'}"
         )
-        print(f"🔐 SSL Simulation: {'Enabled' if self.ssl_simulation else 'Disabled'}")
-        print(f"⚠️  Press Ctrl+C to stop\n")
+        print(
+            f"[INFO] Adaptive Responses: {'Enabled' if self.adaptive_responses else 'Disabled'}"
+        )
+        print(f"[INFO] SSL Simulation: {'Enabled' if self.ssl_simulation else 'Disabled'}")
+        print(f"[INFO] Press Ctrl+C to stop\n")
 
         logger.info(f"MySQL honeypot server started on {self.host}:{self.port}")
-        print(f"✅ MySQL honeypot listening on {self.host}:{self.port}")
-        print("📡 Ready for connections...")
+        print(f"[SUCCESS] MySQL honeypot listening on {self.host}:{self.port}")
+        print("[INFO] Ready for connections...")
         print(
             f"Test connection: mysql -h localhost -P {self.port} -u <username> -p<password>\n"
         )
