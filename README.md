@@ -1075,8 +1075,6 @@ mysql -h localhost -P 3306 -u root -p
 **Made with ❤️ by PROFFARO**  
 *Licensed under MIT License - See [LICENSE](LICENSE) for details*
 
-**⚡ Powered by AI • 🛡️ Secured by Design • 🌍 Trusted Worldwide**
-
 [![GitHub Stars](https://img.shields.io/github/stars/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
 [![GitHub Forks](https://img.shields.io/github/forks/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
 [![GitHub Issues](https://img.shields.io/github/issues/PROFFARO/nexus-development)](https://github.com/PROFFARO/nexus-development/issues)
