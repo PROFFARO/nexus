@@ -205,7 +205,6 @@ datasets/
 cowrie.*
 *.csv
 ml_prompt.txt
-prompt*
 models/
 
 # API Keys and Secrets
