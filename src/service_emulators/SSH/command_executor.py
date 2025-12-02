@@ -76,6 +76,12 @@ class CommandExecutor:
         "make", "cmake", "gcc", "g++", "cc", "python", "python3", "perl", "ruby", "node",
         "npm", "pip", "pip3", "java", "javac", "git", "svn", "hg", "cvs",
         
+        # Cron
+        "crontab",
+        
+        # Man pages
+        "man", "help", "info",
+        
         # Exit commands
         "exit", "logout", "quit",
     }
@@ -157,7 +163,7 @@ class CommandExecutor:
         if routing == "filesystem":
             return (self._execute_filesystem_command(command, current_dir, username), "filesystem")
         elif routing == "system":
-            return (self._execute_system_command(command, username), "system")
+            return (self._execute_system_command(command, username, context), "system")
         else:
             # Let LLM handle it
             return (None, "llm")
@@ -202,12 +208,6 @@ class CommandExecutor:
         return False
         
     def route_command(self, command: str) -> str:
-        """
-        Determine how to handle a command
-        
-        Returns:
-            "filesystem", "system", or "llm"
-        """
         try:
             parts = shlex.split(command)
         except ValueError:
@@ -227,13 +227,16 @@ class CommandExecutor:
         
         if cmd in filesystem_cmds:
             return "filesystem"
-            
+        
         # System commands - use templates
         system_cmds = {
             "whoami", "id", "hostname", "uname", "uptime", "date", "ps", "top",
             "ifconfig", "ip", "netstat", "ss", "apt", "apt-get", "dpkg", "systemctl",
             "service", "journalctl", "w", "who", "last", "users", "groups", "free",
-            "env", "printenv",
+            "env", "printenv", "export", "history", "sudo", "kill", "killall", "pkill",
+            "ping", "traceroute", "nslookup", "dig", "nc", "netcat",
+            "wget", "curl", "tar", "gzip", "gunzip", "zip", "unzip",
+            "man", "crontab", "echo",
         }
         
         if cmd in system_cmds:
@@ -824,7 +827,8 @@ tmpfs            8192000    102400   8089600   2% /dev/shm
         # Simplified - just acknowledge the command
         return ""
         
-    def _execute_system_command(self, command: str, username: str) -> str:
+    def _execute_system_command(self, command: str, username: str, 
+                                context: Optional[Dict[str, Any]] = None) -> str:
         """Execute system commands using templates"""
         try:
             parts = shlex.split(command)
@@ -891,8 +895,69 @@ tmpfs            8192000    102400   8089600   2% /dev/shm
             return self._cmd_free(args)
         
         # env command
-        elif cmd == "env":
-            return self._cmd_env(username)
+        elif cmd == "env" or cmd == "printenv":
+            return self._cmd_env(context)
+        
+        # export command
+        elif cmd == "export":
+            return self._cmd_export(args, context)
+        # history command (update existing)
+        elif cmd == "history":
+            return self._cmd_history(context)
+        # sudo command
+        elif cmd == "sudo":
+            return self._cmd_sudo(args, context)
+        # kill/killall/pkill
+        elif cmd in ["kill", "killall", "pkill"]:
+            return self._cmd_kill(cmd, args)
+        # ping
+        elif cmd == "ping":
+            return self._cmd_ping(args)
+        # traceroute
+        elif cmd == "traceroute":
+            return self._cmd_traceroute(args)
+        # nslookup/dig
+        elif cmd in ["nslookup", "dig"]:
+            return self._cmd_nslookup(args)
+        # nc/netcat
+        elif cmd in ["nc", "netcat"]:
+            return self._cmd_nc(args)
+        # systemctl
+        elif cmd == "systemctl":
+            return self._cmd_systemctl(args)
+        # service
+        elif cmd == "service":
+            return self._cmd_service(args)
+        # apt/apt-get
+        elif cmd in ["apt", "apt-get"]:
+            return self._cmd_apt(args)
+        # dpkg
+        elif cmd == "dpkg":
+            return self._cmd_dpkg(args)
+        # wget
+        elif cmd == "wget":
+            return self._cmd_wget(args, context)
+        # curl
+        elif cmd == "curl":
+            return self._cmd_curl(args, context)
+        # tar
+        elif cmd == "tar":
+            return self._cmd_tar(args)
+        # gzip/gunzip
+        elif cmd in ["gzip", "gunzip"]:
+            return self._cmd_gzip(cmd, args)
+        # zip/unzip
+        elif cmd in ["zip", "unzip"]:
+            return self._cmd_zip(cmd, args)
+        # man
+        elif cmd == "man":
+            return self._cmd_man(args)
+        # crontab
+        elif cmd == "crontab":
+            return self._cmd_crontab(args, username)
+        # echo
+        elif cmd == "echo":
+            return self._cmd_echo(args, context)
         
         # history command
         elif cmd == "history":
@@ -956,20 +1021,275 @@ Swap:         4.0Gi       512Mi       3.5Gi"""
 Mem:       16384000     8601600     2201600      262144     5580800     7168000
 Swap:       4194304      524288     3670016"""
     
-    def _cmd_env(self, username: str) -> str:
+    def _cmd_env(self, context: Optional[Dict[str, Any]]) -> str:
         """Generate env command output"""
+        server = context.get("server") if context else None
+        if server and hasattr(server, "environment"):
+            lines = []
+            for key, value in server.environment.items():
+                lines.append(f"{key}={value}")
+        return "\n".join(lines)
+    
+        # Fallback
+        username = context.get("username", "guest") if context else "guest"
         return f"""USER={username}
-HOME=/home/{username}
-PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
-SHELL=/bin/bash
-LANG=en_US.UTF-8
-PWD=/home/{username}
-TERM=xterm-256color
-SSH_CONNECTION=192.168.1.100 52341 10.0.0.1 22
-SSH_CLIENT=192.168.1.100 52341 22
-SSH_TTY=/dev/pts/0
-LOGNAME={username}
-MAIL=/var/mail/{username}
-OLDPWD=/home/{username}
-EDITOR=vim
-VISUAL=vim"""
+                   HOME=/home/{username}
+                   PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+                   SHELL=/bin/bash
+                   LANG=en_US.UTF-8
+                   PWD=/home/{username}
+                   TERM=xterm-256color"""
+
+    def _cmd_export(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
+        if not args:
+            # Show all exported variables
+            return self._cmd_env(context)
+    
+        server = context.get("server") if context else None
+        if not server or not hasattr(server, "update_environment"):
+            return ""
+    
+        for arg in args:
+            if "=" in arg:
+                key, value = arg.split("=", 1)
+                # Remove quotes if present
+                value = value.strip('"').strip("'")
+                server.update_environment(key, value)
+    
+        return ""
+    
+    def _cmd_history(self, context: Optional[Dict[str, Any]]) -> str:
+        """Show command history"""
+        server = context.get("server") if context else None
+        if not server or not hasattr(server, "command_history"):
+            return ""
+    
+        lines = []
+        for i, cmd in enumerate(server.command_history, 1):
+            lines.append(f"  {i}  {cmd}")
+        return "\n".join(lines)
+    def _cmd_sudo(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
+        """Simulate sudo command"""
+        if not args:
+            return "usage: sudo command"
+        
+        server = context.get("server") if context else None
+        username = server.username if server else "guest"
+        
+        # Simulate password prompt (always accepts)
+        return f"[sudo] password for {username}: "
+    def _cmd_kill(self, cmd: str, args: List[str]) -> str:
+        """Simulate kill/killall/pkill"""
+        if not args:
+            return f"{cmd}: usage: {cmd} [-s sigspec | -n signum] pid | jobspec"
+        return ""  # Silent success
+    def _cmd_ping(self, args: List[str]) -> str:
+        """Simulate ping command"""
+        host = args[0] if args and not args[0].startswith("-") else "localhost"
+        return f"""PING {host} (192.168.1.1) 56(84) bytes of data.
+    64 bytes from {host} (192.168.1.1): icmp_seq=1 ttl=64 time=0.045 ms
+    64 bytes from {host} (192.168.1.1): icmp_seq=2 ttl=64 time=0.052 ms
+    ^C
+    --- {host} ping statistics ---
+    2 packets transmitted, 2 received, 0% packet loss, time 1001ms
+    rtt min/avg/max/mdev = 0.045/0.048/0.052/0.003 ms"""
+    def _cmd_traceroute(self, args: List[str]) -> str:
+        """Simulate traceroute"""
+        host = args[0] if args and not args[0].startswith("-") else "8.8.8.8"
+        return f"""traceroute to {host} (8.8.8.8), 30 hops max, 60 byte packets
+    1  gateway (192.168.1.1)  0.234 ms  0.198 ms  0.187 ms
+    2  10.0.0.1 (10.0.0.1)  1.234 ms  1.198 ms  1.187 ms
+    3  * * *
+    4  {host} (8.8.8.8)  12.345 ms  12.298 ms  12.287 ms"""
+    def _cmd_nslookup(self, args: List[str]) -> str:
+        """Simulate nslookup/dig"""
+        host = args[0] if args and not args[0].startswith("-") else "google.com"
+        return f"""Server:         192.168.1.1
+    Address:        192.168.1.1#53
+    Non-authoritative answer:
+    Name:   {host}
+    Address: 142.250.185.46"""
+    def _cmd_nc(self, args: List[str]) -> str:
+        """Simulate netcat"""
+        return "nc: connection refused"
+    def _cmd_systemctl(self, args: List[str]) -> str:
+        """Simulate systemctl"""
+        if "status" in args:
+            service = args[-1] if args else "unknown"
+            return f"""● {service}.service - {service.title()} Service
+    Loaded: loaded (/lib/systemd/system/{service}.service; enabled; vendor preset: enabled)
+    Active: active (running) since Mon 2024-12-02 10:00:00 UTC; 2 days ago
+        Docs: man:{service}(8)
+    Main PID: 1234 ({service})
+        Tasks: 1 (limit: 4915)
+    Memory: 12.3M
+    CGroup: /system.slice/{service}.service
+            └─1234 /usr/sbin/{service}"""
+        elif "list-units" in args:
+            return """UNIT                        LOAD   ACTIVE SUB     DESCRIPTION
+    nginx.service               loaded active running A high performance web server
+    mysql.service               loaded active running MySQL Community Server
+    ssh.service                 loaded active running OpenBSD Secure Shell server"""
+        return ""
+    def _cmd_service(self, args: List[str]) -> str:
+        """Simulate service command"""
+        if "status" in args:
+            service = args[0] if args and args[0] != "status" else "unknown"
+            return f"{service} is running"
+        return ""
+    def _cmd_apt(self, args: List[str]) -> str:
+        """Simulate apt/apt-get"""
+        if "update" in args:
+            return """Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
+    Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [114 kB]
+    Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+    Fetched 228 kB in 1s (228 kB/s)
+    Reading package lists... Done
+    Building dependency tree
+    Reading state information... Done
+    All packages are up to date."""
+        
+        elif "install" in args:
+            package = args[-1]
+            return f"""Reading package lists... Done
+    Building dependency tree
+    Reading state information... Done
+    The following NEW packages will be installed:
+    {package}
+    0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+    Need to get 1,234 kB of archives.
+    After this operation, 5,678 kB of additional disk space will be used.
+    Do you want to continue? [Y/n] Y
+    Get:1 http://archive.ubuntu.com/ubuntu focal/main amd64 {package} amd64 1.0.0 [1,234 kB]
+    Fetched 1,234 kB in 1s (1,234 kB/s)
+    Selecting previously unselected package {package}.
+    Unpacking {package} (1.0.0) ...
+    Setting up {package} (1.0.0) ..."""
+        
+        elif "list" in args:
+            return """Listing... Done
+    nginx/focal,now 1.18.0-0ubuntu1 amd64 [installed]
+    mysql-server/focal,now 8.0.23-0ubuntu0.20.04.1 amd64 [installed]
+    openssh-server/focal,now 1:8.2p1-4ubuntu0.3 amd64 [installed]"""
+        
+        return ""
+    def _cmd_dpkg(self, args: List[str]) -> str:
+        """Simulate dpkg"""
+        if "-l" in args:
+            return """Desired=Unknown/Install/Remove/Purge/Hold
+    | Status=Not/Inst/Conf-files/Unpacked/halF-conf/Half-inst/trig-aWait/Trig-pend
+    |/ Err?=(none)/Reinst-required (Status,Err: uppercase=bad)
+    ||/ Name                Version          Architecture Description
+    +++-===================-================-============-================================
+    ii  nginx               1.18.0-0ubuntu1  amd64        small, powerful, scalable web
+    ii  mysql-server        8.0.23-0ubuntu0  amd64        MySQL database server
+    ii  openssh-server      1:8.2p1-4ubuntu0 amd64        secure shell (SSH) server"""
+        return ""
+    def _cmd_wget(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
+        """Simulate wget"""
+        url = None
+        filename = None
+        
+        for i, arg in enumerate(args):
+            if not arg.startswith("-"):
+                url = arg
+            elif arg == "-O" and i + 1 < len(args):
+                filename = args[i + 1]
+        
+        if not url:
+            return "wget: missing URL"
+        
+        if not filename:
+            filename = url.split("/")[-1] or "index.html"
+        
+        # Save to virtual filesystem if context available
+        server = context.get("server") if context else None
+        if server and hasattr(server, "virtual_fs"):
+            content = f"[Downloaded from {url}]"
+            server.virtual_fs.write_file(filename, content, server.current_directory)
+        
+        return f"""--2024-12-02 18:00:00--  {url}
+    Resolving {url.split('/')[2] if '/' in url else url}... 192.0.2.1
+    Connecting to {url.split('/')[2] if '/' in url else url}|192.0.2.1|:80... connected.
+    HTTP request sent, awaiting response... 200 OK
+    Length: 1024 (1.0K) [text/html]
+    Saving to: '{filename}'
+    {filename}         100%[===================>]   1.00K  --.-KB/s    in 0s
+    2024-12-02 18:00:00 (100 MB/s) - '{filename}' saved [1024/1024]"""
+    def _cmd_curl(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
+        """Simulate curl"""
+        url = args[0] if args and not args[0].startswith("-") else None
+        if not url:
+            return "curl: no URL specified"
+        
+        return f"<html><body>Content from {url}</body></html>"
+    def _cmd_tar(self, args: List[str]) -> str:
+        """Simulate tar"""
+        if any(x in " ".join(args) for x in ["-xzf", "-xvf", "-xf"]):
+            archive = args[-1]
+            return """file1.txt
+    file2.txt
+    directory/
+    directory/file3.txt"""
+        elif any(x in " ".join(args) for x in ["-czf", "-cvf", "-cf"]):
+            return ""  # Silent success
+        return "tar: You must specify one of the '-Acdtrux', '--delete' or '--test-label' options"
+    def _cmd_gzip(self, cmd: str, args: List[str]) -> str:
+        """Simulate gzip/gunzip"""
+        return ""  # Silent success
+    def _cmd_zip(self, cmd: str, args: List[str]) -> str:
+        """Simulate zip/unzip"""
+        if cmd == "zip":
+            return "  adding: file.txt (deflated 50%)"
+        else:  # unzip
+            return """Archive:  archive.zip
+    inflating: file.txt"""
+    def _cmd_man(self, args: List[str]) -> str:
+        """Show man page"""
+        cmd = args[0] if args else None
+        if not cmd:
+            return "What manual page do you want?"
+        
+        man_pages = {
+            "ls": """LS(1)                    User Commands                   LS(1)
+    NAME
+        ls - list directory contents
+    SYNOPSIS
+        ls [OPTION]... [FILE]...
+    DESCRIPTION
+        List information about the FILEs (the current directory by default).
+        Sort entries alphabetically if none of -cftuvSUX nor --sort is specified.
+    OPTIONS
+        -a, --all
+                do not ignore entries starting with .
+        -l     use a long listing format
+        -h, --human-readable
+                with -l, print sizes in human readable format""",
+            
+            "cat": """CAT(1)                   User Commands                   CAT(1)
+    NAME
+        cat - concatenate files and print on the standard output
+    SYNOPSIS
+        cat [OPTION]... [FILE]...
+    DESCRIPTION
+        Concatenate FILE(s) to standard output.""",
+        }
+        
+        return man_pages.get(cmd, f"No manual entry for {cmd}")
+    def _cmd_crontab(self, args: List[str], username: str) -> str:
+        """Simulate crontab"""
+        if "-l" in args:
+            return f"no crontab for {username}"
+        elif "-e" in args:
+            return "# Edit crontab (simulated)\n# Use: echo '* * * * * command' to add entries"
+        return ""
+    def _cmd_echo(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
+        """Echo command with variable expansion"""
+        server = context.get("server") if context else None
+        text = " ".join(args)
+        
+        # Expand variables if server available
+        if server and hasattr(server, "expand_variables"):
+            text = server.expand_variables(text)
+        
+        return text

@@ -717,6 +717,7 @@ class MySSHServer(asyncssh.SSHServer):
         self.username = "guest"  # Will be set to actual username after authentication
         self.current_directory = "/home/guest"
         self.command_history = []  # Track command history for history command
+        self.environment = {}  # Environment variables (initialized after auth)
         self.session_data = {
             "commands": [],
             "files_uploaded": [],
@@ -767,6 +768,65 @@ alias gs='git status'
             
             # Create Documents directory
             self.virtual_fs.create_directory(f"{home_path}/Documents", "/")
+            self.virtual_fs.create_directory(f"{home_path}/Downloads", "/")
+            self.virtual_fs.create_directory(f"{home_path}/Desktop", "/")
+            self.virtual_fs.create_directory(f"{home_path}/Music", "/")
+            self.virtual_fs.create_directory(f"{home_path}/Pictures", "/")
+            self.virtual_fs.create_directory(f"{home_path}/Videos", "/")
+            self.virtual_fs.create_directory(f"{home_path}/.ssh", "/")
+            self.virtual_fs.create_directory(f"{home_path}/.config", "/")
+            self.virtual_fs.create_directory(f"{home_path}/.local", "/")
+            self.virtual_fs.create_directory(f"{home_path}/.cache", "/")
+            self.virtual_fs.create_directory(f"{home_path}/.bashrc", "/")    
+            
+            # Create empty .bash_history
+            self.virtual_fs.write_file(f"{home_path}/.bash_history", "", "/")
+    
+    def _initialize_environment(self, username: str) -> dict:
+        """Initialize environment variables for user session"""
+        return {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/games",
+            "HOME": f"/home/{username}",
+            "USER": username,
+            "LOGNAME": username,
+            "SHELL": "/bin/bash",
+            "LANG": "en_US.UTF-8",
+            "LC_ALL": "en_US.UTF-8",
+            "PWD": f"/home/{username}",
+            "OLDPWD": f"/home/{username}",
+            "TERM": "xterm-256color",
+            "EDITOR": "vim",
+            "VISUAL": "vim",
+            "PAGER": "less",
+        }
+    
+    def update_environment(self, key: str, value: str):
+        """Update environment variable"""
+        self.environment[key] = value
+    
+    def expand_variables(self, command: str) -> str:
+        """Expand environment variables in command"""
+        import re
+        
+        # Expand ${VAR} and $VAR
+        def replace_var(match):
+            var_name = match.group(1) or match.group(2)
+            return self.environment.get(var_name, "")
+        
+        # Match ${VAR} or $VAR
+        expanded = re.sub(r'\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)', replace_var, command)
+        return expanded
+    
+    def add_to_history(self, command: str):
+        """Add command to history and .bash_history file"""
+        if command and command.strip():
+            self.command_history.append(command)
+            
+            # Also write to .bash_history in virtual filesystem
+            history_file = f"/home/{self.username}/.bash_history"
+            current_history = self.virtual_fs.read_file(history_file, "/") or ""
+            updated_history = current_history + command + "\n"
+            self.virtual_fs.write_file(history_file, updated_history, "/")
 
     def _load_seed_filesystem(self) -> Dict[str, Any]:
         """Load seed filesystem from configured directory"""
@@ -947,14 +1007,14 @@ alias gs='git status'
             # Use virtual filesystem to resolve and validate path
             resolved_path = self.virtual_fs.resolve_path(target_dir, self.current_directory)
             
-            # Check if path exists and is a directory
+            # Check if path exists and is a directory - RETURN IMMEDIATELY if not
             if not self.virtual_fs.exists(resolved_path, "/"):
                 return f"-bash: cd: {target_dir}: No such file or directory"
             
             if not self.virtual_fs.is_directory(resolved_path, "/"):
                 return f"-bash: cd: {target_dir}: Not a directory"
             
-            # Update current directory
+            # Only update current directory if validation passed
             self.current_directory = resolved_path
             return ""
         else:
@@ -1448,6 +1508,9 @@ async def handle_client(
     
     # Ensure user has a home directory in virtual filesystem
     server._ensure_user_home_directory(authenticated_username)
+    
+    # Initialize environment variables
+    server.environment = server._initialize_environment(authenticated_username)
 
     try:
         if process.command:
@@ -1870,7 +1933,7 @@ async def process_command(
 
     # Handle manual commands first
     manual_response = handle_manual_commands(command, process, server)
-    if manual_response:
+    if manual_response is not None:
         response_content = manual_response
     else:
         response_content = await _get_llm_response(
