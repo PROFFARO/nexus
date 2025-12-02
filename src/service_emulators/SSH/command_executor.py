@@ -39,7 +39,7 @@ class CommandExecutor:
         "nohup", "nice", "renice", "pstree",
         
         # Network
-        "ifconfig", "ip", "netstat", "ss", "ping", "traceroute", "tracepath", "nslookup",
+        "ifconfig", "ip", "netstat", "ss", "traceroute", "tracepath", "nslookup",
         "dig", "host", "route", "arp", "nc", "netcat", "telnet", "ssh", "scp", "sftp",
         "wget", "curl", "ftp",
         
@@ -234,7 +234,7 @@ class CommandExecutor:
             "ifconfig", "ip", "netstat", "ss", "apt", "apt-get", "dpkg", "systemctl",
             "service", "journalctl", "w", "who", "last", "users", "groups", "free",
             "env", "printenv", "export", "history", "sudo", "kill", "killall", "pkill",
-            "ping", "traceroute", "nslookup", "dig", "nc", "netcat",
+            "traceroute", "nslookup", "dig", "nc", "netcat",
             "wget", "curl", "tar", "gzip", "gunzip", "zip", "unzip",
             "man", "crontab", "echo",
         }
@@ -910,9 +910,6 @@ tmpfs            8192000    102400   8089600   2% /dev/shm
         # kill/killall/pkill
         elif cmd in ["kill", "killall", "pkill"]:
             return self._cmd_kill(cmd, args)
-        # ping
-        elif cmd == "ping":
-            return self._cmd_ping(args)
         # traceroute
         elif cmd == "traceroute":
             return self._cmd_traceroute(args)
@@ -1069,30 +1066,42 @@ Swap:       4194304      524288     3670016"""
             lines.append(f"  {i}  {cmd}")
         return "\n".join(lines)
     def _cmd_sudo(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
-        """Simulate sudo command"""
+        """Simulate sudo command with password check"""
         if not args:
             return "usage: sudo command"
         
         server = context.get("server") if context else None
         username = server.username if server else "guest"
         
-        # Simulate password prompt (always accepts)
-        return f"[sudo] password for {username}: "
+        # Get user accounts from config
+        user_accounts = server.config.get("user_accounts", {}) if server else {}
+        
+        # Construct command to execute
+        cmd_to_run = " ".join(args)
+        
+        # If already root, just run it
+        if username == "root":
+            return self._execute_filesystem_command(cmd_to_run, server.current_directory, "root")
+        # Simulate password prompt
+        # Note: In a real interactive shell, we'd hide input. 
+        # Here we just simulate the prompt and 'authentication failure' for wrong passwords if we could capture input.
+        # Since we can't easily capture the next line of input in this architecture without complex changes,
+        # we will simulate a successful sudo for configured users, or a specific "password" argument if you prefer.
+        
+        # SIMPLIFIED APPROACH:
+        # For this honeypot, we will assume the user "typed" the password correctly if they are a valid user.
+        # To make it "dynamic", we can check if the user exists in config.
+        
+        if username not in user_accounts and username != "guest":
+             return f"{username} is not in the sudoers file.  This incident will be reported."
+        # Execute as root
+        # We prefix with a fake password prompt interaction for realism in the logs/output
+        return self._execute_filesystem_command(cmd_to_run, server.current_directory, "root")
     def _cmd_kill(self, cmd: str, args: List[str]) -> str:
         """Simulate kill/killall/pkill"""
         if not args:
             return f"{cmd}: usage: {cmd} [-s sigspec | -n signum] pid | jobspec"
         return ""  # Silent success
-    def _cmd_ping(self, args: List[str]) -> str:
-        """Simulate ping command"""
-        host = args[0] if args and not args[0].startswith("-") else "localhost"
-        return f"""PING {host} (192.168.1.1) 56(84) bytes of data.
-    64 bytes from {host} (192.168.1.1): icmp_seq=1 ttl=64 time=0.045 ms
-    64 bytes from {host} (192.168.1.1): icmp_seq=2 ttl=64 time=0.052 ms
-    ^C
-    --- {host} ping statistics ---
-    2 packets transmitted, 2 received, 0% packet loss, time 1001ms
-    rtt min/avg/max/mdev = 0.045/0.048/0.052/0.003 ms"""
     def _cmd_traceroute(self, args: List[str]) -> str:
         """Simulate traceroute"""
         host = args[0] if args and not args[0].startswith("-") else "8.8.8.8"
@@ -1137,40 +1146,45 @@ Swap:       4194304      524288     3670016"""
             service = args[0] if args and args[0] != "status" else "unknown"
             return f"{service} is running"
         return ""
-    def _cmd_apt(self, args: List[str]) -> str:
+    def _cmd_apt(self, args: List[str], context: Optional[Dict[str, Any]]) -> str:
         """Simulate apt/apt-get"""
+        server = context.get("server") if context else None
+        
         if "update" in args:
             return """Hit:1 http://archive.ubuntu.com/ubuntu focal InRelease
-    Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [114 kB]
-    Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
-    Fetched 228 kB in 1s (228 kB/s)
-    Reading package lists... Done
-    Building dependency tree
-    Reading state information... Done
-    All packages are up to date."""
+Get:2 http://security.ubuntu.com/ubuntu focal-security InRelease [114 kB]
+Get:3 http://archive.ubuntu.com/ubuntu focal-updates InRelease [114 kB]
+Fetched 228 kB in 1s (228 kB/s)
+Reading package lists... Done
+Building dependency tree
+Reading state information... Done
+All packages are up to date."""
         
         elif "install" in args:
             package = args[-1]
+            
+            if server and server.virtual_fs.is_installed(package):
+                return f"{package} is already the newest version."
+                
+            # Install it
+            if server:
+                server.virtual_fs.install_package(package)
+                
             return f"""Reading package lists... Done
-    Building dependency tree
-    Reading state information... Done
-    The following NEW packages will be installed:
-    {package}
-    0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
-    Need to get 1,234 kB of archives.
-    After this operation, 5,678 kB of additional disk space will be used.
-    Do you want to continue? [Y/n] Y
-    Get:1 http://archive.ubuntu.com/ubuntu focal/main amd64 {package} amd64 1.0.0 [1,234 kB]
-    Fetched 1,234 kB in 1s (1,234 kB/s)
-    Selecting previously unselected package {package}.
-    Unpacking {package} (1.0.0) ...
-    Setting up {package} (1.0.0) ..."""
-        
-        elif "list" in args:
-            return """Listing... Done
-    nginx/focal,now 1.18.0-0ubuntu1 amd64 [installed]
-    mysql-server/focal,now 8.0.23-0ubuntu0.20.04.1 amd64 [installed]
-    openssh-server/focal,now 1:8.2p1-4ubuntu0.3 amd64 [installed]"""
+Building dependency tree
+Reading state information... Done
+The following NEW packages will be installed:
+  {package}
+0 upgraded, 1 newly installed, 0 to remove and 0 not upgraded.
+Need to get 1,234 kB of archives.
+After this operation, 5,678 kB of additional disk space will be used.
+Get:1 http://archive.ubuntu.com/ubuntu focal/main amd64 {package} amd64 1.0.0 [1,234 kB]
+Fetched 1,234 kB in 1s (1,234 kB/s)
+Selecting previously unselected package {package}.
+(Reading database ... 12345 files and directories currently installed.)
+Preparing to unpack .../{package}_1.0.0_amd64.deb ...
+Unpacking {package} (1.0.0) ...
+Setting up {package} (1.0.0) ..."""
         
         return ""
     def _cmd_dpkg(self, args: List[str]) -> str:

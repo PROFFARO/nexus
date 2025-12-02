@@ -9,6 +9,7 @@ import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
+import json
 
 
 class FileNode:
@@ -52,6 +53,45 @@ class FileNode:
             return sorted(self.children.keys())
         return []
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize node to dictionary"""
+        data = {
+            "name": self.name,
+            "is_dir": self.is_dir,
+            "content": self.content,
+            "permissions": self.permissions,
+            "owner": self.owner,
+            "group": self.group,
+            "size": self.size,
+            "modified": self.modified.isoformat()
+        }
+        
+        if self.is_dir and self.children:
+            data["children"] = {name: child.to_dict() for name, child in self.children.items()}
+            
+        return data
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> 'FileNode':
+        """Create node from dictionary"""
+        node = cls(
+            name=data["name"],
+            is_dir=data["is_dir"],
+            content=data.get("content", ""),
+            permissions=data.get("permissions", "644"),
+            owner=data.get("owner", "root"),
+            group=data.get("group", "root"),
+            size=data.get("size"),
+            modified=datetime.datetime.fromisoformat(data["modified"]) if data.get("modified") else None
+        )
+        
+        if node.is_dir and "children" in data:
+            for child_name, child_data in data["children"].items():
+                child_node = cls.from_dict(child_data)
+                node.add_child(child_node)
+                
+        return node
+
 
 class VirtualFilesystem:
     """
@@ -62,6 +102,54 @@ class VirtualFilesystem:
     def __init__(self):
         self.root = FileNode("/", is_dir=True, permissions="755")
         self._initialize_filesystem()
+
+        self.installed_packages = {
+            "nginx": "1.18.0-0ubuntu1",
+            "mysql-server": "8.0.23-0ubuntu0.20.04.1",
+            "openssh-server": "1:8.2p1-4ubuntu0.3",
+            "vim": "2:8.1.2269-1ubuntu5",
+            "git": "1:2.25.1-1ubuntu3"
+        }
+
+    def install_package(self, package_name: str, version: str = "1.0.0"):
+        self.installed_packages[package_name] = version
+        
+    def is_installed(self, package_name: str) -> bool:
+        return package_name in self.installed_packages
+
+    def serialize(self) -> Dict[str, Any]:
+        """Serialize filesystem to dictionary"""
+        return self.root.to_dict()
+
+    def deserialize(self, data: Dict[str, Any]):
+        """Restore filesystem from dictionary"""
+        self.root = FileNode.from_dict(data)
+
+    def save_state(self, path: str) -> bool:
+        """Save filesystem state to JSON file"""
+        try:
+            data = self.serialize()
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, 'w') as f:
+                json.dump(data, f, indent=2)
+            return True
+        except Exception as e:
+            print(f"Error saving filesystem state: {e}")
+            return False
+
+    def load_state(self, path: str) -> bool:
+        """Load filesystem state from JSON file"""
+        if not os.path.exists(path):
+            return False
+            
+        try:
+            with open(path, 'r') as f:
+                data = json.load(f)
+            self.deserialize(data)
+            return True
+        except Exception as e:
+            print(f"Error loading filesystem state: {e}")
+            return False
         
     def _initialize_filesystem(self):
         """Initialize the complete Ubuntu filesystem structure"""

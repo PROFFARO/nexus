@@ -745,6 +745,29 @@ class MySSHServer(asyncssh.SSHServer):
         )
         self.save_replay = config["features"].getboolean("save_replay", True)
         self.session_transcript = [] if self.session_recording else None
+        
+        # Persistence configuration
+        self.persistence_file = "sessions/filesystem_state.json"
+        self._load_filesystem_state()
+
+    def _load_filesystem_state(self):
+        """Load filesystem state from disk"""
+        if os.path.exists(self.persistence_file):
+            logger.info(f"Loading filesystem state from {self.persistence_file}")
+            if self.virtual_fs.load_state(self.persistence_file):
+                logger.info("Filesystem state loaded successfully")
+            else:
+                logger.error("Failed to load filesystem state")
+        else:
+            logger.info("No existing filesystem state found")
+
+    def _save_filesystem_state(self):
+        """Save filesystem state to disk"""
+        logger.info(f"Saving filesystem state to {self.persistence_file}")
+        if self.virtual_fs.save_state(self.persistence_file):
+            logger.info("Filesystem state saved successfully")
+        else:
+            logger.error("Failed to save filesystem state")
     
     def _ensure_user_home_directory(self, username: str):
         """Ensure user has a home directory in virtual filesystem"""
@@ -1225,6 +1248,16 @@ alias gs='git status'
             logger.error(f"Failed to integrate threat intelligence: {e}")
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
+        """Handle connection loss"""
+        if exc:
+            logger.error(f"Connection lost with error: {exc}", extra=self.get_log_context())
+        else:
+            logger.info("Connection closed cleanly", extra=self.get_log_context())
+            
+        # Save filesystem state
+        self._save_filesystem_state()
+        
+        # Generate session summary if not already done
         if exc:
             logger.error("SSH connection error", extra={"error": str(exc)})
             if not isinstance(exc, ConnectionLost):
@@ -1875,6 +1908,38 @@ async def process_command(
     interactive: bool = True,
 ) -> str:
     """Process a command with comprehensive analysis and logging"""
+
+    # Handle history substitution
+    if command.strip().startswith("!"):
+        try:
+            cmd_part = command.strip().split()[0]
+            if cmd_part == "!!":
+                if server.command_history:
+                    command = server.command_history[-1]
+                    process.stdout.write(f"{command}\n")
+                else:
+                    return "bash: !!: event not found"
+            elif len(cmd_part) > 1 and cmd_part[1].isdigit() or (cmd_part[1] == "-" and len(cmd_part) > 2):
+                try:
+                    index = int(cmd_part[1:])
+                    if index < 0:
+                        # Relative index from end
+                        if abs(index) <= len(server.command_history):
+                            command = server.command_history[index]
+                            process.stdout.write(f"{command}\n")
+                        else:
+                            return f"bash: {cmd_part}: event not found"
+                    elif index > 0:
+                        # Absolute index (1-based)
+                        if index <= len(server.command_history):
+                            command = server.command_history[index - 1]
+                            process.stdout.write(f"{command}\n")
+                        else:
+                            return f"bash: {cmd_part}: event not found"
+                except ValueError:
+                    pass
+        except Exception:
+            pass
 
     # Check for blocked commands
     if _check_blocked_commands(command, process, server):
