@@ -377,6 +377,81 @@ class NexusCLI:
         
         return 0
 
+    def run_ftp_service(self, args):
+        """Run FTP honeypot with provided arguments"""
+        if not self.services['ftp']['implemented']:
+            print("Error: FTP service not implemented")
+            return 1
+            
+        ftp_script = self.services['ftp']['path']
+        if not ftp_script.exists():
+            print(f"Error: FTP script not found at {ftp_script}")
+            return 1
+        
+        cmd = [sys.executable, str(ftp_script)]
+        env = self._setup_environment(args)
+        ftp_dir = self.services['ftp']['path'].parent
+        
+        try:
+            subprocess.run(cmd, cwd=ftp_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nFTP honeypot stopped")
+        except Exception as e:
+            print(f"Error running FTP honeypot: {e}")
+            return 1
+        
+        return 0
+
+    def run_http_service(self, args):
+        """Run HTTP honeypot with provided arguments"""
+        if not self.services['http']['implemented']:
+            print("Error: HTTP service not implemented")
+            return 1
+            
+        http_script = self.services['http']['path']
+        if not http_script.exists():
+            print(f"Error: HTTP script not found at {http_script}")
+            return 1
+        
+        cmd = [sys.executable, str(http_script)]
+        env = self._setup_environment(args)
+        http_dir = self.services['http']['path'].parent
+        
+        try:
+            subprocess.run(cmd, cwd=http_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nHTTP honeypot stopped")
+        except Exception as e:
+            print(f"Error running HTTP honeypot: {e}")
+            return 1
+        
+        return 0
+
+    def run_mysql_service(self, args):
+        """Run MySQL honeypot with provided arguments"""
+        if not self.services['mysql']['implemented']:
+            print("Error: MySQL service not implemented")
+            return 1
+            
+        mysql_script = self.services['mysql']['path']
+        if not mysql_script.exists():
+            print(f"Error: MySQL script not found at {mysql_script}")
+            return 1
+        
+        cmd = [sys.executable, str(mysql_script)]
+        env = self._setup_environment(args)
+        mysql_dir = self.services['mysql']['path'].parent
+        
+        try:
+            subprocess.run(cmd, cwd=mysql_dir, env=env)
+        except KeyboardInterrupt:
+            print("\nMySQL honeypot stopped")
+        except Exception as e:
+            print(f"Error running MySQL honeypot: {e}")
+            return 1
+        
+        return 0
+
     def generate_report(self, args):
         """Generate security report for specific service"""
         service_info = self.services.get(args.service)
@@ -737,85 +812,6 @@ except Exception as e:
         
         return 0
     
-    def _generate_smb_report(self, args):
-        """Generate SMB-specific security report"""
-        smb_dir = self.services['smb']['path'].parent
-        sessions_dir = args.sessions_dir or str(smb_dir / 'sessions')
-        
-        # Build command for SMB report generator with proper path handling
-        import tempfile
-        
-        # Escape paths properly for Windows
-        smb_dir_escaped = str(smb_dir).replace('\\', '\\\\')
-        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
-        output_dir_escaped = args.output.replace('\\', '\\\\')
-        
-        script_content = f'''import sys
-from pathlib import Path
-
-# Add SMB directory to path
-sys.path.insert(0, r"{smb_dir_escaped}")
-
-try:
-    from report_generator import SMBHoneypotReportGenerator
-    
-    generator = SMBHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
-    
-    if "error" in report_files:
-        print(f"[ERROR] {{report_files['error']}}")
-        sys.exit(1)
-    
-    print("[SUCCESS] SMB Security Report Generated Successfully!")
-    if "{args.format}" in ["json", "both"]:
-        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
-    if "{args.format}" in ["html", "both"]:
-        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
-    
-except Exception as e:
-    print(f"[ERROR] {{e}}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-'''
-        
-        # Write script to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(script_content)
-            temp_script = f.name
-        
-        cmd = [sys.executable, temp_script]
-        
-        try:
-            print(f"[INFO] Generating SMB security report...")
-            print(f"[INFO] Sessions directory: {sessions_dir}")
-            print(f"[INFO] Output directory: {args.output}")
-            print(f"[INFO] Format: {args.format}")
-            
-            result = subprocess.run(cmd, cwd=smb_dir, capture_output=True, text=True, encoding='utf-8')
-            
-            # Print output
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr, file=sys.stderr)
-            
-            if result.returncode != 0:
-                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
-                return 1
-                
-        except Exception as e:
-            print(f"[ERROR] Unexpected error: {e}")
-            return 1
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_script)
-            except:
-                pass
-        
-        return 0
-
     def list_services(self):
         """List all available services"""
         print("\n" + "=" * 80)
@@ -833,13 +829,6 @@ except Exception as e:
         print("  nexus_cli.py report --service <service>")
         print("=" * 80 + "\n")
 
-    def run_placeholder_service(self, service_name):
-        """Handle placeholder services"""
-        print(f"[ERROR] {service_name.upper()} honeypot is not yet implemented")
-        print(f"[INFO] Service location: {self.services[service_name]['path']}")
-        print("[INFO] This service is planned for future development.")
-        return 1
-    
     def view_logs(self, args):
         """View and analyze session logs using dedicated log viewer module"""
         service_info = self.services.get(args.service)
@@ -920,7 +909,7 @@ except Exception as e:
         
         return 0
 
-    def main():
+    def main(self):
         parser = self.create_parser()
         args = parser.parse_args()
         
@@ -943,8 +932,6 @@ except Exception as e:
             return self.run_http_service(args)
         elif args.command == 'mysql':
             return self.run_mysql_service(args)
-        elif args.command == 'smb':
-            return self.run_smb_service(args)
         elif args.command == 'status':
             return self.show_status(args)
         elif args.command == 'stop-all':
@@ -1009,8 +996,6 @@ except Exception as e:
                     port_value = parser['http'].getint('port', fallback=None)
                 elif service_name == 'mysql' and 'mysql' in parser:
                     port_value = parser['mysql'].getint('port', fallback=None)
-                elif service_name == 'smb' and 'smb' in parser:
-                    port_value = parser['smb'].getint('port', fallback=None)
 
                 if port_value is not None:
                     config['port'] = port_value
@@ -1032,8 +1017,7 @@ except Exception as e:
             'ssh': 8022,
             'ftp': 2121,
             'http': 8080,
-            'mysql': 3306,
-            'smb': 445
+            'mysql': 3307
         }
         return fallback_ports.get(service_name, 0)
     
@@ -1046,7 +1030,7 @@ except Exception as e:
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     cmdline = ' '.join(proc.info['cmdline'] or [])
-                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py', 'smb_server.py']):
+                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py']):
                         processes.append({
                             'pid': proc.info['pid'],
                             'name': proc.info['name'],
@@ -1178,23 +1162,26 @@ except Exception as e:
             
             def run_service():
                 try:
-                    subprocess.run(cmd, cwd=service_info['path'].parent)
-                except Exception as e:
-                    print(f"[ERROR] {{e}}")
+                    subprocess.run(cmd, cwd=service_info['path'].parent, 
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                except Exception:
+                    pass
             
             thread = threading.Thread(target=run_service, daemon=True)
             thread.start()
-            time.sleep(2)
             
-            new_status = self.check_service_status(service_name)
-            if new_status['status'] == 'running':
-                print(f"[SUCCESS] {service_name.upper()} started on port {new_status['port']}")
-                return True
-            else:
-                print(f"[ERROR] Failed to start {service_name.upper()}")
-                return False
+            # Check status with retries (up to 8 seconds total with 0.5s intervals)
+            for attempt in range(16):
+                time.sleep(0.5)
+                new_status = self.check_service_status(service_name)
+                if new_status['status'] == 'running':
+                    print(f"[SUCCESS] {service_name.upper()} started on port {new_status['port']}")
+                    return True
+            
+            print(f"[ERROR] Failed to start {service_name.upper()}")
+            return False
         except Exception as e:
-            print(f"[ERROR] {{e}}")
+            print(f"[ERROR] {e}")
             return False
 
     def start_all(self, args):
@@ -1218,33 +1205,6 @@ except Exception as e:
             print(f"  Failed: {failed_count} service(s)")
         
         return 0 if failed_count == 0 else 1
-
-    def _build_smb_command(self, args, smb_script):
-        """Build SMB command arguments"""
-        cmd = [sys.executable, str(smb_script)]
-        
-        arg_mappings = [
-            (args.config, ['-c', args.config]),
-            (args.port, ['-P', str(args.port)]),
-            (args.log_file, ['-L', args.log_file]),
-            (args.sensor_name, ['-S', args.sensor_name]),
-            (args.llm_provider, ['-l', args.llm_provider]),
-            (args.model_name, ['-m', args.model_name]),
-            (args.temperature is not None, ['-r', str(args.temperature)]),
-            (args.max_tokens, ['-t', str(args.max_tokens)]),
-            (args.prompt, ['-p', args.prompt]),
-            (args.prompt_file, ['-f', args.prompt_file])
-        ]
-        
-        for condition, extension in arg_mappings:
-            if condition:
-                cmd.extend(extension)
-        
-        if args.user_account:
-            for account in args.user_account:
-                cmd.extend(['-u', account])
-        
-        return cmd
 
     def handle_ml_command(self, args):
         """Handle ML subcommands"""
@@ -1297,7 +1257,7 @@ except Exception as e:
         processor = DataProcessor(str(datasets_dir))
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+            services = ['ssh', 'http', 'ftp', 'mysql']
         else:
             services = [args.service]
         
@@ -1334,7 +1294,7 @@ except Exception as e:
         from ai.data_processor import DataProcessor
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+            services = ['ssh', 'http', 'ftp', 'mysql']
         else:
             services = [args.service]
         
@@ -1497,8 +1457,6 @@ except Exception as e:
                     data = {'query': args.input}
                 elif args.service == 'ftp':
                     data = {'command': args.input}
-                elif args.service == 'smb':
-                    data = {'command': args.input, 'path': args.input}
                 else:
                     data = {'text': args.input}
                 
@@ -1527,7 +1485,7 @@ except Exception as e:
         print(f"[INFO] Updating ML models for {args.service}...")
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+            services = ['ssh', 'http', 'ftp', 'mysql']
         else:
             services = [args.service]
         
@@ -1573,31 +1531,6 @@ except Exception as e:
                 
             except Exception as e:
                 print(f" Error updating {service}: {e}")
-        
-        return 0
-
-    def run_smb_service(self, args):
-        """Run SMB honeypot with provided arguments"""
-        if not self.services['smb']['implemented']:
-            print("Error: SMB service not implemented")
-            return 1
-            
-        smb_script = self.services['smb']['path']
-        if not smb_script.exists():
-            print(f"Error: SMB script not found at {smb_script}")
-            return 1
-        
-        cmd = self._build_smb_command(args, smb_script)
-        env = self._setup_environment(args)
-        smb_dir = self.services['smb']['path'].parent
-        
-        try:
-            subprocess.run(cmd, cwd=smb_dir, env=env)
-        except KeyboardInterrupt:
-            print("\nSMB honeypot stopped")
-        except Exception as e:
-            print(f"Error running SMB honeypot: {e}")
-            return 1
         
         return 0
 

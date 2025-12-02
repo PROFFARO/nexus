@@ -2010,6 +2010,9 @@ try:
         help="Temperature parameter for controlling randomness in LLM responses (0.0-2.0)",
     )
     parser.add_argument(
+        "-H", "--host", type=str, help="The host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)"
+    )
+    parser.add_argument(
         "-P", "--port", type=int, help="The port the FTP honeypot will listen on"
     )
     parser.add_argument(

@@ -3297,8 +3297,8 @@ async def main():
     try:
         _setup_llm(config, args)
     except Exception as e:
-        logger.error(f"LLM setup failed: {e}")
-        return
+        logger.warning(f"LLM setup failed: {e}. Server will continue with basic responses.")
+        print(f"[WARNING] LLM setup failed: {e}. Server will continue with basic responses.")
 
     # Thread-local storage
     thread_local = threading.local()
