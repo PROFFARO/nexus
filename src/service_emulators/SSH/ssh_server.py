@@ -24,6 +24,9 @@ from typing import Any, Dict, List, Optional
 import asyncssh
 from asyncssh.misc import ConnectionLost
 from command_formatter import CommandFormatter
+from virtual_filesystem import VirtualFilesystem
+from command_executor import CommandExecutor
+from llm_guard import LLMGuard
 from langchain_aws import ChatBedrock, ChatBedrockConverse
 from langchain_core.chat_history import (
     BaseChatMessageHistory,
@@ -722,7 +725,17 @@ class MySSHServer(asyncssh.SSHServer):
             "attack_analysis": [],
             "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
-        # Initialize seed filesystem if configured
+        
+        # Initialize virtual filesystem
+        self.virtual_fs = VirtualFilesystem()
+        
+        # Initialize command executor
+        self.command_executor = CommandExecutor(self.virtual_fs)
+        
+        # Initialize LLM guard
+        self.llm_guard = LLMGuard()
+        
+        # Initialize seed filesystem if configured (legacy support)
         self.seed_fs = self._load_seed_filesystem()
         self.seed_first_reply = config["honeypot"].getboolean("seed_first_reply", False)
         # Initialize session recording if enabled
@@ -731,6 +744,29 @@ class MySSHServer(asyncssh.SSHServer):
         )
         self.save_replay = config["features"].getboolean("save_replay", True)
         self.session_transcript = [] if self.session_recording else None
+    
+    def _ensure_user_home_directory(self, username: str):
+        """Ensure user has a home directory in virtual filesystem"""
+        home_path = f"/home/{username}"
+        
+        # Check if home directory exists
+        if not self.virtual_fs.exists(home_path, "/"):
+            # Create home directory
+            self.virtual_fs.create_directory(home_path, "/")
+            
+            # Add basic files
+            bashrc = f"""# ~/.bashrc for {username}
+export PATH=/usr/local/bin:/usr/bin:/bin:/usr/games
+export EDITOR=vim
+export PS1='\\u@\\h:\\w\\$ '
+
+alias ll='ls -la'
+alias gs='git status'
+"""
+            self.virtual_fs.write_file(f"{home_path}/.bashrc", bashrc, "/")
+            
+            # Create Documents directory
+            self.virtual_fs.create_directory(f"{home_path}/Documents", "/")
 
     def _load_seed_filesystem(self) -> Dict[str, Any]:
         """Load seed filesystem from configured directory"""
@@ -899,56 +935,64 @@ class MySSHServer(asyncssh.SSHServer):
         """Handle cd command and update current directory"""
         parts = command.strip().split()
         if len(parts) < 2:
+            # cd with no args goes to home
+            username = getattr(self, "username", "guest")
+            self.current_directory = f"/home/{username}"
             return ""
 
         target_dir = parts[1].rstrip("/")
 
-        if target_dir == "..":
-            # Go back to parent directory
-            username = getattr(self, "username", "guest")
-            if self.current_directory != f"/home/{username}":
-                path_parts = self.current_directory.split("/")
-                if len(path_parts) > 3:  # /home/username/...
-                    self.current_directory = "/".join(path_parts[:-1])
-                else:
-                    self.current_directory = f"/home/{username}"
-            return ""
-        elif target_dir == "~":
-            username = getattr(self, "username", "guest")
-            self.current_directory = f"/home/{username}"
-            return ""
-        elif target_dir == "" or target_dir == ".":
-            # Stay in current directory
-            return ""
-        elif target_dir.startswith("~/"):
-            # Handle ~/path format
-            relative_path = target_dir[2:]  # Remove ~/
-            username = getattr(self, "username", "guest")
-            self.current_directory = f"/home/{username}/{relative_path}"
-            return ""
-        elif target_dir.startswith("/"):
-            # Absolute path - validate it's within allowed range
-            username = getattr(self, "username", "guest")
-            if target_dir.startswith(f"/home/{username}"):
-                self.current_directory = target_dir
-            else:
-                # amazonq-ignore-next-line
-                return f"-bash: cd: {target_dir}: Permission denied"
+        # Resolve the target path
+        if hasattr(self, "virtual_fs"):
+            # Use virtual filesystem to resolve and validate path
+            resolved_path = self.virtual_fs.resolve_path(target_dir, self.current_directory)
+            
+            # Check if path exists and is a directory
+            if not self.virtual_fs.exists(resolved_path, "/"):
+                return f"-bash: cd: {target_dir}: No such file or directory"
+            
+            if not self.virtual_fs.is_directory(resolved_path, "/"):
+                return f"-bash: cd: {target_dir}: Not a directory"
+            
+            # Update current directory
+            self.current_directory = resolved_path
             return ""
         else:
-            # Relative path - prevent duplicate directory names
-            username = getattr(self, "username", "guest")
-            if self.current_directory == f"/home/{username}":
-                self.current_directory = f"/home/{username}/{target_dir}"
+            # Fallback to old logic if virtual_fs not available
+            if target_dir == "..":
+                # Go back to parent directory
+                username = getattr(self, "username", "guest")
+                if self.current_directory != f"/home/{username}":
+                    path_parts = self.current_directory.split("/")
+                    if len(path_parts) > 3:  # /home/username/...
+                        self.current_directory = "/".join(path_parts[:-1])
+                    else:
+                        self.current_directory = f"/home/{username}"
+                return ""
+            elif target_dir == "~":
+                username = getattr(self, "username", "guest")
+                self.current_directory = f"/home/{username}"
+                return ""
+            elif target_dir == "" or target_dir == ".":
+                # Stay in current directory
+                return ""
+            elif target_dir.startswith("~/"):
+                # Handle ~/path format
+                relative_path = target_dir[2:]  # Remove ~/
+                username = getattr(self, "username", "guest")
+                self.current_directory = f"/home/{username}/{relative_path}"
+                return ""
+            elif target_dir.startswith("/"):
+                # Absolute path
+                self.current_directory = target_dir
+                return ""
             else:
-                # Check if we're already in the target directory to prevent duplication
-                current_basename = os.path.basename(self.current_directory)
-                if current_basename == target_dir:
-                    # Already in the target directory, don't duplicate
-                    return ""
+                # Relative path
+                if self.current_directory.endswith("/"):
+                    self.current_directory = self.current_directory + target_dir
                 else:
-                    self.current_directory = f"{self.current_directory}/{target_dir}"
-            return ""
+                    self.current_directory = self.current_directory + "/" + target_dir
+                return ""
 
     # Removed hardcoded format methods - now handled by CommandFormatter class
 
@@ -1401,6 +1445,9 @@ async def handle_client(
     authenticated_username = process.get_extra_info("username") or "guest"
     server.username = authenticated_username
     server.current_directory = f"/home/{authenticated_username}"
+    
+    # Ensure user has a home directory in virtual filesystem
+    server._ensure_user_home_directory(authenticated_username)
 
     try:
         if process.command:
@@ -1682,7 +1729,15 @@ async def _get_llm_response(
     llm_config: dict,
     interactive: bool,
 ) -> str:
-    """Get LLM response with enhanced context"""
+    """Get LLM response with enhanced context and hallucination prevention"""
+    
+    # Validate input with LLMGuard
+    if hasattr(server, "llm_guard"):
+        validation = server.llm_guard.validate_input(command)
+        if not validation["is_valid"]:
+            # Return fallback for invalid input
+            return server.llm_guard.get_fallback_response(command, validation["reason"])
+    
     enhanced_command = command
 
     # Apply dynamic responses if enabled
@@ -1701,6 +1756,15 @@ async def _get_llm_response(
             enhanced_command += (
                 " [DECEPTION: Simulate security resistance while logging attempts]"
             )
+    
+    # Enhance prompt with filesystem context using LLMGuard
+    if hasattr(server, "llm_guard") and hasattr(server, "virtual_fs"):
+        enhanced_command = server.llm_guard.enhance_prompt(
+            enhanced_command,
+            server.virtual_fs,
+            server.current_directory,
+            server.username
+        )
 
     try:
         llm_response = await with_message_history.ainvoke(
@@ -1711,7 +1775,30 @@ async def _get_llm_response(
             },
             config=llm_config,
         )
-        return server.format_command_output(command, llm_response.content)
+        
+        response_content = llm_response.content
+        
+        # Validate and sanitize LLM output
+        if hasattr(server, "llm_guard"):
+            # Sanitize response
+            response_content = server.llm_guard.sanitize_response(response_content)
+            
+            # Validate output
+            output_validation = server.llm_guard.validate_output(
+                response_content,
+                command,
+                server.virtual_fs if hasattr(server, "virtual_fs") else None,
+                server.current_directory
+            )
+            
+            if not output_validation["is_valid"]:
+                # Use fallback if LLM hallucinated
+                logger.warning(f"LLM hallucination detected: {output_validation['reason']}")
+                return server.llm_guard.get_fallback_response(command, output_validation["reason"])
+            
+            response_content = output_validation["cleaned"]
+        
+        return server.format_command_output(command, response_content)
     except Exception as e:
         logger.error(f"LLM request failed: {e}")
         return _get_fallback_response(command, process, server)
@@ -1829,7 +1916,7 @@ def handle_manual_commands(
     process: asyncssh.SSHServerProcess,
     server: Optional["MySSHServer"] = None,
 ) -> Optional[str]:
-    """Handle only essential commands that must be handled locally"""
+    """Handle commands - first try CommandExecutor, then manual handlers"""
     cmd_parts = command.strip().split()
     if not cmd_parts:
         return ""
@@ -1840,17 +1927,39 @@ def handle_manual_commands(
     if cmd in ["exit", "logout", "quit"]:
         return "XXX-END-OF-SESSION-XXX"
 
-    # Handle cd command manually for directory tracking
-    elif cmd == "cd":
+    # Handle clear command immediately - should always work
+    elif cmd == "clear":
+        return "\033[2J\033[H"
+        
+    # Try CommandExecutor first
+    if server and hasattr(server, "command_executor"):
+        try:
+            response, routing = server.command_executor.execute(
+                command,
+                current_dir=server.current_directory,
+                username=server.username,
+                context={"server": server, "process": process}
+            )
+            
+            # If CommandExecutor handled it, return the response
+            if response is not None:
+                return response
+                
+            # If routing is "llm", return None to let LLM handle it
+            if routing == "llm":
+                return None
+                
+        except Exception as e:
+            logger.error(f"CommandExecutor error: {e}")
+            # Fall through to manual handling
+
+    # Handle cd command manually for directory tracking (fallback)
+    if cmd == "cd":
         if server:
             return server._handle_cd_command(command)
         return ""
 
-    # Handle clear command immediately - should always work
-    elif cmd == "clear":
-        return "\033[2J\033[H"
-
-    # Let LLM handle all other commands (pwd, whoami, date, history, ls, ps, etc.)
+    # Let LLM handle all other commands
     return None
 
 
