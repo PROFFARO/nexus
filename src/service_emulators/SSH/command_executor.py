@@ -960,18 +960,6 @@ sudo apt install {package}
         if cmd == "less":
             return self._cmd_less(args, current_dir)
         
-        # vim command
-        if cmd == "vim":
-            return self._cmd_vim(args, current_dir, context)
-        
-        # vi command
-        if cmd == "vi":
-            return self._cmd_vi(args, current_dir, context)
-        
-        # nano command
-        if cmd == "nano":
-            return self._cmd_nano(args, current_dir, context)
-        
         # emacs command
         if cmd == "emacs":
             return self._cmd_emacs(args, current_dir)
@@ -1165,36 +1153,6 @@ sudo apt install {package}
                 return f"{filename}: Permission denied"
         
         return content + "\n(END)"
-    
-    def _cmd_vim(self, args: List[str], current_dir: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """Execute vim command - returns special marker for interactive session"""
-        if not args:
-            return """VIM - Vi IMproved
-
-version 8.1.2269
-by Bram Moolenaar et al.
-Vim is open source and freely distributable
-
-Help poor children in Uganda!
-type  :help iccf<Enter>       for information
-type  :q<Enter>               to exit
-type  :help<Enter>  or  <F1>  for on-line help
-type  :help version8<Enter>   for version info"""
-        
-        filename = args[0]
-        # Return special marker that ssh_server will intercept
-        return f"__INTERACTIVE_VIM__{filename}"
-    
-    def _cmd_nano(self, args: List[str], current_dir: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """Execute nano command - returns special marker for interactive session"""
-        filename = args[0] if args else "untitled"
-        # Return special marker that ssh_server will intercept
-        return f"__INTERACTIVE_NANO__{filename}"
-        
-    
-    def _cmd_vi(self, args: List[str], current_dir: str, context: Optional[Dict[str, Any]] = None) -> str:
-        """Execute vi command - alias to vim"""
-        return self._cmd_vim(args, current_dir, context)
     
     def _cmd_emacs(self, args: List[str], current_dir: str) -> str:
         """Execute emacs command - simulate emacs editor"""
@@ -5895,6 +5853,36 @@ Written by Brian Fox and Chet Ramey."""
             '\\t': '\t',       # Horizontal tab
             '\\v': '\v',       # Vertical tab
         }
+        
+        for escape, replacement in replacements.items():
+            text = text.replace(escape, replacement)
+        
+        # Handle \c (stop processing)
+        if '\\c' in text:
+            text = text.split('\\c')[0]
+        
+        # Handle octal sequences \0NNN
+        import re
+        def replace_octal(match):
+            octal_value = match.group(1)
+            try:
+                return chr(int(octal_value, 8))
+            except:
+                return match.group(0)
+        
+        text = re.sub(r'\\0([0-7]{1,3})', replace_octal, text)
+        
+        # Handle hex sequences \xHH
+        def replace_hex(match):
+            hex_value = match.group(1)
+            try:
+                return chr(int(hex_value, 16))
+            except:
+                return match.group(0)
+        
+        text = re.sub(r'\\x([0-9a-fA-F]{1,2})', replace_hex, text)
+        
+        return text
         
         for escape, replacement in replacements.items():
             text = text.replace(escape, replacement)

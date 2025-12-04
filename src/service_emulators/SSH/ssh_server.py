@@ -2168,18 +2168,6 @@ async def handle_manual_commands(
         server.current_directory = f"/home/{username}"
         return ""
     
-    # Check for interactive editor markers
-    if result and result.startswith("__INTERACTIVE_VIM__"):
-        filename = result.replace("__INTERACTIVE_VIM__", "")
-        editor = InteractiveVim(process, filename, server.virtual_fs, server.current_directory)
-        await editor.run()
-        return None
-    elif result and result.startswith("__INTERACTIVE_NANO__"):
-        filename = result.replace("__INTERACTIVE_NANO__", "")
-        editor = InteractiveNano(process, filename, server.virtual_fs, server.current_directory)
-        await editor.run()
-        return None
-    
     return result
 
 def clean_ansi_sequences(text: str) -> str:
