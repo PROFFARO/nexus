@@ -3,11 +3,13 @@
 Simple script to generate honeypot reports
 """
 
-from report_generator import HoneypotReportGenerator
+from pathlib import Path
+from report_generator import SSHHoneypotReportGenerator
 
 def main():
     # Initialize report generator
-    generator = HoneypotReportGenerator(sessions_dir="sessions")
+    sessions_path = Path(__file__).parent / "sessions"
+    generator = SSHHoneypotReportGenerator(sessions_dir=str(sessions_path))
     
     # Generate comprehensive report
     print("Generating honeypot security report...")
