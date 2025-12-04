@@ -1647,8 +1647,10 @@ async def handle_client(
                     logger.info("Terminal size changed, continuing session")
                     continue
                 except asyncssh.BreakReceived:
-                    # Handle Ctrl+C gracefully
-                    logger.info("Break received, continuing session")
+                    # Handle Ctrl+C gracefully - show ^C and reset prompt
+                    process.stdout.write("^C\n")
+                    process.stdout.write(get_prompt(server))
+                    logger.info("Break received (Ctrl+C), reset prompt")
                     continue
                 except (ConnectionResetError, asyncssh.misc.ConnectionLost):
                     # Handle connection issues
@@ -2039,17 +2041,234 @@ async def process_command(
     return response_content
 
 
+async def handle_sudo_command(
+    args: List[str],
+    process: asyncssh.SSHServerProcess,
+    server: Optional["MySSHServer"] = None,
+) -> Optional[str]:
+    """Handle interactive sudo command with password prompt"""
+    if not server:
+        return "sudo: unable to initialize"
+    
+    if not args:
+        return """usage: sudo -h | -K | -k | -V
+usage: sudo -v [-AknS] [-g group] [-h host] [-p prompt] [-u user]
+usage: sudo -l [-AknS] [-g group] [-h host] [-p prompt] [-U user] [-u user] [command]
+usage: sudo [-AbEHknPS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] [VAR=value] [-i|-s] [<command>]
+usage: sudo -e [-AknS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] file ..."""
+    
+    username = server.username
+    
+    # Check if user is already root
+    if username == "root":
+        # Execute command as root
+        cmd_to_run = " ".join(args)
+        context = {"server": server, "process": process, "username": "root"}
+        return server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
+    
+    # Check if user is in sudoers
+    user_accounts = server.config.get("user_accounts", {})
+    
+    if username not in user_accounts:
+        return f"{username} is not in the sudoers file.  This incident will be reported."
+    
+    # Check if sudo session is still valid (within 15 minutes)
+    import time
+    current_time = time.time()
+    last_sudo_time = getattr(server, "last_sudo_time", 0)
+    
+    if current_time - last_sudo_time < 900:  # 15 minutes
+        # Sudo session still valid, execute without password
+        cmd_to_run = " ".join(args)
+        context = {"server": server, "process": process, "username": "root"}
+        result = server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
+        server.last_sudo_time = current_time
+        return result
+
+    # Handle sudo -i (interactive root shell)
+    if "-i" in args or "--login" in args:
+        # Check password first (same as above)
+        # ... password verification code ...
+        
+        # If password correct, enter root shell mode
+        server.sudo_active = True
+        server.last_sudo_time = current_time
+        process.stdout.write(get_prompt(server))
+        return None  # Don't return anything, just change prompt
+
+    # Need password - interactive prompt
+    try:
+        # Disable echo for password input
+        process.channel.set_echo(False)
+        
+        # Send password prompt
+        process.stdout.write(f"[sudo] password for {username}: ")
+        
+        # Read password (up to newline)
+        password = ""
+        while True:
+            char = await asyncio.wait_for(process.stdin.read(1), timeout=30.0)
+            if not char or char == '\n' or char == '\r':
+                break
+            password += char
+        
+        # Re-enable echo
+        process.channel.set_echo(True)
+        process.stdout.write("\n")
+        
+        # Verify password
+        user_data = user_accounts.get(username, {})
+        correct_password = user_data.get("password", "")
+        
+        if password != correct_password:
+            # Log failed attempt
+            logger.warning(f"Failed sudo attempt for user {username}")
+            return "Sorry, try again."
+        
+        # Password correct - execute command
+        server.last_sudo_time = current_time
+        
+        cmd_to_run = " ".join(args)
+        context = {"server": server, "process": process, "username": "root"}
+        result = server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
+        
+        return result
+    
+    except asyncio.TimeoutError:
+        process.channel.set_echo(True)
+        process.stdout.write("\n")
+        return "sudo: timed out reading password"
+    except Exception as e:
+        process.channel.set_echo(True)
+        logger.error(f"Error in sudo command: {e}")
+        return "sudo: error reading password"
+
+
+async def handle_file_redirection(
+    command: str,
+    server: "MySSHServer",
+    context: Dict[str, Any]
+) -> Optional[str]:
+    """
+    Handle file redirection (>, >>).
+    Returns None if redirection was handled, otherwise returns the command unchanged.
+    """
+    # Check for append redirection (>>)
+    if ">>" in command:
+        parts = command.split(">>", 1)
+        cmd = parts[0].strip()
+        
+        # Parse filename (handle quotes and spaces)
+        filename_part = parts[1].strip()
+        
+        # Handle quoted filenames
+        if filename_part.startswith('"') or filename_part.startswith("'"):
+            quote_char = filename_part[0]
+            end_quote = filename_part.find(quote_char, 1)
+            if end_quote != -1:
+                filename = filename_part[1:end_quote]
+            else:
+                filename = filename_part[1:].split()[0]
+        else:
+            filename = filename_part.split()[0]
+        
+        # Execute the command
+        result = server.command_executor.execute(cmd, server.current_directory, server.username, context)
+        
+        # Append to file in virtual filesystem
+        if result is not None:
+            existing_content = server.virtual_fs.read_file(filename, server.current_directory)
+            if existing_content is None:
+                # File doesn't exist, create it
+                new_content = result
+            else:
+                # Append to existing content
+                new_content = existing_content + result
+            
+            server.virtual_fs.write_file(filename, new_content, server.current_directory)
+            logger.info(f"Appended output to file: {filename}")
+        
+        return None  # Redirection handled, don't print output
+    
+    # Check for overwrite redirection (>)
+    elif ">" in command and not command.startswith(">"):  # Avoid matching >> or >( process substitution
+        # Make sure it's not part of a comparison or other operator
+        if ">=" in command or "=>" in command:
+            return command  # Not a redirection
+        
+        parts = command.split(">", 1)
+        cmd = parts[0].strip()
+        
+        # Parse filename (handle quotes and spaces)
+        filename_part = parts[1].strip()
+        
+        # Handle quoted filenames
+        if filename_part.startswith('"') or filename_part.startswith("'"):
+            quote_char = filename_part[0]
+            end_quote = filename_part.find(quote_char, 1)
+            if end_quote != -1:
+                filename = filename_part[1:end_quote]
+            else:
+                filename = filename_part[1:].split()[0]
+        else:
+            filename = filename_part.split()[0]
+        
+        # Execute the command
+        result = server.command_executor.execute(cmd, server.current_directory, server.username, context)
+        
+        # Write to file in virtual filesystem (overwrite)
+        if result is not None:
+            server.virtual_fs.write_file(filename, result, server.current_directory)
+            logger.info(f"Wrote output to file: {filename}")
+        
+        return None  # Redirection handled, don't print output
+    
+    # No redirection found
+    return command
+
+
 def handle_manual_commands(
     command: str,
     process: asyncssh.SSHServerProcess,
     server: Optional["MySSHServer"] = None,
 ) -> Optional[str]:
     """Handle commands - first try CommandExecutor, then manual handlers"""
+
+    # Import interactive editors
+    from interactive_editors import InteractiveVim, InteractiveNano
+
     cmd_parts = command.strip().split()
     if not cmd_parts:
         return ""
 
     cmd = cmd_parts[0].lower()
+
+    # Handle sudo interactively
+    if cmd == "sudo":
+        return await handle_sudo_command(cmd_parts[1:], process, server)
+
+    # First, try the command executor
+    context = {"server": server, "process": process}
+    result = server.command_executor.execute(command, server.current_directory, server.username, context)
+    redirection_result = await handle_file_redirection(command, server, context)
+
+    if redirection_result is None:
+        # Redirection was handled, don't print anything
+        return None
+    
+    # Check for interactive editor markers
+    if result and result.startswith("__INTERACTIVE_VIM__"):
+        filename = result.replace("__INTERACTIVE_VIM__", "")
+        editor = InteractiveVim(process, filename, server.virtual_fs, server.current_directory)
+        await editor.run()
+        return None
+    elif result and result.startswith("__INTERACTIVE_NANO__"):
+        filename = result.replace("__INTERACTIVE_NANO__", "")
+        editor = InteractiveNano(process, filename, server.virtual_fs, server.current_directory)
+        await editor.run()
+        return None
+    
+    return result
 
     # Handle exit commands immediately - these should always work
     if cmd in ["exit", "logout", "quit"]:
@@ -2106,20 +2325,51 @@ def clean_ansi_sequences(text: str) -> str:
 
 
 def get_prompt(server: Optional["MySSHServer"]) -> str:
-    """Generate dynamic prompt based on current directory"""
+    """Generate dynamic prompt based on current directory and sudo status"""
     if server and hasattr(server, "current_directory"):
         username = getattr(server, "username", "guest")
+        
+        # Check if in sudo mode
+        is_sudo = getattr(server, "sudo_active", False)
+        effective_user = "root" if is_sudo else username
+        
+        # Generate dynamic hostname
+        hostname_types = ["web", "db", "mail", "app", "api", "cache", "proxy", "file", "backup", "monitor"]
+        hostname_type = hostname_types[hash(username) % len(hostname_types)]
+        import datetime
+        server_num = (hash(username + str(datetime.datetime.now().day)) % 99) + 1
+        hostname = f"{hostname_type}-srv-{server_num:02d}"
+        
         path = server.current_directory
-        if path == f"/home/{username}":
-            return f"{username}@corp-srv-01:~$ "
-        elif path.startswith(f"/home/{username}/"):
-            short_path = path.replace(f"/home/{username}/", "")
-            # amazonq-ignore-next-line
-            return f"{username}@corp-srv-01:~/{short_path}$ "
+        
+        # Determine prompt symbol
+        prompt_symbol = "#" if is_sudo else "$"
+        
+        # Determine color codes
+        if is_sudo:
+            # Red for root
+            user_color = "\033[01;31m"
         else:
-            return f"{username}@corp-srv-01:{path}$ "
+            # Green for regular user
+            user_color = "\033[01;32m"
+        
+        reset_color = "\033[00m"
+        path_color = "\033[01;34m"
+        
+        # Format path
+        if path == f"/home/{username}":
+            display_path = "~"
+        elif path.startswith(f"/home/{username}/"):
+            display_path = "~/" + path.replace(f"/home/{username}/", "")
+        elif path == "/root" and is_sudo:
+            display_path = "~"
+        else:
+            display_path = path
+        
+        return f"{user_color}{effective_user}@{hostname}{reset_color}:{path_color}{display_path}{reset_color}{prompt_symbol} "
+    
     username = getattr(server, "username", "guest") if server else "guest"
-    return f"{username}@corp-srv-01:~$ "
+    return f"{username}@server:~$ "
 
 
 def get_help_text() -> str:
