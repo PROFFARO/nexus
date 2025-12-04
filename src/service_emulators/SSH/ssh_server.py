@@ -2227,7 +2227,7 @@ async def handle_file_redirection(
     return command
 
 
-def handle_manual_commands(
+async def handle_manual_commands(
     command: str,
     process: asyncssh.SSHServerProcess,
     server: Optional["MySSHServer"] = None,

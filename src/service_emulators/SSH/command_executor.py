@@ -5731,13 +5731,11 @@ Written by Brian Fox and Chet Ramey."""
         # Expand $(command) format
         def replace_dollar_paren(match):
             command = match.group(1)
-            # Execute the command and return its output
             try:
                 result = self.execute(command, 
                                      context.get("current_dir", "/home/guest") if context else "/home/guest",
                                      context.get("username", "guest") if context else "guest",
                                      context)
-                # Remove trailing newline for substitution
                 return result.rstrip('\n') if result else ""
             except:
                 return ""
@@ -5761,11 +5759,6 @@ Written by Brian Fox and Chet Ramey."""
         return text
     
     def _interpret_escape_sequences(self, text: str) -> str:
-        """
-        Interpret backslash escape sequences.
-        Supports: \\, \a, \b, \c, \e, \f, \n, \r, \t, \v, \0NNN, \xHH
-        """
-        # Replace escape sequences
         replacements = {
             '\\\\': '\\',      # Backslash
             '\\a': '\a',       # Alert (bell)

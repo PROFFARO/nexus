@@ -364,7 +364,7 @@ class InteractiveNano:
                     continue
                 
                 # Handle control characters
-                if buffer.startswith('\x'):
+                if buffer.startswith(r'\x'):
                     await self.handle_control(buffer)
                     buffer = ""
                     continue
@@ -379,7 +379,7 @@ class InteractiveNano:
                     continue
                 
                 # Handle control characters
-                if buffer.startswith('\x'):
+                if buffer.startswith(r'\x'):
                     await self.handle_control(buffer)
                     buffer = ""
                     continue
