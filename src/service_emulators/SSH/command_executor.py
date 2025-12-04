@@ -60,7 +60,7 @@ class CommandExecutor:
         "file", "stat", "du", "df", "mount", "umount",
         
         # File viewing/editing
-        "more", "less", "vim", "vi", "nano", "emacs", "ed", "sed", "awk",
+        "more", "less", "ed", "sed", "awk",
         
         # System info
         "whoami", "id", "hostname", "uname", "uptime", "date", "cal", "w", "who", "last",
@@ -604,7 +604,7 @@ class CommandExecutor:
             "du", "df",
             
             # File viewing/editing
-            "more", "less", "vim", "vi", "nano", "emacs", "ed", "sed", "awk",
+            "more", "less", "ed", "sed", "awk",
             
             # Archive operations (interact with filesystem)
             "dd",
@@ -960,10 +960,6 @@ sudo apt install {package}
         if cmd == "less":
             return self._cmd_less(args, current_dir)
         
-        # emacs command
-        if cmd == "emacs":
-            return self._cmd_emacs(args, current_dir)
-        
         # ed command
         if cmd == "ed":
             return self._cmd_ed(args, current_dir)
@@ -1153,28 +1149,6 @@ sudo apt install {package}
                 return f"{filename}: Permission denied"
         
         return content + "\n(END)"
-    
-    def _cmd_emacs(self, args: List[str], current_dir: str) -> str:
-        """Execute emacs command - simulate emacs editor"""
-        if not args:
-            return """GNU Emacs 26.3 (build 2, x86_64-pc-linux-gnu, GTK+ Version 3.24.14)
- of 2020-03-26, modified by Debian
-Copyright (C) 2019 Free Software Foundation, Inc.
-GNU Emacs comes with ABSOLUTELY NO WARRANTY.
-You may redistribute copies of GNU Emacs
-under the terms of the GNU General Public License.
-For more information about these matters, see the file named COPYING.
-
-emacs: standard input is not a tty"""
-        
-        filename = args[0]
-        content = self.fs.read_file(filename, current_dir)
-        is_new = content is None
-        
-        return f"""[Simulated emacs session for '{filename}']
-
-Note: Interactive emacs editing is simulated. File operations are logged.
-To actually modify files, use: echo "content" > {filename}"""
     
     def _cmd_ed(self, args: List[str], current_dir: str) -> str:
         """Execute ed command - line editor"""
@@ -2183,12 +2157,18 @@ tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size={random.randint(4
         # Convert glob pattern to regex
         regex_pattern = pattern.replace(".", r"\.").replace("*", ".*").replace("?", ".")
         return re.match(f"^{regex_pattern}$", name) is not None
-        
+
     def _cmd_file(self, args: List[str], current_dir: str) -> str:
-        """Execute file command"""
+        """Execute file command with comprehensive file type detection"""
         if not args:
             return "file: missing file operand"
-            
+        
+        # Parse flags
+        brief = "-b" in args or "--brief" in args
+        mime = "-i" in args or "--mime" in args
+        mime_type = "--mime-type" in args
+        mime_encoding = "--mime-encoding" in args
+        
         results = []
         for arg in args:
             if arg.startswith("-"):
@@ -2197,56 +2177,448 @@ tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size={random.randint(4
             info = self.fs.get_file_info(arg, current_dir)
             if not info:
                 results.append(f"{arg}: cannot open `{arg}' (No such file or directory)")
-            elif info["is_dir"]:
-                results.append(f"{arg}: directory")
-            else:
-                # Determine file type from content/name
-                name = info["name"].lower()
-                if name.endswith((".txt", ".md", ".log")):
-                    results.append(f"{arg}: ASCII text")
-                elif name.endswith((".sh", ".bash")):
-                    results.append(f"{arg}: Bourne-Again shell script, ASCII text executable")
-                elif name.endswith((".py",)):
-                    results.append(f"{arg}: Python script, ASCII text executable")
-                elif name.endswith((".cpp", ".c", ".h")):
-                    results.append(f"{arg}: C++ source, ASCII text")
-                elif name.endswith((".cs",)):
-                    results.append(f"{arg}: C# source, ASCII text")
-                elif name.endswith((".jpg", ".jpeg", ".png")):
-                    results.append(f"{arg}: {name.split('.')[-1].upper()} image data")
-                elif name.endswith((".tar", ".gz", ".zip")):
-                    results.append(f"{arg}: compressed data")
+                continue
+                
+            # Get file name and extension
+            name = info["name"].lower()
+            ext = name.split('.')[-1] if '.' in name else ''
+            
+            # Determine file type
+            if info["is_dir"]:
+                if mime or mime_type:
+                    file_type = "inode/directory"
                 else:
-                    results.append(f"{arg}: data")
+                    file_type = "directory"
+            else:
+                # Read content for better detection (first 512 bytes)
+                content = self.fs.read_file(arg, current_dir)
+                if content is None:
+                    content = ""
+                
+                file_type = self._detect_file_type(name, ext, content, mime or mime_type, mime_encoding)
+            
+            # Format output based on flags
+            if brief:
+                # Brief mode - just the type, no filename
+                results.append(file_type)
+            elif mime or mime_type:
+                # MIME type mode
+                results.append(f"{arg}: {file_type}")
+            elif mime_encoding:
+                # MIME encoding mode
+                encoding = self._detect_encoding(content if not info["is_dir"] else "")
+                results.append(f"{arg}: {encoding}")
+            else:
+                # Standard mode
+                results.append(f"{arg}: {file_type}")
                     
         return "\n".join(results)
+
+    def _detect_file_type(self, name: str, ext: str, content: str, mime: bool = False, mime_encoding: bool = False) -> str:
+        """Detect file type based on name, extension, and content"""
         
+        # Check content for magic bytes/signatures
+        if content:
+            # Binary file detection
+            if '\x00' in content[:512]:  # Null bytes indicate binary
+                return self._detect_binary_type(name, ext, content, mime)
+            
+            # Script detection by shebang
+            if content.startswith('#!/'):
+                shebang = content.split('\n')[0]
+                if mime:
+                    return "text/x-shellscript; charset=us-ascii"
+                if 'python' in shebang:
+                    return "Python script, ASCII text executable"
+                elif 'bash' in shebang or 'sh' in shebang:
+                    return "Bourne-Again shell script, ASCII text executable"
+                elif 'perl' in shebang:
+                    return "Perl script, ASCII text executable"
+                elif 'ruby' in shebang:
+                    return "Ruby script, ASCII text executable"
+                elif 'node' in shebang:
+                    return "Node.js script, ASCII text executable"
+                else:
+                    return "script, ASCII text executable"
+            
+            # Check for specific file formats by content
+            if content.startswith('<?xml'):
+                return "application/xml; charset=us-ascii" if mime else "XML 1.0 document, ASCII text"
+            elif content.startswith('<!DOCTYPE html') or content.startswith('<html'):
+                return "text/html; charset=us-ascii" if mime else "HTML document, ASCII text"
+            elif content.startswith('{') and '"' in content[:100]:
+                return "application/json; charset=us-ascii" if mime else "JSON data"
+            elif content.startswith('---') and '\n' in content[:10]:
+                return "text/yaml; charset=us-ascii" if mime else "YAML document, ASCII text"
+        
+        # Extension-based detection
+        if mime:
+            return self._get_mime_type(ext)
+        else:
+            return self._get_human_readable_type(name, ext, content)
+
+    def _detect_binary_type(self, name: str, ext: str, content: str, mime: bool = False) -> str:
+        """Detect binary file types"""
+        
+        # Check magic bytes
+        if content.startswith('\x7fELF'):
+            if mime:
+                return "application/x-executable"
+            arch = "x86-64" if '\x02\x00' in content[4:6] else "x86"
+            return f"ELF 64-bit LSB executable, {arch}, version 1 (SYSV), dynamically linked"
+        
+        elif content.startswith('MZ'):
+            return "application/x-dosexec" if mime else "PE32 executable (console) Intel 80386, for MS Windows"
+        
+        elif content.startswith('\x89PNG'):
+            if mime:
+                return "image/png"
+            # Try to get dimensions (simplified)
+            return "PNG image data, 1920 x 1080, 8-bit/color RGB, non-interlaced"
+        
+        elif content.startswith('\xff\xd8\xff'):
+            if mime:
+                return "image/jpeg"
+            return "JPEG image data, JFIF standard 1.01, aspect ratio, density 1x1, segment length 16, baseline, precision 8"
+        
+        elif content.startswith('GIF8'):
+            return "image/gif" if mime else "GIF image data, version 89a, 800 x 600"
+        
+        elif content.startswith('PK\x03\x04'):
+            if mime:
+                return "application/zip"
+            if ext in ['jar', 'war', 'ear']:
+                return f"Java archive data ({ext.upper()})"
+            elif ext == 'apk':
+                return "Android package (APK)"
+            elif ext in ['docx', 'xlsx', 'pptx']:
+                doc_types = {'docx': 'Word', 'xlsx': 'Excel', 'pptx': 'PowerPoint'}
+                return f"Microsoft {doc_types[ext]} 2007+"
+            else:
+                return "Zip archive data, at least v2.0 to extract"
+        
+        elif content.startswith('\x1f\x8b'):
+            return "application/gzip" if mime else "gzip compressed data, was \"file.txt\", last modified: Wed Dec  4 21:56:38 2024, from Unix"
+        
+        elif content.startswith('BZh'):
+            return "application/x-bzip2" if mime else "bzip2 compressed data, block size = 900k"
+        
+        elif content.startswith('\xfd7zXZ\x00'):
+            return "application/x-xz" if mime else "XZ compressed data"
+        
+        elif content.startswith('%PDF'):
+            version = content[5:8] if len(content) > 8 else "1.4"
+            return "application/pdf" if mime else f"PDF document, version {version}"
+        
+        else:
+            return "application/octet-stream" if mime else "data"
+
+    def _get_mime_type(self, ext: str) -> str:
+        """Get MIME type based on extension"""
+        mime_types = {
+            # Text files
+            'txt': 'text/plain; charset=us-ascii',
+            'md': 'text/markdown; charset=us-ascii',
+            'log': 'text/plain; charset=us-ascii',
+            'csv': 'text/csv; charset=us-ascii',
+            'tsv': 'text/tab-separated-values; charset=us-ascii',
+            
+            # Scripts
+            'sh': 'text/x-shellscript; charset=us-ascii',
+            'bash': 'text/x-shellscript; charset=us-ascii',
+            'py': 'text/x-python; charset=us-ascii',
+            'pl': 'text/x-perl; charset=us-ascii',
+            'rb': 'text/x-ruby; charset=us-ascii',
+            'js': 'text/javascript; charset=us-ascii',
+            'ts': 'text/typescript; charset=us-ascii',
+            
+            # Programming languages
+            'c': 'text/x-c; charset=us-ascii',
+            'cpp': 'text/x-c++; charset=us-ascii',
+            'cc': 'text/x-c++; charset=us-ascii',
+            'h': 'text/x-c; charset=us-ascii',
+            'hpp': 'text/x-c++; charset=us-ascii',
+            'cs': 'text/x-csharp; charset=us-ascii',
+            'java': 'text/x-java; charset=us-ascii',
+            'go': 'text/x-go; charset=us-ascii',
+            'rs': 'text/x-rust; charset=us-ascii',
+            'php': 'text/x-php; charset=us-ascii',
+            
+            # Markup/Config
+            'html': 'text/html; charset=us-ascii',
+            'htm': 'text/html; charset=us-ascii',
+            'xml': 'application/xml; charset=us-ascii',
+            'json': 'application/json; charset=us-ascii',
+            'yaml': 'text/yaml; charset=us-ascii',
+            'yml': 'text/yaml; charset=us-ascii',
+            'toml': 'application/toml; charset=us-ascii',
+            'ini': 'text/plain; charset=us-ascii',
+            'conf': 'text/plain; charset=us-ascii',
+            'cfg': 'text/plain; charset=us-ascii',
+            
+            # Images
+            'jpg': 'image/jpeg',
+            'jpeg': 'image/jpeg',
+            'png': 'image/png',
+            'gif': 'image/gif',
+            'bmp': 'image/bmp',
+            'svg': 'image/svg+xml',
+            'ico': 'image/x-icon',
+            'webp': 'image/webp',
+            
+            # Archives
+            'zip': 'application/zip',
+            'tar': 'application/x-tar',
+            'gz': 'application/gzip',
+            'bz2': 'application/x-bzip2',
+            'xz': 'application/x-xz',
+            '7z': 'application/x-7z-compressed',
+            'rar': 'application/x-rar-compressed',
+            
+            # Documents
+            'pdf': 'application/pdf',
+            'doc': 'application/msword',
+            'docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+            'xls': 'application/vnd.ms-excel',
+            'xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'ppt': 'application/vnd.ms-powerpoint',
+            'pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+            
+            # Executables
+            'exe': 'application/x-dosexec',
+            'dll': 'application/x-dosexec',
+            'so': 'application/x-sharedlib',
+            'o': 'application/x-object',
+            'a': 'application/x-archive',
+            
+            # Media
+            'mp3': 'audio/mpeg',
+            'wav': 'audio/x-wav',
+            'ogg': 'audio/ogg',
+            'mp4': 'video/mp4',
+            'avi': 'video/x-msvideo',
+            'mkv': 'video/x-matroska',
+            'webm': 'video/webm',
+        }
+        
+        return mime_types.get(ext, 'application/octet-stream')
+
+    def _get_human_readable_type(self, name: str, ext: str, content: str) -> str:
+        """Get human-readable file type description"""
+        
+        # Check if file is empty
+        if not content:
+            return "empty"
+        
+        # Determine if ASCII or UTF-8
+        try:
+            content.encode('ascii')
+            charset = "ASCII"
+        except UnicodeEncodeError:
+            charset = "UTF-8 Unicode"
+        
+        type_descriptions = {
+            # Text files
+            'txt': f'{charset} text',
+            'md': f'Markdown source, {charset} text',
+            'log': f'{charset} text',
+            'csv': f'CSV text',
+            'tsv': f'TSV text',
+            
+            # Scripts
+            'sh': f'Bourne-Again shell script, {charset} text executable',
+            'bash': f'Bourne-Again shell script, {charset} text executable',
+            'py': f'Python script, {charset} text executable',
+            'pl': f'Perl script, {charset} text executable',
+            'rb': f'Ruby script, {charset} text executable',
+            'js': f'JavaScript source, {charset} text',
+            'ts': f'TypeScript source, {charset} text',
+            
+            # Programming languages
+            'c': f'C source, {charset} text',
+            'cpp': f'C++ source, {charset} text',
+            'cc': f'C++ source, {charset} text',
+            'h': f'C header, {charset} text',
+            'hpp': f'C++ header, {charset} text',
+            'cs': f'C# source, {charset} text',
+            'java': f'Java source, {charset} text',
+            'go': f'Go source, {charset} text',
+            'rs': f'Rust source, {charset} text',
+            'php': f'PHP script, {charset} text',
+            
+            # Markup/Config
+            'html': f'HTML document, {charset} text',
+            'htm': f'HTML document, {charset} text',
+            'xml': f'XML 1.0 document, {charset} text',
+            'json': f'JSON data',
+            'yaml': f'YAML document, {charset} text',
+            'yml': f'YAML document, {charset} text',
+            'toml': f'TOML configuration, {charset} text',
+            'ini': f'INI configuration, {charset} text',
+            'conf': f'configuration text',
+            'cfg': f'configuration text',
+            
+            # Images (these won't have content in text form, but for completeness)
+            'jpg': 'JPEG image data',
+            'jpeg': 'JPEG image data',
+            'png': 'PNG image data',
+            'gif': 'GIF image data',
+            'bmp': 'BMP image data',
+            'svg': 'SVG Scalable Vector Graphics image',
+            'ico': 'MS Windows icon resource',
+            'webp': 'WebP image data',
+            
+            # Archives
+            'zip': 'Zip archive data',
+            'tar': 'POSIX tar archive',
+            'gz': 'gzip compressed data',
+            'bz2': 'bzip2 compressed data',
+            'xz': 'XZ compressed data',
+            '7z': '7-zip archive data',
+            'rar': 'RAR archive data',
+            
+            # Documents
+            'pdf': 'PDF document',
+            'doc': 'Microsoft Word document',
+            'docx': 'Microsoft Word 2007+',
+            'xls': 'Microsoft Excel spreadsheet',
+            'xlsx': 'Microsoft Excel 2007+',
+            'ppt': 'Microsoft PowerPoint presentation',
+            'pptx': 'Microsoft PowerPoint 2007+',
+            
+            # Executables
+            'exe': 'PE32 executable (console) Intel 80386, for MS Windows',
+            'dll': 'PE32 executable (DLL) Intel 80386, for MS Windows',
+            'so': 'ELF 64-bit LSB shared object, x86-64',
+            'o': 'ELF 64-bit LSB relocatable, x86-64',
+            'a': 'current ar archive',
+            
+            # Media
+            'mp3': 'Audio file with ID3 version 2.3.0',
+            'wav': 'RIFF (little-endian) data, WAVE audio',
+            'ogg': 'Ogg data, Vorbis audio',
+            'mp4': 'ISO Media, MP4 v2 [ISO 14496-14]',
+            'avi': 'RIFF (little-endian) data, AVI',
+            'mkv': 'Matroska data',
+            'webm': 'WebM',
+        }
+        
+        return type_descriptions.get(ext, f'{charset} text' if charset == 'ASCII' else 'data')
+
+    def _detect_encoding(self, content: str) -> str:
+        """Detect character encoding"""
+        if not content:
+            return "binary"
+        
+        try:
+            content.encode('ascii')
+            return "us-ascii"
+        except UnicodeEncodeError:
+            # Check for UTF-8
+            try:
+                content.encode('utf-8')
+                return "utf-8"
+            except:
+                return "unknown-8bit"
+
     def _cmd_stat(self, args: List[str], current_dir: str) -> str:
-        """Execute stat command with dynamic timestamps"""
+        """Execute stat command with dynamic timestamps and realistic details"""
         if not args:
             return "stat: missing file operand"
         
-        target = args[0]
+        # Parse flags
+        show_filesystem = "-f" in args or "--file-system" in args
+        follow_symlinks = "-L" in args or "--dereference" in args
+        terse = "-t" in args or "--terse" in args
+        
+        # Get the target file (first non-flag argument)
+        target = None
+        for arg in args:
+            if not arg.startswith("-"):
+                target = arg
+                break
+        
+        if not target:
+            return "stat: missing file operand"
+        
         info = self.fs.get_file_info(target, current_dir)
         
         if not info:
             return f"stat: cannot stat '{target}': No such file or directory"
         
+        # Generate realistic stat information
         file_type = "directory" if info["is_dir"] else "regular file"
         size = info["size"]
         perms = info["permissions"]
         modified = info.get("modified", datetime.datetime.now())
         
-        # Use actual modified time from filesystem
-        time_str = modified.strftime('%Y-%m-%d %H:%M:%S.000000000 %z')
+        # Generate realistic access and change times
+        # Access time is usually recent (within last few hours)
+        access_time = modified + datetime.timedelta(
+            hours=random.randint(0, 24),
+            minutes=random.randint(0, 59)
+        )
         
-        return f"""File: {info['name']}
-Size: {size}\t\tBlocks: {(size // 512) + 1}\tIO Block: 4096   {file_type}
-Device: 801h/2049d\tInode: {hash(target) % 1000000}\tLinks: 1
-Access: ({perms}/{self._format_permissions(perms, info['is_dir'])})  Uid: ( 1000/{info['owner']:8})   Gid: ( 1000/{info['group']:8})
-Access: {time_str}
-Modify: {time_str}
-Change: {time_str}"""
+        # Change time is usually same as or slightly after modified time
+        change_time = modified + datetime.timedelta(
+            seconds=random.randint(0, 300)
+        )
+        
+        # Format timestamps with timezone
+        tz_offset = datetime.datetime.now().astimezone().strftime('%z')
+        access_str = access_time.strftime(f'%Y-%m-%d %H:%M:%S.%f000 {tz_offset}')
+        modify_str = modified.strftime(f'%Y-%m-%d %H:%M:%S.%f000 {tz_offset}')
+        change_str = change_time.strftime(f'%Y-%m-%d %H:%M:%S.%f000 {tz_offset}')
+        
+        # Generate realistic inode number (consistent for same file)
+        abs_path = self.fs.resolve_path(target, current_dir)
+        inode = (hash(abs_path) % 900000) + 100000  # Range: 100000-999999
+        
+        # Calculate blocks (512-byte blocks)
+        blocks = (size // 512) + (1 if size % 512 else 0)
+        
+        # Get numeric permissions
+        perm_num = int(perms) if perms.isdigit() else 644
+        
+        # Get owner and group
+        owner = info.get('owner', 'root')
+        group = info.get('group', 'root')
+        
+        # Get UID and GID (simulate realistic values)
+        uid_map = {'root': 0, 'guest': 1000, 'admin': 1001, 'developer': 1002}
+        gid_map = {'root': 0, 'guest': 1000, 'admin': 1001, 'developer': 1002}
+        uid = uid_map.get(owner, 1000)
+        gid = gid_map.get(group, 1000)
+        
+        # Determine device number (realistic for ext4)
+        device_hex = "801"
+        device_dec = int(device_hex, 16)
+        
+        # Number of hard links
+        links = 2 if info["is_dir"] else 1
+        
+        if terse:
+            # Terse format: name size blocks raw_mode uid gid device inode links major minor atime mtime ctime birth optimal_io
+            file_type_char = "d" if info["is_dir"] else "-"
+            return f"{target} {size} {blocks} {perm_num:o} {uid} {gid} {device_dec} {inode} {links} 0 0 {int(access_time.timestamp())} {int(modified.timestamp())} {int(change_time.timestamp())} 0 4096"
+        
+        if show_filesystem:
+            # Filesystem stat (simplified)
+            return f"""  File: "{target}"
+        ID: {device_hex}00000000000000 Namelen: 255     Type: ext2/ext3
+    Block size: 4096       Fundamental block size: 4096
+    Blocks: Total: 12800000   Free: 6400000    Available: 5760000
+    Inodes: Total: 3200000    Free: 2560000"""
+        
+        # Regular stat output
+        return f"""  File: {info['name']}
+    Size: {size}\t\tBlocks: {blocks}\t  IO Block: 4096   {file_type}
+    Device: {device_hex}h/{device_dec}d\tInode: {inode}\t  Links: {links}
+    Access: ({perms:0>4}/{self._format_permissions(perms, info['is_dir'])})  Uid: ( {uid:4}/{owner:8})   Gid: ( {gid:4}/{group:8})
+    Access: {access_str}
+    Modify: {modify_str}
+    Change: {change_str}
+    Birth: -"""
  
     def _cmd_mkdir(self, args: List[str], current_dir: str) -> str:
         """Execute mkdir command"""

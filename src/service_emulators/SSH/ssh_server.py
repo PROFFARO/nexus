@@ -736,6 +736,19 @@ class MySSHServer(asyncssh.SSHServer):
         
         # Initialize LLM guard
         self.llm_guard = LLMGuard()
+
+        # ADD THIS: Initialize nano session handler
+        try:
+            from editors.nano_session_handler import NanoSessionHandler
+            self.nano_handler = NanoSessionHandler(
+                self.virtual_fs,
+                self.session_dir if hasattr(self, 'session_dir') else '/tmp',
+                self.forensic_logger if hasattr(self, 'forensic_logger') else None
+            )
+            logger.info("Nano session handler initialized")
+        except ImportError as e:
+            logger.warning(f"Nano session handler not available: {e}")
+            self.nano_handler = None
         
         # Initialize seed filesystem if configured (legacy support)
         self.seed_fs = self._load_seed_filesystem()
@@ -747,28 +760,135 @@ class MySSHServer(asyncssh.SSHServer):
         self.save_replay = config["features"].getboolean("save_replay", True)
         self.session_transcript = [] if self.session_recording else None
         
-        # Persistence configuration
-        self.persistence_file = "sessions/filesystem_state.json"
-        self._load_filesystem_state()
+        # Persistence configuration - per-user filesystem state
+        self.persistence_enabled = config["features"].getboolean("filesystem_persistence", True)
+        self.persistence_dir = "sessions/filesystem_states"
+        os.makedirs(self.persistence_dir, exist_ok=True)
 
-    def _load_filesystem_state(self):
-        """Load filesystem state from disk"""
-        if os.path.exists(self.persistence_file):
-            logger.info(f"Loading filesystem state from {self.persistence_file}")
-            if self.virtual_fs.load_state(self.persistence_file):
-                logger.info("Filesystem state loaded successfully")
+    def _handle_nano_command_response(self, response: str) -> tuple:
+        """
+        Detect if command response indicates nano session start
+        
+        Returns:
+            Tuple of (is_nano_session, filename, current_dir, username)
+        """
+        if response and response.startswith("__NANO_SESSION_START__"):
+            # Extract the nano session parameters
+            parts = response.split("\n")
+            if len(parts) >= 4:
+                filename = parts[1]
+                current_dir = parts[2]
+                username = parts[3]
+                return True, filename, current_dir, username
             else:
-                logger.error("Failed to load filesystem state")
-        else:
-            logger.info("No existing filesystem state found")
+                return True, "", "/tmp", "guest"
+        
+        return False, "", "", ""
+    
 
-    def _save_filesystem_state(self):
-        """Save filesystem state to disk"""
-        logger.info(f"Saving filesystem state to {self.persistence_file}")
-        if self.virtual_fs.save_state(self.persistence_file):
-            logger.info("Filesystem state saved successfully")
+    async def _process_nano_session(self, process):
+        """
+        Handle interactive nano session
+        
+        Args:
+            process: SSH process for I/O
+        """
+        if not self.nano_handler or not self.nano_handler.is_session_active():
+            return
+        
+        logger.info("Entering nano interactive mode")
+        
+        try:
+            while self.nano_handler.is_session_active():
+                # Read one character/key from process
+                try:
+                    data = await asyncio.wait_for(process.stdin.read(1), timeout=300)  # 5 min timeout
+                    
+                    if not data:
+                        logger.info("Nano session: connection closed")
+                        break
+                    
+                    # Decode the key
+                    try:
+                        key = data.decode('utf-8')
+                    except UnicodeDecodeError:
+                        # Handle special keys (arrows, etc.)
+                        key = data.decode('latin-1')
+                    
+                    # Process keystroke
+                    action, output = self.nano_handler.process_keystroke(key)
+                    
+                    # Send output back to process
+                    if output:
+                        process.stdout.write(output)
+                    
+                    # Check if session ended
+                    if action in ('exit', 'save_and_exit', 'exit_without_save'):
+                        logger.info(f"Nano session ended: {action}")
+                        break
+                        
+                except asyncio.TimeoutError:
+                    logger.info("Nano session timeout")
+                    break
+                except Exception as e:
+                    logger.error(f"Error reading from process: {e}")
+                    break
+            
+        except Exception as e:
+            logger.error(f"Error in nano session: {e}")
+            process.stdout.write(f"\n\nNano error: {str(e)}\n")
+        
+        finally:
+            # Ensure session is ended
+            if self.nano_handler:
+                self.nano_handler.end_session()
+
+    def _load_filesystem_state(self, username: str):
+        """Load user-specific filesystem state from disk"""
+        if not self.persistence_enabled:
+            return
+        
+        persistence_file = os.path.join(self.persistence_dir, f"{username}_filesystem.json")
+    
+        if os.path.exists(persistence_file):
+            logger.info(f"Loading filesystem state for user {username} from {persistence_file}")
+            if self.virtual_fs.load_state(persistence_file):
+                logger.info(f"Filesystem state loaded successfully for {username}")
+            else:
+                logger.error(f"Failed to load filesystem state for {username}")
         else:
-            logger.error("Failed to save filesystem state")
+            logger.info(f"No existing filesystem state found for {username}, using default")
+
+    def _save_filesystem_state(self, username: str = None):
+        """Save user-specific filesystem state to disk"""
+        if not self.persistence_enabled:
+            return
+        
+        # Use current username if not provided
+        if username is None:
+            username = getattr(self, 'username', 'guest')
+    
+        persistence_file = os.path.join(self.persistence_dir, f"{username}_filesystem.json")
+    
+        logger.info(f"Saving filesystem state for user {username} to {persistence_file}")
+        if self.virtual_fs.save_state(persistence_file):
+            logger.info(f"Filesystem state saved successfully for {username}")
+        else:
+            logger.error(f"Failed to save filesystem state for {username}")
+
+    async def _periodic_filesystem_save(self, interval: int = 300):
+        """Periodically save filesystem state every interval seconds"""
+        while True:
+            try:
+                await asyncio.sleep(interval)
+                if hasattr(self, 'username'):
+                    self._save_filesystem_state(self.username)
+                    logger.debug(f"Periodic filesystem save completed for {self.username}")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Periodic filesystem save failed: {e}")
+
     
     def _ensure_user_home_directory(self, username: str):
         """Ensure user has a home directory in virtual filesystem"""
@@ -1255,8 +1375,9 @@ alias gs='git status'
         else:
             logger.info("Connection closed cleanly", extra=self.get_log_context())
             
-        # Save filesystem state
-        self._save_filesystem_state()
+        # Save user-specific filesystem state
+        if hasattr(self, 'username'):
+            self._save_filesystem_state(self.username)
         
         # Generate session summary if not already done
         if exc:
@@ -1538,12 +1659,28 @@ async def handle_client(
     authenticated_username = process.get_extra_info("username") or "guest"
     server.username = authenticated_username
     server.current_directory = f"/home/{authenticated_username}"
-    
+
+    # Load user-specific filesystem state BEFORE ensuring home directory
+    server._load_filesystem_state(authenticated_username)
+
+    if not hasattr(server, 'user_hostname'):
+        # Try to get stored hostname for this user
+        hostname_file = os.path.join(server.persistence_dir, f"{authenticated_username}_hostname.txt")
+        if os.path.exists(hostname_file):
+            with open(hostname_file, 'r') as f:
+                server.user_hostname = f.read().strip()
+        else:
+            # Generate and store new hostname for this user
+            server.user_hostname = None  # Will be generated by get_prompt
+
     # Ensure user has a home directory in virtual filesystem
     server._ensure_user_home_directory(authenticated_username)
-    
+
     # Initialize environment variables
     server.environment = server._initialize_environment(authenticated_username)
+
+    # Start periodic filesystem save task
+    save_task = asyncio.create_task(server._periodic_filesystem_save(300))  # Save every 5 minutes
 
     try:
         if process.command:
@@ -1558,6 +1695,9 @@ async def handle_client(
                 await session_summary(process, llm_config, with_message_history, server)
             except Exception as e:
                 logger.error(f"Session summary failed: {e}")
+            # Cancel periodic save task
+            if 'save_task' in locals():
+                save_task.cancel()
             process.exit(0)
         else:
             # Handle interactive session - show banner and MOTD
@@ -2136,9 +2276,6 @@ async def handle_manual_commands(
 ) -> Optional[str]:
     """Handle commands - first try CommandExecutor, then manual handlers"""
 
-    # Import interactive editors
-    from interactive_editors import InteractiveVim, InteractiveNano
-
     cmd_parts = command.strip().split()
     if not cmd_parts:
         return ""
@@ -2167,6 +2304,37 @@ async def handle_manual_commands(
         username = getattr(server, "username", "guest")
         server.current_directory = f"/home/{username}"
         return ""
+
+    response, routing = server.command_executor.execute(
+    command,
+    server.current_directory,
+    server.username,
+    context={
+        'session_dir': server.session_dir,
+        'forensic_logger': server.forensic_logger if hasattr(server, 'forensic_logger') else None
+    }
+)
+    
+    # Check for nano session start
+    if server.nano_handler and result:
+        is_nano, filename, current_dir, username = server._handle_nano_command_response(result)
+        
+        if is_nano:
+            try:
+                # Start nano session through handler
+                nano_output = server.nano_handler.start_session(filename, current_dir, username)
+                
+                # Send initial nano screen
+                process.stdout.write(nano_output)
+                
+                # Enter interactive nano mode
+                await server._process_nano_session(process)
+                
+                # Return empty string to prevent double prompt
+                return ""
+            except Exception as e:
+                logger.error(f"Error starting nano session: {e}")
+                return f"nano: {str(e)}"
     
     return result
 
@@ -2182,51 +2350,98 @@ def clean_ansi_sequences(text: str) -> str:
 
 
 def get_prompt(server: Optional["MySSHServer"]) -> str:
-    """Generate dynamic prompt based on current directory and sudo status"""
-    if server and hasattr(server, "current_directory"):
-        username = getattr(server, "username", "guest")
-        
-        # Check if in sudo mode
-        is_sudo = getattr(server, "sudo_active", False)
-        effective_user = "root" if is_sudo else username
-        
-        # Generate dynamic hostname
-        hostname_types = ["web", "db", "mail", "app", "api", "cache", "proxy", "file", "backup", "monitor"]
-        hostname_type = hostname_types[hash(username) % len(hostname_types)]
-        import datetime
-        server_num = (hash(username + str(datetime.datetime.now().day)) % 99) + 1
-        hostname = f"{hostname_type}-srv-{server_num:02d}"
-        
-        path = server.current_directory
-        
-        # Determine prompt symbol
-        prompt_symbol = "#" if is_sudo else "$"
-        
-        # Determine color codes
-        if is_sudo:
-            # Red for root
-            user_color = "\033[01;31m"
-        else:
-            # Green for regular user
-            user_color = "\033[01;32m"
-        
-        reset_color = "\033[00m"
-        path_color = "\033[01;34m"
-        
-        # Format path
-        if path == f"/home/{username}":
-            display_path = "~"
-        elif path.startswith(f"/home/{username}/"):
-            display_path = "~/" + path.replace(f"/home/{username}/", "")
-        elif path == "/root" and is_sudo:
-            display_path = "~"
-        else:
-            display_path = path
-        
-        return f"{user_color}{effective_user}@{hostname}{reset_color}:{path_color}{display_path}{reset_color}{prompt_symbol} "
+    """
+    Generate dynamic prompt based on current directory, sudo status, and honeypot configuration.
     
-    username = getattr(server, "username", "guest") if server else "guest"
-    return f"{username}@server:~$ "
+    Features:
+    - Reads hostname from config.ini or virtual filesystem
+    - Supports sudo mode (root prompt)
+    - Color-coded prompts (green for user, red for root)
+    - Tilde (~) expansion for home directories
+    - Consistent hostname per user session
+    
+    Format: username@hostname:path$ (or # for root)
+    """
+    if not server or not hasattr(server, "current_directory"):
+        username = getattr(server, "username", "guest") if server else "guest"
+        return f"{username}@server:~$ "
+    
+    # Get username and sudo status
+    username = getattr(server, "username", "guest")
+    is_sudo = getattr(server, "sudo_active", False)
+    effective_user = "root" if is_sudo else username
+    
+    # Get honeypot hostname (priority: config > virtual filesystem > dynamic generation)
+    honeypot_hostname = None
+
+    if hasattr(server, 'user_hostname') and server.user_hostname:
+        honeypot_hostname = server.user_hostname
+    
+    # 1. Try to get from config.ini
+    try:
+        honeypot_hostname = config["honeypot"].get("hostname", None)
+    except:
+        pass
+    
+    # 2. Try to read from virtual filesystem (/etc/hostname)
+    if not honeypot_hostname and hasattr(server, 'virtual_fs'):
+        try:
+            hostname_content = server.virtual_fs.read_file("/etc/hostname", "/")
+            if hostname_content and hostname_content.strip():
+                honeypot_hostname = hostname_content.strip()
+        except Exception as e:
+            logger.debug(f"Could not read hostname from virtual filesystem: {e}")
+    
+    # 3. Generate dynamic hostname if not found (fallback)
+    if not honeypot_hostname:
+        # Generate consistent hostname based on username
+        hostname_types = [
+            "web", "db", "mail", "app", "api", "cache", 
+            "proxy", "file", "backup", "monitor", "build", "ci"
+        ]
+        hostname_envs = ["prod", "staging", "dev", "test"]
+        
+        # Use username hash for consistency
+        type_index = hash(username) % len(hostname_types)
+        env_index = hash(username + "env") % len(hostname_envs)
+        server_num = (hash(username + "num") % 99) + 1
+        
+        hostname_type = hostname_types[type_index]
+        hostname_env = hostname_envs[env_index]
+        honeypot_hostname = f"{hostname_type}-srv-{hostname_env}-{server_num:02d}"
+    
+    # Get current directory path
+    path = server.current_directory
+    
+    # Determine prompt symbol (# for root, $ for user)
+    prompt_symbol = "#" if is_sudo else "$"
+    
+    # Determine color codes
+    if is_sudo:
+        # Red for root/sudo
+        user_color = "\033[01;31m"
+    else:
+        # Green for regular user
+        user_color = "\033[01;32m"
+    
+    reset_color = "\033[00m"
+    path_color = "\033[01;34m"  # Blue for path
+    
+    # Format path with tilde expansion
+    if path == f"/home/{username}":
+        display_path = "~"
+    elif path.startswith(f"/home/{username}/"):
+        # Replace home directory with ~
+        display_path = "~" + path[len(f"/home/{username}"):]
+    elif path == "/root" and is_sudo:
+        display_path = "~"
+    elif path.startswith("/root/") and is_sudo:
+        display_path = "~" + path[5:]  # Remove "/root"
+    else:
+        display_path = path
+    
+    # Build the complete prompt
+    return f"{user_color}{effective_user}@{honeypot_hostname}{reset_color}:{path_color}{display_path}{reset_color}{prompt_symbol} "
 
 
 def get_help_text() -> str:
