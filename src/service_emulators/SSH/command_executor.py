@@ -6,10 +6,14 @@ Handles command validation, routing, and execution with prompt injection protect
 
 import datetime
 import fnmatch
+import random
+import logging
 import re
 import shlex
 from typing import Optional, Dict, Any, List, Tuple
 from virtual_filesystem import VirtualFilesystem
+
+logger = logging.getLogger(__name__)
 
 
 class CommandExecutor:
@@ -226,7 +230,7 @@ class CommandExecutor:
         routing = self.route_command(command)
         
         if routing == "filesystem":
-            return (self._execute_filesystem_command(command, current_dir, username), "filesystem")
+            return (self._execute_filesystem_command(command, current_dir, username, context), "filesystem")
         elif routing == "system":
             return (self._execute_system_command(command, username, context), "system")
         else:
@@ -657,7 +661,7 @@ class CommandExecutor:
             "env", "printenv", "export",
             
             # Shell utilities
-            "echo", "printf", "clear", "reset",
+            "echo", "printf", "clear", "reset", "exit", "logout", "quit",
             
             # Help/documentation
             "man", "help", "which", "whereis", "whatis", "apropos",
@@ -683,131 +687,126 @@ class CommandExecutor:
     def _is_complex_command(self, command: str) -> bool:
         """
         Check if command contains complex shell features that need LLM processing.
-        Returns True if command should be routed to LLM.
+        Returns True ONLY for truly complex patterns.
         """
-        # Check for pipes
-        if '|' in command and not command.count('|') == command.count('\\|'):
-            return True
+        # Only check for the most complex patterns that we definitely can't handle
         
-        # Check for command substitution
+        # Pipes (except in quoted strings)
+        if '|' in command and not command.count('|') == command.count('\\|'):
+            # Allow simple error redirection like 2>/dev/null
+            if '2>' not in command:
+                return True
+        
+        # Command substitution
         if '$(' in command or '`' in command:
             return True
         
-        # Check for multiple commands (semicolon, &&, ||)
+        # Multiple commands chained together
         if any(sep in command for sep in [';', '&&', '||']):
             return True
         
-        # Check for redirections (but allow simple ones)
-        redirect_patterns = ['>>', '2>', '2>&1', '<(', '>(']
-        if any(pattern in command for pattern in redirect_patterns):
+        # Loops and conditionals (these are definitely complex)
+        if any(keyword in command.lower() for keyword in ['for ', 'while ', 'if ', 'case ', 'until ']):
             return True
         
-        # Check for loops and conditionals
-        shell_keywords = ['for ', 'while ', 'if ', 'case ', 'until ']
-        if any(keyword in command.lower() for keyword in shell_keywords):
+        # Background processes
+        if command.strip().endswith('&') and not '2>&' in command:
             return True
         
-        # Check for background processes
-        if command.strip().endswith('&') and not command.strip().endswith('\\&'):
-            return True
-        
+        # Everything else is simple - let the handlers deal with it
         return False
 
     def _get_injection_response(self, command: str) -> str:
-        """
-        Return realistic Linux response for detected injection attempt.
-        Makes the injection attempt look like it failed naturally.
-        """
-        import random
-        
-        try:
-            parts = shlex.split(command)
-            cmd = parts[0] if parts else command.split()[0]
-        except:
-            # Fallback for malformed commands
-            cmd = command.split()[0] if command.split() else "command"
-        
-        # Detect the type of injection attempt and respond appropriately
-        command_lower = command.lower()
-        
-        # System/Assistant role injection attempts
-        if any(marker in command_lower for marker in ['system:', 'assistant:', '[system]', '[assistant]']):
-            # Treat as invalid syntax
-            return f"bash: {command.split(':')[0]}: command not found"
-        
-        # Instruction manipulation attempts (ignore, forget, disregard, etc.)
-        if any(word in command_lower for word in ['ignore', 'forget', 'disregard', 'override', 'delete']):
-            # Make it look like a failed command with arguments
-            return f"bash: {cmd}: command not found"
-        
-        # Meta instruction queries (show me, tell me, what are your, etc.)
-        if any(phrase in command_lower for phrase in ['show me', 'tell me', 'what are your', 'reveal your']):
-            # Simulate as if they're trying to run a non-existent command
-            if ' ' in command:
-                # Multi-word command - treat first word as command
+            """
+            Return realistic Linux response for detected injection attempt.
+            Makes the injection attempt look like it failed naturally.
+            """
+            try:
+                parts = shlex.split(command)
+                cmd = parts[0] if parts else command.split()[0]
+            except:
+                # Fallback for malformed commands
+                cmd = command.split()[0] if command.split() else "command"
+            
+            # Detect the type of injection attempt and respond appropriately
+            command_lower = command.lower()
+            
+            # System/Assistant role injection attempts
+            if any(marker in command_lower for marker in ['system:', 'assistant:', '[system]', '[assistant]']):
+                # Treat as invalid syntax
+                return f"bash: {command.split(':')[0]}: command not found"
+            
+            # Instruction manipulation attempts (ignore, forget, disregard, etc.)
+            if any(word in command_lower for word in ['ignore', 'forget', 'disregard', 'override', 'delete']):
+                # Make it look like a failed command with arguments
                 return f"bash: {cmd}: command not found"
-            else:
-                return f"bash: {command}: command not found"
-        
-        # Role manipulation (you are, act as, pretend, etc.)
-        if any(phrase in command_lower for phrase in ['you are', 'act as', 'pretend', 'roleplay', 'simulate']):
-            # Parse as if it's a command with arguments
-            words = command.split()
-            if len(words) > 0:
-                return f"bash: {words[0]}: command not found"
-            return "bash: syntax error near unexpected token"
-        
-        # Jailbreak attempts (DAN mode, Developer Mode, etc.)
-        if any(phrase in command_lower for phrase in ['dan mode', 'developer mode', 'jailbreak', 'unrestricted']):
-            # Treat as invalid command
-            return f"bash: {cmd}: command not found"
-        
-        # Encoding/obfuscation attempts
-        if any(phrase in command_lower for phrase in ['base64 decode', 'rot13']):
-            # Let it look like a partial command
-            if 'base64' in command_lower:
-                return "base64: invalid input"
-            elif 'rot13' in command_lower:
-                return f"bash: rot13: command not found"
-        
-        # Multi-language injection
-        if any(char in command for char in ['é', 'ü', '翻', '译']):
-            # Non-ASCII characters - treat as encoding issue
-            return "bash: syntax error: invalid character in expression"
-        
-        # Delimiter injection (---, ===, etc.)
-        if command.strip().startswith(('---', '===')):
-            return "bash: syntax error near unexpected token"
-        
-        # Context manipulation (new conversation, reset, etc.)
-        if any(phrase in command_lower for phrase in ['new conversation', 'start over', 'reset', 'clear context']):
-            words = command.split()
-            if len(words) > 0:
-                return f"bash: {words[0]}: command not found"
-        
-        # Hypothetical scenarios
-        if 'if you were' in command_lower or 'imagine you' in command_lower:
-            return f"bash: {cmd}: command not found"
-        
-        # Default responses - vary them for realism
-        responses = [
-            f"bash: {cmd}: command not found",
-            f"-bash: {cmd}: command not found",
-            f"bash: {cmd}: No such file or directory",
-            f"{cmd}: command not found",
-        ]
-        
-        # Add some variation based on command hash
-        random.seed(hash(command))
-        return random.choice(responses)
+            
+            # Meta instruction queries (show me, tell me, what are your, etc.)
+            if any(phrase in command_lower for phrase in ['show me', 'tell me', 'what are your', 'reveal your']):
+                # Simulate as if they're trying to run a non-existent command
+                if ' ' in command:
+                    # Multi-word command - treat first word as command
+                    return f"bash: {cmd}: command not found"
+                else:
+                    return f"bash: {command}: command not found"
+            
+            # Role manipulation (you are, act as, pretend, etc.)
+            if any(phrase in command_lower for phrase in ['you are', 'act as', 'pretend', 'roleplay', 'simulate']):
+                # Parse as if it's a command with arguments
+                words = command.split()
+                if len(words) > 0:
+                    return f"bash: {words[0]}: command not found"
+                return "bash: syntax error near unexpected token"
+            
+            # Jailbreak attempts (DAN mode, Developer Mode, etc.)
+            if any(phrase in command_lower for phrase in ['dan mode', 'developer mode', 'jailbreak', 'unrestricted']):
+                # Treat as invalid command
+                return f"bash: {cmd}: command not found"
+            
+            # Encoding/obfuscation attempts
+            if any(phrase in command_lower for phrase in ['base64 decode', 'rot13']):
+                # Let it look like a partial command
+                if 'base64' in command_lower:
+                    return "base64: invalid input"
+                elif 'rot13' in command_lower:
+                    return f"bash: rot13: command not found"
+            
+            # Multi-language injection
+            if any(char in command for char in ['é', 'ü', '翻', '译']):
+                # Non-ASCII characters - treat as encoding issue
+                return "bash: syntax error: invalid character in expression"
+            
+            # Delimiter injection (---, ===, etc.)
+            if command.strip().startswith(('---', '===')):
+                return "bash: syntax error near unexpected token"
+            
+            # Context manipulation (new conversation, reset, etc.)
+            if any(phrase in command_lower for phrase in ['new conversation', 'start over', 'reset', 'clear context']):
+                words = command.split()
+                if len(words) > 0:
+                    return f"bash: {words[0]}: command not found"
+            
+            # Hypothetical scenarios
+            if 'if you were' in command_lower or 'imagine you' in command_lower:
+                return f"bash: {cmd}: command not found"
+            
+            # Default responses - vary them for realism
+            responses = [
+                f"bash: {cmd}: command not found",
+                f"-bash: {cmd}: command not found",
+                f"bash: {cmd}: No such file or directory",
+                f"{cmd}: command not found",
+            ]
+            
+            # Add some variation based on command hash
+            random.seed(hash(command))
+            return random.choice(responses)
         
     def _get_command_not_found(self, command: str) -> str:
         """
         Return realistic 'command not found' error for unimplemented commands.
         This is for legitimate commands that aren't in VALID_COMMANDS, not injection attempts.
         """
-        import random
-        
         try:
             parts = shlex.split(command)
             cmd = parts[0] if parts else command.split()[0]
@@ -935,7 +934,8 @@ sudo apt install {package}
         close_matches.sort(key=lambda x: x[1])
         return [cmd for cmd, _ in close_matches[:3]]  # Return top 3 matches
         
-    def _execute_filesystem_command(self, command: str, current_dir: str, username: str) -> str:
+    def _execute_filesystem_command(self, command: str, current_dir: str, username: str, 
+                                    context: Optional[Dict[str, Any]] = None) -> str:
         """Execute filesystem commands using virtual filesystem"""
         try:
             parts = shlex.split(command)
@@ -947,6 +947,10 @@ sudo apt install {package}
             
         cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
+
+        # find command
+        if cmd == "find":
+            return self._cmd_find(args, current_dir)
 
         # more command
         if cmd == "more":
@@ -1029,71 +1033,93 @@ sudo apt install {package}
             return self._cmd_ls(args, current_dir)
             
         # pwd command
-        elif cmd == "pwd":
+        if cmd == "pwd":
             return current_dir
+        
+        # cd command
+        if cmd == "cd":
+            # cd needs special handling - it should update server state
+            # Return special marker to indicate cd was requested
+            if not args:
+                # cd with no args - go to home
+                return "__CD_HOME__"
+            
+            target_dir = args[0]
+            
+            # Validate the path exists
+            resolved_path = self.fs.resolve_path(target_dir, current_dir)
+            
+            if not self.fs.exists(resolved_path, "/"):
+                return f"-bash: cd: {target_dir}: No such file or directory"
+            
+            if not self.fs.is_directory(resolved_path, "/"):
+                return f"-bash: cd: {target_dir}: Not a directory"
+            
+            # Return special marker with the new directory
+            return f"__CD__{resolved_path}"
             
         # cat command
-        elif cmd == "cat":
+        if cmd == "cat":
             return self._cmd_cat(args, current_dir)
             
         # head command
-        elif cmd == "head":
+        if cmd == "head":
             return self._cmd_head(args, current_dir)
             
         # tail command
-        elif cmd == "tail":
+        if cmd == "tail":
             return self._cmd_tail(args, current_dir)
             
         # find command
-        elif cmd == "find":
+        if cmd == "find":
             return self._cmd_find(args, current_dir)
             
         # file command
-        elif cmd == "file":
+        if cmd == "file":
             return self._cmd_file(args, current_dir)
             
         # stat command
-        elif cmd == "stat":
+        if cmd == "stat":
             return self._cmd_stat(args, current_dir)
             
         # mkdir command
-        elif cmd == "mkdir":
+        if cmd == "mkdir":
             return self._cmd_mkdir(args, current_dir)
             
         # touch command
-        elif cmd == "touch":
+        if cmd == "touch":
             return self._cmd_touch(args, current_dir)
             
         # rm command
-        elif cmd == "rm":
+        if cmd == "rm":
             return self._cmd_rm(args, current_dir)
         
         # grep command
-        elif cmd == "grep":
+        if cmd == "grep":
             return self._cmd_grep(args, current_dir)
         
         # wc command
-        elif cmd == "wc":
+        if cmd == "wc":
             return self._cmd_wc(args, current_dir)
         
         # du command
-        elif cmd == "du":
+        if cmd == "du":
             return self._cmd_du(args, current_dir)
         
         # df command
-        elif cmd == "df":
+        if cmd == "df":
             return self._cmd_df(args, current_dir)
         
         # ln command
-        elif cmd == "ln":
+        if cmd == "ln":
             return self._cmd_ln(args, current_dir)
         
         # chmod command
-        elif cmd == "chmod":
+        if cmd == "chmod":
             return self._cmd_chmod(args, current_dir)
         
         # chown command
-        elif cmd == "chown":
+        if cmd == "chown":
             return self._cmd_chown(args, current_dir)
             
         # Default fallback
@@ -1127,10 +1153,6 @@ sudo apt install {package}
             return f"{output}\n--More--({remaining} lines remaining)"
     
     def _cmd_less(self, args: List[str], current_dir: str) -> str:
-        """Execute less command - view file contents"""
-        if not args:
-            return "Missing filename (\"less --help\" for help)"
-        
         filename = args[0]
         content = self.fs.read_file(filename, current_dir)
         
@@ -1671,7 +1693,109 @@ tmpfs on /run type tmpfs (rw,nosuid,nodev,noexec,relatime,size={random.randint(4
             return ""  # Silent success
         
         return "mount: bad usage"
+    
+
+    def _cmd_find(self, args: List[str], current_dir: str = "/") -> str:
+        """
+        Dynamic find command that searches the virtual filesystem.
+        Supports: find <path> -name <pattern> -type <f|d>
+        """
+        if not args:
+            return "find: missing operand\nTry 'find --help' for more information."
         
+        # Parse arguments
+        search_path = args[0] if args[0] != "-name" and args[0] != "-type" else "."
+        pattern = None
+        file_type = None  # 'f' for files, 'd' for directories
+        
+        # Parse -name argument
+        if "-name" in args:
+            try:
+                name_idx = args.index("-name")
+                if name_idx + 1 < len(args):
+                    pattern = args[name_idx + 1].strip('"').strip("'")
+            except:
+                pass
+        
+        # Parse -type argument
+        if "-type" in args:
+            try:
+                type_idx = args.index("-type")
+                if type_idx + 1 < len(args):
+                    file_type = args[type_idx + 1]
+            except:
+                pass
+        
+        # Resolve the search path
+        resolved_path = self.virtual_fs.resolve_path(search_path, current_dir)
+        
+        # Check if path exists
+        if not self.virtual_fs.exists(resolved_path):
+            return f"find: '{search_path}': No such file or directory"
+        
+        # Perform the search
+        results = []
+        self._find_recursive(resolved_path, pattern, file_type, results)
+        
+        # Return results
+        if results:
+            return "\n".join(sorted(results))
+        else:
+            return ""  # find returns empty if no matches
+
+    def _find_recursive(self, path: str, pattern: str, file_type: str, results: list):
+        """
+        Recursively search the virtual filesystem.
+        
+        Args:
+            path: Current path to search
+            pattern: Filename pattern (supports * wildcards)
+            file_type: 'f' for files, 'd' for directories, None for both
+            results: List to append matching paths to
+        """
+        try:
+            # Get the node at this path
+            node = self.virtual_fs.get_node(path)
+            
+            if not node:
+                return
+            
+            # Check if current node matches criteria
+            matches = True
+            
+            # Check type filter
+            if file_type:
+                if file_type == 'f' and node.is_dir:
+                    matches = False
+                elif file_type == 'd' and not node.is_dir:
+                    matches = False
+            
+            # Check name pattern
+            if pattern and matches:
+                import fnmatch
+                filename = path.split('/')[-1] if '/' in path else path
+                if not fnmatch.fnmatch(filename, pattern):
+                    matches = False
+            
+            # Add to results if matches
+            if matches:
+                results.append(path)
+            
+            # Recurse into directories
+            if node.is_dir:
+                try:
+                    children = self.virtual_fs.list_directory(path)
+                    for child_name in children:
+                        child_path = f"{path}/{child_name}".replace("//", "/")
+                        self._find_recursive(child_path, pattern, file_type, results)
+                except:
+                    # Permission denied or other error - skip this directory
+                    pass
+                    
+        except Exception as e:
+            # Silently skip errors (like real find with 2>/dev/null)
+            pass
+    
     def _cmd_ls(self, args: List[str], current_dir: str) -> str:
         """Execute ls command with full flag support"""
         show_all = False
@@ -2606,6 +2730,14 @@ Written by David MacKenzie and Jim Meyering."""
         cmd = parts[0].lower()
         args = parts[1:] if len(parts) > 1 else []
 
+        # exit/logout/quit - End session
+        if cmd in ["exit", "logout", "quit"]:
+            return "XXX-END-OF-SESSION-XXX"
+
+        # clear - Clear the terminal screen
+        if cmd == "clear" or cmd == "reset":
+            return "\033[2J\033[H"
+
         # ifconfig - Configure network interface
         if cmd == "ifconfig":
             random.seed(hash(username))
@@ -3457,7 +3589,6 @@ Usage: iptables -[ACD] chain rule-specification [options]
 
                 # lsmem
         if cmd == "lsmem":
-            import random
             total_mem_gb = random.choice([8, 16, 32, 64])
             total_mem_bytes = total_mem_gb * 1024 * 1024 * 1024
             return f"""RANGE                                 SIZE  STATE REMOVABLE BLOCK
@@ -3965,7 +4096,6 @@ Written by Richard Mlynarik."""
                 ]
                 
                 # Select random groups based on username hash
-                import random
                 random.seed(hash(username))
                 selected_groups = random.sample(all_groups, k=random.randint(3, 6))
                 selected_groups.sort(key=lambda x: x[0])
@@ -4157,11 +4287,6 @@ Written by Richard Mlynarik."""
         # echo
         elif cmd == "echo":
             return self._cmd_echo(args, context)
-        
-        # history command
-        elif cmd == "history":
-            # This should be handled by server context
-            return None
             
         # Default - let LLM handle
         return None
