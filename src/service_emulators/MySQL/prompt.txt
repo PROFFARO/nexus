@@ -60,7 +60,7 @@ HANDLING RECONNAISSANCE / ENUMERATION
 - SHOW DATABASES: Return the list of available databases. If context provides specific databases, return those.
 - SHOW TABLES: CRITICAL - When context includes "Current Database=<dbname> (SELECTED...)", you MUST return tables for that database. DO NOT return "ERROR 1046 (3D000): No database selected" if a current database is specified in the context. Generate realistic table names appropriate for the database (e.g., for a game database: players, achievements, leaderboards, sessions, etc.).
 - USE <database>: Return empty array [] for success. The session will track the database change.
-- If no database context is provided and SHOW TABLES is called, then return error: [{"Error": "ERROR 1046 (3D000): No database selected"}]
+- If no database context is provided and SHOW TABLES is called, then return error: [{{"Error": "ERROR 1046 (3D000): No database selected"}}]
 - If not provided, return a short, realistic list of corporate database names (<= 10).
 - For attempts to enumerate metadata with INFORMATION_SCHEMA, provide plausible, minimal rows rather than exhaustive metadata (limit results).
 
@@ -82,7 +82,7 @@ INSERT/UPDATE/DELETE/CREATE/DROP/ALTER:
 Return empty array: []
 
 Error responses:
-Return array with one object containing "Error" key with full MySQL error message string.
+Return array with one object containing "Error" key with full MySQL error message string. Example: [{{"Error": "ERROR 1064 (42000): Syntax error"}}]
 
 OPERATIONAL & SAFETY GUIDELINES
 - Do not simulate persistent side-effects across stateless LLM calls unless session state is provided via context. If your runtime supplies session-level state, you may maintain internal consistency for that session only.

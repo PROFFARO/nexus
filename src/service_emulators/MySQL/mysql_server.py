@@ -1257,15 +1257,22 @@ class MySQLHoneypotSession(Session):
         
         if MYSQL_COMPONENTS_AVAILABLE:
             # Get sessions directory from config
-            sessions_dir = Path(self.config.get("honeypot", {}).get("sessions_dir", "sessions"))
+            try:
+                sessions_dir = Path(self.config["honeypot"].get("sessions_dir", "sessions"))
+            except (KeyError, TypeError):
+                sessions_dir = Path("sessions")
             db_states_dir = sessions_dir / "database_states"
             
             # Reinitialize with username for per-user persistence
-            self.db_system = MySQLDatabaseSystem(username=username, sessions_dir=str(db_states_dir))
-            self.db_system.use_database(default_db)
-            self.llm_guard = MySQLLLMGuard()
-            self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
-            logger.info(f"MySQL components reinitialized for user {username}")
+            try:
+                self.db_system = MySQLDatabaseSystem(username=username, sessions_dir=str(db_states_dir))
+                self.db_system.use_database(default_db)
+                self.llm_guard = MySQLLLMGuard()
+                self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
+                logger.info(f"MySQL components reinitialized for user {username}")
+            except Exception as e:
+                logger.error(f"Failed to reinitialize MySQL components: {e}")
+                # Keep using the existing components from __init__
 
         # Setup forensic logging if enabled
         if self.config["forensics"].getboolean("chain_of_custody", True):
@@ -1734,112 +1741,136 @@ class MySQLHoneypotSession(Session):
 
     async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
         """Handle MySQL query with command executor and AI analysis"""
-        query = sql.strip().rstrip(";")
-        username = self.session_data.get("username", "unknown")
-        
-        # DEBUG: Log current state before processing
-        logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
+        try:
+            query = sql.strip().rstrip(";")
+            username = self.session_data.get("username", "unknown")
+            
+            # DEBUG: Log current state before processing
+            logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
 
-        # Use new command executor if available
-        if self.command_executor is not None:
-            # Execute through command executor (handles validation, injection, routing)
-            result, routing, error_info = self.command_executor.execute(
-                query,
-                username=username,
-                client_ip=self.session_data.get("client_info", {}).get("ip", "unknown")
-            )
-            
-            logger.info(f"[QUERY_DEBUG] Command executor result: routing={routing}, has_result={result is not None}")
-            
-            # Handle error responses (injection, gibberish, syntax errors)
-            if routing == "error" and error_info:
-                logger.warning(f"Query rejected: {error_info.get('message', 'Unknown error')}")
-                return self._format_error_response(error_info)
-            
-            # Handle local execution results
-            if routing == "local" and result is not None:
-                # Check for special result types
-                if isinstance(result, dict):
-                    if "error" in result:
-                        return self._format_error_response(result["error"])
-                    elif "success" in result:
-                        # Successful command like USE, CREATE, etc.
-                        if result.get("message") == "Database changed":
-                            # Sync database change with session data
-                            self.session_data["database"] = self.db_system.current_database
-                        return ResultSet(rows=[], columns=[])
-                    elif "exit" in result:
-                        # Exit command
-                        try:
-                            await self.close_session()
-                        except Exception as e:
-                            logger.debug(f"Error during session close: {e}")
-                        return ResultSet(rows=[], columns=[])
-                
-                # Format list results (SHOW, DESCRIBE, etc.)
-                if isinstance(result, list):
-                    return self._format_local_result(result, query)
-                
-                # Return as-is if already formatted
-                return result
-            
-            # Route to LLM if needed
-            if routing == "llm":
-                # Log query information
-                query_info = self._log_query_info(query)
-                
-                # Analyze for threats
-                attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
-                
-                # Update session data
-                self._update_session_data(query_info, attack_analysis, vulnerabilities)
-                
-                # Enhance context for LLM
-                if self.db_system and self.llm_guard:
-                    current_db = self.db_system.get_current_database()
-                    table_names = current_db.list_tables() if current_db else []
-                    # Store enhanced context for LLM
-                    self._llm_context = self.llm_guard.enhance_llm_context(
-                        query, 
-                        self.db_system.current_database,
-                        table_names,
-                        username
+            # Use new command executor if available
+            if self.command_executor is not None:
+                try:
+                    # Execute through command executor (handles validation, injection, routing)
+                    result, routing, error_info = self.command_executor.execute(
+                        query,
+                        username=username,
+                        client_ip=self.session_data.get("client_info", {}).get("ip", "unknown")
                     )
-                
-                # Process query through LLM
-                return await self._process_llm_query(query)
-        
-        # Fallback to legacy handling if components not available
-        # Syntax check
-        if self._is_syntax_error(query):
-            return self._generate_syntax_error(query)
+                    
+                    logger.info(f"[QUERY_DEBUG] Command executor result: routing={routing}, has_result={result is not None}, type={type(result).__name__}")
+                    
+                    # Handle error responses (injection, gibberish, syntax errors)
+                    if routing == "error" and error_info:
+                        logger.warning(f"Query rejected: {error_info.get('message', 'Unknown error')}")
+                        return self._format_error_response(error_info)
+                    
+                    # Handle local execution results
+                    if routing == "local" and result is not None:
+                        # Check for special result types
+                        if isinstance(result, dict):
+                            if "error" in result:
+                                error_data = result["error"]
+                                if isinstance(error_data, dict):
+                                    return self._format_error_response(error_data)
+                                else:
+                                    return self._format_error_response({"message": str(error_data)})
+                            elif "success" in result:
+                                # Successful command like USE, CREATE, etc.
+                                if result.get("message") == "Database changed":
+                                    # Sync database change with session data
+                                    self.session_data["database"] = self.db_system.current_database
+                                return ResultSet(rows=[], columns=[])
+                            elif "exit" in result:
+                                # Exit command
+                                try:
+                                    await self.close_session()
+                                except Exception as e:
+                                    logger.debug(f"Error during session close: {e}")
+                                return ResultSet(rows=[], columns=[])
+                        
+                        # Format list results (SHOW, DESCRIBE, etc.)
+                        if isinstance(result, list):
+                            return self._format_local_result(result, query)
+                        
+                        # Return as-is if already formatted
+                        return result
+                    
+                    # Route to LLM if needed
+                    if routing == "llm":
+                        # Log query information
+                        query_info = self._log_query_info(query)
+                        
+                        # Analyze for threats
+                        attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
+                        
+                        # Update session data
+                        self._update_session_data(query_info, attack_analysis, vulnerabilities)
+                        
+                        # Enhance context for LLM
+                        if self.db_system and self.llm_guard:
+                            current_db = self.db_system.get_current_database()
+                            table_names = current_db.list_tables() if current_db else []
+                            # Store enhanced context for LLM
+                            self._llm_context = self.llm_guard.enhance_llm_context(
+                                query, 
+                                self.db_system.current_database,
+                                table_names,
+                                username
+                            )
+                        
+                        # Process query through LLM
+                        return await self._process_llm_query(query)
+                        
+                except Exception as e:
+                    logger.error(f"Command executor error: {e}", exc_info=True)
+                    # Fall through to legacy handling
+            
+            # Fallback to legacy handling if components not available or failed
+            # Syntax check
+            if self._is_syntax_error(query):
+                return self._generate_syntax_error(query)
 
-        # Check for session termination queries
-        termination_result = self._handle_termination_query(query)
-        if termination_result is not None:
-            try:
-                await self.close_session()
-            except Exception as e:
-                logger.debug(f"Error during session close: {e}")
-            return termination_result
+            # Check for session termination queries
+            termination_result = self._handle_termination_query(query)
+            if termination_result is not None:
+                try:
+                    await self.close_session()
+                except Exception as e:
+                    logger.debug(f"Error during session close: {e}")
+                return termination_result
 
-        # Handle USE database commands
-        use_result = self._handle_use_database(query)
-        if use_result is not None:
-            logger.info(f"[QUERY_DEBUG] USE command result: db_set_to={self.session_data.get('database')}, result={use_result}")
-            return use_result
+            # Handle USE database commands
+            use_result = self._handle_use_database(query)
+            if use_result is not None:
+                logger.info(f"[QUERY_DEBUG] USE command result: db_set_to={self.session_data.get('database')}, result={use_result}")
+                return use_result
 
-        # Log query information
-        query_info = self._log_query_info(query)
+            # Log query information
+            query_info = self._log_query_info(query)
 
-        # Analyze for threats
-        attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
+            # Analyze for threats
+            attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
 
-        # Update session data
-        self._update_session_data(query_info, attack_analysis, vulnerabilities)
+            # Update session data
+            self._update_session_data(query_info, attack_analysis, vulnerabilities)
 
-        # Process query through LLM
-        return await self._process_llm_query(query)
+            # Process query through LLM
+            return await self._process_llm_query(query)
+            
+        except Exception as e:
+            logger.error(f"Critical error in handle_query: {e}", exc_info=True)
+            # Return a safe error response instead of crashing
+            if ResultColumn is not None:
+                return ResultSet(
+                    rows=[(f"ERROR 1105 (HY000): Internal error - {str(e)}",)],
+                    columns=[ResultColumn(name="Error", type=253)]
+                )
+            else:
+                return ResultSet(
+                    rows=[(f"ERROR 1105 (HY000): Internal error - {str(e)}",)],
+                    columns=[_ResultColumn(name="Error", type=253)]
+                )
     
     def _format_error_response(self, error_info: Dict[str, Any]) -> Any:
         """Format error info into MySQL error response"""

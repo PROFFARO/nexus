@@ -130,7 +130,8 @@ class MySQLCommandExecutor:
                 return "SHOW_CHARSET"
             elif "COLLATION" in query_upper:
                 return "SHOW_COLLATION"
-            return "SHOW"
+            # Unrecognized SHOW command - return as SHOW_UNKNOWN for error handling
+            return "SHOW_UNKNOWN"
         
         # DESCRIBE / DESC
         if query_upper.startswith("DESCRIBE") or query_upper.startswith("DESC "):
@@ -310,6 +311,8 @@ class MySQLCommandExecutor:
             "INSERT": self._handle_insert,
             "UPDATE": self._handle_update,
             "DELETE": self._handle_delete,
+            "SHOW_UNKNOWN": self._handle_unknown_show,
+            "UNKNOWN": self._handle_unknown_command,
         }
         
         handler = handlers.get(command_type)
@@ -339,6 +342,8 @@ class MySQLCommandExecutor:
         else:
             db_name = self.db.current_database
         
+        logger.info(f"[SHOW_TABLES_DEBUG] current_database: {self.db.current_database}, using db_name: {db_name}")
+        
         if not db_name:
             return {"error": {"code": 1046, "state": "3D000", 
                             "message": "No database selected"}}
@@ -349,6 +354,8 @@ class MySQLCommandExecutor:
                             "message": f"Unknown database '{db_name}'"}}
         
         tables = database.list_tables()
+        
+        logger.info(f"[SHOW_TABLES_DEBUG] Found {len(tables)} tables in {db_name}: {tables[:5]}...")
         
         # Handle LIKE pattern
         like_match = re.search(r"LIKE\s+['\"]([^'\"]+)['\"]", query, re.IGNORECASE)
@@ -681,9 +688,13 @@ class MySQLCommandExecutor:
         
         db_name = parts[1].strip("`\"';")
         
+        logger.info(f"[USE_DEBUG] Switching to database: {db_name}, current_before: {self.db.current_database}")
+        
         if self.db.use_database(db_name):
+            logger.info(f"[USE_DEBUG] Database switched successfully, current_after: {self.db.current_database}")
             return {"success": True, "message": "Database changed"}
         else:
+            logger.warning(f"[USE_DEBUG] Database not found: {db_name}, available: {self.db.list_databases()}")
             return {"error": {"code": 1049, "state": "42000",
                             "message": f"Unknown database '{db_name}'"}}
     
@@ -1403,4 +1414,24 @@ bind-address=0.0.0.0"""
         self.db.save_state()  # Persist changes
         
         return {"success": True, "message": f"Query OK, {affected} row(s) affected"}
+    
+    # ==================== Unknown Command Handlers ====================
+    
+    def _handle_unknown_show(self, query: str, username: str) -> Any:
+        """Handle unrecognized SHOW commands - return proper MySQL error"""
+        # Extract what comes after SHOW
+        parts = query.upper().split()
+        if len(parts) > 1:
+            unknown_keyword = parts[1]
+            return {"error": {"code": 1064, "state": "42000",
+                            "message": f"You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '{unknown_keyword}' at line 1"}}
+        return {"error": {"code": 1064, "state": "42000",
+                        "message": "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use"}}
+    
+    def _handle_unknown_command(self, query: str, username: str) -> Any:
+        """Handle completely unrecognized commands - return proper MySQL error"""
+        first_word = query.split()[0] if query.split() else query
+        return {"error": {"code": 1064, "state": "42000",
+                        "message": f"You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '{first_word}' at line 1"}}
+
 
