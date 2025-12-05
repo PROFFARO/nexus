@@ -70,13 +70,12 @@ class MySQLCommandExecutor:
         # Classify and route the command
         command_type = self._classify_query(query)
         
-        # Check if we can handle locally
-        if not self.guard.should_use_llm(query, command_type):
-            result = self._execute_local(query, command_type, username)
-            if result is not None:
-                return (result, "local", None)
+        # Try to handle locally first
+        result = self._execute_local(query, command_type, username)
+        if result is not None:
+            return (result, "local", None)
         
-        # Route to LLM
+        # Route to LLM only if we can't handle locally
         return (None, "llm", None)
     
     def _classify_query(self, query: str) -> str:
@@ -307,6 +306,10 @@ class MySQLCommandExecutor:
             "KILL": self._handle_kill,
             "LOAD_FILE": self._handle_load_file,
             "INTO_OUTFILE": self._handle_into_outfile,
+            "SELECT": self._handle_select,
+            "INSERT": self._handle_insert,
+            "UPDATE": self._handle_update,
+            "DELETE": self._handle_delete,
         }
         
         handler = handlers.get(command_type)
@@ -970,3 +973,434 @@ bind-address=0.0.0.0"""
                             "message": f"The MySQL server is running with the --secure-file-priv option so it cannot execute this statement"}}
         
         return {"success": True, "message": "Query OK, rows affected"}
+    
+    # ==================== SELECT Handler ====================
+    
+    def _handle_select(self, query: str, username: str) -> Any:
+        """Handle SELECT queries - fetch data from virtual tables"""
+        query_upper = query.upper()
+        
+        # Handle COUNT(*)
+        count_match = re.search(r'SELECT\s+COUNT\s*\(\s*\*\s*\)\s+(?:AS\s+\w+\s+)?FROM\s+[`"]?(\w+)[`"]?', query, re.IGNORECASE)
+        if count_match:
+            table_name = count_match.group(1)
+            return self._handle_select_count(table_name, query)
+        
+        # Parse basic SELECT query
+        # SELECT [columns] FROM [table] [WHERE ...] [ORDER BY ...] [LIMIT ...]
+        select_match = re.search(
+            r'SELECT\s+(.+?)\s+FROM\s+[`"]?(\w+)[`"]?(?:\s+WHERE\s+(.+?))?(?:\s+ORDER\s+BY\s+(.+?))?(?:\s+LIMIT\s+(\d+)(?:\s*,\s*(\d+))?)?$',
+            query, re.IGNORECASE | re.DOTALL
+        )
+        
+        if not select_match:
+            # Try simpler pattern for SELECT * FROM table
+            simple_match = re.search(r'SELECT\s+(.+?)\s+FROM\s+[`"]?(\w+)[`"]?', query, re.IGNORECASE)
+            if simple_match:
+                columns_part = simple_match.group(1)
+                table_name = simple_match.group(2)
+                where_clause = None
+                order_by = None
+                limit = 10  # Default limit
+                offset = 0
+            else:
+                return None  # Can't parse, send to LLM
+        else:
+            columns_part = select_match.group(1).strip()
+            table_name = select_match.group(2)
+            where_clause = select_match.group(3)
+            order_by = select_match.group(4)
+            limit_val = select_match.group(5)
+            offset_val = select_match.group(6)
+            
+            limit = int(limit_val) if limit_val else 10
+            offset = int(offset_val) if offset_val else 0
+        
+        # Get database
+        db_name = self.db.current_database
+        if not db_name:
+            return {"error": {"code": 1046, "state": "3D000",
+                            "message": "No database selected"}}
+        
+        database = self.db.get_database(db_name)
+        if not database:
+            return {"error": {"code": 1049, "state": "42000",
+                            "message": f"Unknown database '{db_name}'"}}
+        
+        table = database.get_table(table_name)
+        if not table:
+            return {"error": {"code": 1146, "state": "42S02",
+                            "message": f"Table '{db_name}.{table_name}' doesn't exist"}}
+        
+        # Get data from table
+        data = table.get_data()
+        if not data:
+            return []  # Empty result set
+        
+        # Parse columns
+        if columns_part.strip() == '*':
+            # All columns
+            columns = table.get_column_names()
+        else:
+            # Specific columns
+            columns = [col.strip().strip('`"') for col in columns_part.split(',')]
+        
+        # Apply WHERE clause (basic support)
+        if where_clause:
+            data = self._apply_where(data, where_clause)
+        
+        # Apply ORDER BY (basic support)
+        if order_by:
+            data = self._apply_order_by(data, order_by)
+        
+        # Apply LIMIT and OFFSET
+        if offset:
+            data = data[offset:]
+        if limit:
+            data = data[:limit]
+        
+        # Filter columns
+        result = []
+        for row in data:
+            filtered_row = {}
+            for col in columns:
+                # Handle column aliases (col AS alias)
+                col_name = col.split(' AS ')[0].strip() if ' AS ' in col.upper() else col
+                alias = col.split(' AS ')[1].strip() if ' AS ' in col.upper() else col
+                
+                if col_name in row:
+                    filtered_row[alias] = row[col_name]
+                else:
+                    filtered_row[alias] = None
+            result.append(filtered_row)
+        
+        return result
+    
+    def _handle_select_count(self, table_name: str, query: str) -> Any:
+        """Handle SELECT COUNT(*) FROM table"""
+        db_name = self.db.current_database
+        if not db_name:
+            return {"error": {"code": 1046, "state": "3D000",
+                            "message": "No database selected"}}
+        
+        database = self.db.get_database(db_name)
+        if not database:
+            return {"error": {"code": 1049, "state": "42000",
+                            "message": f"Unknown database '{db_name}'"}}
+        
+        table = database.get_table(table_name)
+        if not table:
+            return {"error": {"code": 1146, "state": "42S02",
+                            "message": f"Table '{db_name}.{table_name}' doesn't exist"}}
+        
+        count = table.get_row_count()
+        
+        # Check for alias
+        alias_match = re.search(r'COUNT\s*\(\s*\*\s*\)\s+AS\s+[`"]?(\w+)[`"]?', query, re.IGNORECASE)
+        if alias_match:
+            alias = alias_match.group(1)
+            return [{alias: count}]
+        
+        return [{"COUNT(*)": count}]
+    
+    def _apply_where(self, data: List[Dict[str, Any]], where_clause: str) -> List[Dict[str, Any]]:
+        """Apply WHERE clause filtering (basic support)"""
+        result = []
+        
+        # Parse simple conditions: column = value, column > value, etc.
+        # This is a simplified WHERE parser
+        conditions = []
+        
+        # Split by AND (simple case)
+        parts = re.split(r'\s+AND\s+', where_clause, flags=re.IGNORECASE)
+        
+        for part in parts:
+            # Match: column = 'value' or column = number
+            eq_match = re.match(r"[`\"]?(\w+)[`\"]?\s*=\s*['\"]?([^'\"]+)['\"]?", part.strip())
+            if eq_match:
+                conditions.append(('=', eq_match.group(1), eq_match.group(2)))
+                continue
+            
+            # Match: column > value
+            gt_match = re.match(r"[`\"]?(\w+)[`\"]?\s*>\s*['\"]?([^'\"]+)['\"]?", part.strip())
+            if gt_match:
+                conditions.append(('>', gt_match.group(1), gt_match.group(2)))
+                continue
+            
+            # Match: column < value
+            lt_match = re.match(r"[`\"]?(\w+)[`\"]?\s*<\s*['\"]?([^'\"]+)['\"]?", part.strip())
+            if lt_match:
+                conditions.append(('<', lt_match.group(1), lt_match.group(2)))
+                continue
+            
+            # Match: column LIKE 'pattern'
+            like_match = re.match(r"[`\"]?(\w+)[`\"]?\s+LIKE\s+['\"]([^'\"]+)['\"]", part.strip(), re.IGNORECASE)
+            if like_match:
+                conditions.append(('LIKE', like_match.group(1), like_match.group(2)))
+                continue
+        
+        for row in data:
+            match = True
+            for op, col, val in conditions:
+                row_val = row.get(col)
+                if row_val is None:
+                    match = False
+                    break
+                
+                if op == '=':
+                    # Try numeric comparison first
+                    try:
+                        if float(row_val) != float(val):
+                            match = False
+                            break
+                    except (ValueError, TypeError):
+                        if str(row_val) != str(val):
+                            match = False
+                            break
+                elif op == '>':
+                    try:
+                        if float(row_val) <= float(val):
+                            match = False
+                            break
+                    except (ValueError, TypeError):
+                        match = False
+                        break
+                elif op == '<':
+                    try:
+                        if float(row_val) >= float(val):
+                            match = False
+                            break
+                    except (ValueError, TypeError):
+                        match = False
+                        break
+                elif op == 'LIKE':
+                    pattern = val.replace('%', '.*').replace('_', '.')
+                    if not re.match(pattern, str(row_val), re.IGNORECASE):
+                        match = False
+                        break
+            
+            if match:
+                result.append(row)
+        
+        return result
+    
+    def _apply_order_by(self, data: List[Dict[str, Any]], order_by: str) -> List[Dict[str, Any]]:
+        """Apply ORDER BY sorting"""
+        # Parse order by: column [ASC|DESC]
+        parts = order_by.strip().split(',')
+        
+        for part in reversed(parts):
+            part = part.strip()
+            desc = 'DESC' in part.upper()
+            col = re.sub(r'\s+(ASC|DESC)\s*$', '', part, flags=re.IGNORECASE).strip().strip('`"')
+            
+            try:
+                data = sorted(data, key=lambda x: (x.get(col) is None, x.get(col, '')), reverse=desc)
+            except TypeError:
+                pass  # Skip sorting if types are incompatible
+        
+        return data
+    
+    # ==================== INSERT Handler ====================
+    
+    def _handle_insert(self, query: str, username: str) -> Any:
+        """Handle INSERT queries"""
+        if not self.db.current_database:
+            return {"error": {"code": 1046, "state": "3D000",
+                            "message": "No database selected"}}
+        
+        # Parse INSERT INTO table (columns) VALUES (values)
+        insert_match = re.search(
+            r'INSERT\s+INTO\s+[`"]?(\w+)[`"]?\s*\(([^)]+)\)\s*VALUES\s*\(([^)]+)\)',
+            query, re.IGNORECASE
+        )
+        
+        if not insert_match:
+            # Try INSERT INTO table VALUES (values)
+            simple_match = re.search(
+                r'INSERT\s+INTO\s+[`"]?(\w+)[`"]?\s+VALUES\s*\(([^)]+)\)',
+                query, re.IGNORECASE
+            )
+            if simple_match:
+                table_name = simple_match.group(1)
+                columns = None
+                values_str = simple_match.group(2)
+            else:
+                return {"error": {"code": 1064, "state": "42000",
+                                "message": "You have an error in your SQL syntax"}}
+        else:
+            table_name = insert_match.group(1)
+            columns = [c.strip().strip('`"') for c in insert_match.group(2).split(',')]
+            values_str = insert_match.group(3)
+        
+        database = self.db.get_current_database()
+        table = database.get_table(table_name)
+        if not table:
+            return {"error": {"code": 1146, "state": "42S02",
+                            "message": f"Table '{self.db.current_database}.{table_name}' doesn't exist"}}
+        
+        # Parse values
+        values = self._parse_values(values_str)
+        
+        # Build row
+        if columns:
+            row = dict(zip(columns, values))
+        else:
+            # Use table column order
+            col_names = table.get_column_names()
+            row = dict(zip(col_names[:len(values)], values))
+        
+        # Insert row
+        insert_id = table.insert_row(row)
+        self.db.save_state()  # Persist changes
+        
+        return {"success": True, "message": f"Query OK, 1 row affected", "insert_id": insert_id}
+    
+    def _parse_values(self, values_str: str) -> List[Any]:
+        """Parse VALUES clause into list of values"""
+        values = []
+        current = ""
+        in_string = False
+        string_char = None
+        
+        for char in values_str:
+            if char in ("'", '"') and not in_string:
+                in_string = True
+                string_char = char
+            elif char == string_char and in_string:
+                in_string = False
+                string_char = None
+            elif char == ',' and not in_string:
+                val = current.strip()
+                values.append(self._parse_value(val))
+                current = ""
+                continue
+            
+            current += char
+        
+        if current.strip():
+            values.append(self._parse_value(current.strip()))
+        
+        return values
+    
+    def _parse_value(self, val: str) -> Any:
+        """Parse a single value"""
+        val = val.strip()
+        
+        if val.upper() == 'NULL':
+            return None
+        if val.upper() in ('TRUE', 'FALSE'):
+            return 1 if val.upper() == 'TRUE' else 0
+        
+        # Remove quotes
+        if (val.startswith("'") and val.endswith("'")) or \
+           (val.startswith('"') and val.endswith('"')):
+            return val[1:-1]
+        
+        # Try numeric
+        try:
+            if '.' in val:
+                return float(val)
+            return int(val)
+        except ValueError:
+            return val
+    
+    # ==================== UPDATE Handler ====================
+    
+    def _handle_update(self, query: str, username: str) -> Any:
+        """Handle UPDATE queries"""
+        if not self.db.current_database:
+            return {"error": {"code": 1046, "state": "3D000",
+                            "message": "No database selected"}}
+        
+        # Parse UPDATE table SET col=val [WHERE ...]
+        update_match = re.search(
+            r'UPDATE\s+[`"]?(\w+)[`"]?\s+SET\s+(.+?)(?:\s+WHERE\s+(.+))?$',
+            query, re.IGNORECASE
+        )
+        
+        if not update_match:
+            return {"error": {"code": 1064, "state": "42000",
+                            "message": "You have an error in your SQL syntax"}}
+        
+        table_name = update_match.group(1)
+        set_clause = update_match.group(2)
+        where_clause = update_match.group(3)
+        
+        database = self.db.get_current_database()
+        table = database.get_table(table_name)
+        if not table:
+            return {"error": {"code": 1146, "state": "42S02",
+                            "message": f"Table '{self.db.current_database}.{table_name}' doesn't exist"}}
+        
+        # Parse SET clause
+        updates = {}
+        for part in set_clause.split(','):
+            match = re.match(r"[`\"]?(\w+)[`\"]?\s*=\s*(.+)", part.strip())
+            if match:
+                col = match.group(1)
+                val = self._parse_value(match.group(2).strip())
+                updates[col] = val
+        
+        # Apply updates
+        data = table.get_data()
+        affected = 0
+        
+        if where_clause:
+            filtered = self._apply_where(data, where_clause)
+            for row in data:
+                if row in filtered:
+                    row.update(updates)
+                    affected += 1
+        else:
+            for row in data:
+                row.update(updates)
+                affected += 1
+        
+        self.db.save_state()  # Persist changes
+        
+        return {"success": True, "message": f"Query OK, {affected} row(s) affected"}
+    
+    # ==================== DELETE Handler ====================
+    
+    def _handle_delete(self, query: str, username: str) -> Any:
+        """Handle DELETE queries"""
+        if not self.db.current_database:
+            return {"error": {"code": 1046, "state": "3D000",
+                            "message": "No database selected"}}
+        
+        # Parse DELETE FROM table [WHERE ...]
+        delete_match = re.search(
+            r'DELETE\s+FROM\s+[`"]?(\w+)[`"]?(?:\s+WHERE\s+(.+))?$',
+            query, re.IGNORECASE
+        )
+        
+        if not delete_match:
+            return {"error": {"code": 1064, "state": "42000",
+                            "message": "You have an error in your SQL syntax"}}
+        
+        table_name = delete_match.group(1)
+        where_clause = delete_match.group(2)
+        
+        database = self.db.get_current_database()
+        table = database.get_table(table_name)
+        if not table:
+            return {"error": {"code": 1146, "state": "42S02",
+                            "message": f"Table '{self.db.current_database}.{table_name}' doesn't exist"}}
+        
+        data = table.get_data()
+        original_count = len(data)
+        
+        if where_clause:
+            filtered = self._apply_where(data, where_clause)
+            filtered_set = set(id(r) for r in filtered)
+            table._data = [r for r in data if id(r) not in filtered_set]
+        else:
+            table._data = []
+        
+        affected = original_count - len(table._data)
+        table.row_count = len(table._data)
+        self.db.save_state()  # Persist changes
+        
+        return {"success": True, "message": f"Query OK, {affected} row(s) affected"}
+

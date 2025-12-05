@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 MySQL Virtual Database System for MySQL Honeypot
-Provides a realistic MySQL database structure with dynamic data generation
+Provides a realistic MySQL database structure with dynamic data generation and per-user persistence
 """
 
 import datetime
@@ -11,11 +11,60 @@ import logging
 import os
 import random
 import re
+import string
 import uuid
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
+
+
+# Realistic data pools for generating fake but believable data
+FIRST_NAMES = ["Alex", "Sarah", "Mike", "Emma", "Chris", "Lisa", "James", "Anna", "David", "Maria", 
+               "Ryan", "Jessica", "Kevin", "Ashley", "Brian", "Nicole", "Jason", "Amanda", "Eric", "Megan",
+               "Tyler", "Brittany", "Andrew", "Samantha", "Brandon", "Rachel", "Justin", "Lauren", "Matthew", "Stephanie"]
+
+LAST_NAMES = ["Chen", "Martinez", "Thompson", "Wilson", "Garcia", "Brown", "Davis", "Miller", "Rodriguez", "Anderson",
+              "Taylor", "Thomas", "Moore", "Jackson", "Martin", "Lee", "White", "Harris", "Clark", "Lewis",
+              "Young", "Walker", "Hall", "Allen", "King", "Wright", "Scott", "Green", "Baker", "Adams"]
+
+GAME_NAMES = ["Shadow", "Dragon", "Storm", "Fire", "Ice", "Thunder", "Phoenix", "Mystic", "Dark", "Light",
+              "Cosmic", "Stellar", "Crimson", "Azure", "Golden", "Silver", "Iron", "Crystal", "Nova", "Omega"]
+
+GAME_SUFFIXES = ["Hunter", "Master", "King", "Lord", "Knight", "Wizard", "Warrior", "Slayer", "Champion", "Legend",
+                 "Destroyer", "Guardian", "Demon", "Angel", "Beast", "Spirit", "Wolf", "Hawk", "Blade", "Storm"]
+
+ITEM_NAMES = {
+    "weapon": ["Excalibur", "Dragonslayer", "Shadowblade", "Frostmourne", "Thunderfury", "Doomhammer", "Warglaive", "Ashbringer", "Gorehowl", "Soulreaper"],
+    "armor": ["Dragon Plate", "Shadow Leather", "Mithril Chain", "Crystal Guard", "Phoenix Aegis", "Titan Armor", "Void Cloak", "Storm Shield", "Ice Barrier", "Fire Ward"],
+    "consumable": ["Health Potion", "Mana Elixir", "Stamina Tonic", "Strength Buff", "Speed Boost", "Shield Scroll", "Teleport Stone", "Revival Crystal", "Damage Amp", "Defense Boost"],
+    "material": ["Dragon Scale", "Phoenix Feather", "Mithril Ore", "Shadow Essence", "Crystal Shard", "Ancient Rune", "Void Fragment", "Storm Dust", "Ice Core", "Fire Stone"],
+    "quest": ["Ancient Map", "Royal Decree", "Mysterious Key", "Sealed Letter", "Cursed Artifact", "Sacred Relic", "Lost Tome", "Broken Compass", "Faded Photo", "Cryptic Note"]
+}
+
+ACHIEVEMENT_NAMES = [
+    ("First Blood", "Defeat your first enemy", 10),
+    ("Monster Slayer", "Defeat 100 enemies", 25),
+    ("Dragon Hunter", "Defeat the Ancient Dragon", 50),
+    ("Treasure Hunter", "Find 50 treasure chests", 30),
+    ("Explorer", "Discover all map regions", 40),
+    ("Master Crafter", "Craft 100 items", 35),
+    ("Social Butterfly", "Add 25 friends", 20),
+    ("Battle Master", "Win 500 PvP matches", 75),
+    ("Legendary", "Reach max level", 100),
+    ("Completionist", "Complete all achievements", 500),
+    ("Speed Runner", "Complete the game in under 10 hours", 60),
+    ("Fashion Icon", "Collect 50 cosmetic items", 25),
+    ("Guild Leader", "Create and lead a guild", 45),
+    ("Arena Champion", "Reach top 100 in ranked", 80),
+    ("Dungeon Master", "Complete all dungeons on hard mode", 90),
+]
+
+EMAIL_DOMAINS = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com", "protonmail.com", "icloud.com"]
+
+COUNTRIES = ["US", "CA", "GB", "DE", "FR", "JP", "KR", "AU", "BR", "IN", "MX", "RU", "CN", "ES", "IT"]
+
+CHARACTER_CLASSES = ["warrior", "mage", "rogue", "healer", "archer", "paladin", "necromancer", "assassin"]
 
 
 class Column:
@@ -58,11 +107,7 @@ class Column:
         return cls(**data)
     
     def get_mysql_type_string(self) -> str:
-        """Get MySQL column type string for SHOW COLUMNS"""
-        type_str = self.data_type
-        if self.auto_increment:
-            return type_str
-        return type_str
+        return self.data_type.lower()
     
     def get_mysql_null_string(self) -> str:
         return "YES" if self.nullable else "NO"
@@ -82,7 +127,7 @@ class Column:
 
 
 class Table:
-    """Represents a database table with columns and data generation"""
+    """Represents a database table with columns and data"""
     
     def __init__(
         self,
@@ -125,7 +170,8 @@ class Table:
             "collation": self.collation,
             "comment": self.comment,
             "row_count": self.row_count,
-            "data": self._data
+            "data": self._data,
+            "auto_increment_counter": self._auto_increment_counter
         }
     
     @classmethod
@@ -141,7 +187,61 @@ class Table:
             row_count=data.get("row_count", 0)
         )
         table._data = data.get("data", [])
+        table._auto_increment_counter = data.get("auto_increment_counter", 1)
         return table
+    
+    def get_data(self) -> List[Dict[str, Any]]:
+        """Get all rows in the table"""
+        return self._data
+    
+    def get_row_count(self) -> int:
+        """Get actual row count"""
+        return len(self._data) if self._data else self.row_count
+    
+    def insert_row(self, row: Dict[str, Any]) -> int:
+        """Insert a row and return the auto-incremented ID if any"""
+        new_row = {}
+        auto_id = None
+        
+        for col in self.columns:
+            if col.auto_increment and col.name not in row:
+                new_row[col.name] = self._auto_increment_counter
+                auto_id = self._auto_increment_counter
+                self._auto_increment_counter += 1
+            elif col.name in row:
+                new_row[col.name] = row[col.name]
+            elif col.default is not None:
+                new_row[col.name] = col.default
+            else:
+                new_row[col.name] = None
+        
+        self._data.append(new_row)
+        self.row_count = len(self._data)
+        return auto_id or len(self._data)
+    
+    def update_rows(self, condition: Dict[str, Any], updates: Dict[str, Any]) -> int:
+        """Update rows matching condition, return count of updated rows"""
+        count = 0
+        for row in self._data:
+            match = all(row.get(k) == v for k, v in condition.items())
+            if match:
+                row.update(updates)
+                count += 1
+        return count
+    
+    def delete_rows(self, condition: Dict[str, Any]) -> int:
+        """Delete rows matching condition, return count of deleted rows"""
+        original_count = len(self._data)
+        self._data = [row for row in self._data if not all(row.get(k) == v for k, v in condition.items())]
+        deleted = original_count - len(self._data)
+        self.row_count = len(self._data)
+        return deleted
+    
+    def truncate(self):
+        """Remove all data from table"""
+        self._data = []
+        self.row_count = 0
+        # Don't reset auto_increment - MySQL doesn't by default
     
     def generate_create_statement(self, database_name: str) -> str:
         """Generate CREATE TABLE statement"""
@@ -151,12 +251,14 @@ class Table:
         primary_keys = []
         
         for col in self.columns:
-            col_def = f"  `{col.name}` {col.data_type}"
+            col_def = f"  `{col.name}` {col.data_type.lower()}"
             if not col.nullable:
                 col_def += " NOT NULL"
             if col.default is not None:
                 if isinstance(col.default, str):
                     col_def += f" DEFAULT '{col.default}'"
+                elif col.default is None:
+                    col_def += " DEFAULT NULL"
                 else:
                     col_def += f" DEFAULT {col.default}"
             if col.auto_increment:
@@ -179,147 +281,6 @@ class Table:
             lines[-1] += f" COMMENT='{self.comment}'"
         
         return "\n".join(lines)
-    
-    def generate_rows(self, count: int = 10) -> List[Dict[str, Any]]:
-        """Generate realistic sample data rows"""
-        rows = []
-        for i in range(count):
-            row = {}
-            for col in self.columns:
-                row[col.name] = self._generate_value_for_column(col, i)
-            rows.append(row)
-        return rows
-    
-    def _generate_value_for_column(self, col: Column, row_index: int) -> Any:
-        """Generate a realistic value for a column based on its type and name"""
-        col_name = col.name.lower()
-        col_type = col.data_type.upper()
-        
-        # Handle auto_increment
-        if col.auto_increment:
-            self._auto_increment_counter += 1
-            return self._auto_increment_counter - 1
-        
-        # Generate based on column name patterns
-        if "id" in col_name and "INT" in col_type:
-            return row_index + 1
-        
-        if col_name in ("created_at", "created_date", "create_time"):
-            base = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 365))
-            return base.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if col_name in ("updated_at", "modified_at", "update_time"):
-            base = datetime.datetime.now() - datetime.timedelta(days=random.randint(0, 30))
-            return base.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if col_name in ("last_login", "login_time", "last_seen"):
-            base = datetime.datetime.now() - datetime.timedelta(hours=random.randint(1, 720))
-            return base.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if "email" in col_name:
-            names = ["john", "jane", "mike", "sarah", "alex", "emma", "chris", "lisa"]
-            domains = ["nexusgames.com", "game.dev", "player.io", "studio.net"]
-            return f"{random.choice(names)}{random.randint(1, 999)}@{random.choice(domains)}"
-        
-        if col_name in ("username", "user_name", "player_name", "name"):
-            prefixes = ["Shadow", "Dark", "Light", "Storm", "Fire", "Ice", "Thunder", "Dragon"]
-            suffixes = ["Hunter", "Master", "King", "Lord", "Knight", "Wizard", "Warrior", "Slayer"]
-            return f"{random.choice(prefixes)}{random.choice(suffixes)}{random.randint(1, 9999)}"
-        
-        if "password" in col_name or "hash" in col_name:
-            return hashlib.sha256(f"pass{row_index}".encode()).hexdigest()[:64]
-        
-        if col_name in ("score", "points", "xp", "experience"):
-            return random.randint(100, 100000)
-        
-        if col_name in ("level", "rank"):
-            return random.randint(1, 100)
-        
-        if col_name in ("balance", "coins", "gold", "credits"):
-            return random.randint(0, 1000000)
-        
-        if col_name in ("wins", "losses", "kills", "deaths"):
-            return random.randint(0, 10000)
-        
-        if col_name in ("playtime", "time_played"):
-            return random.randint(60, 360000)  # seconds
-        
-        if col_name in ("status", "state"):
-            statuses = ["active", "inactive", "pending", "banned", "premium"]
-            return random.choice(statuses)
-        
-        if col_name in ("is_active", "is_admin", "is_premium", "enabled", "verified"):
-            return random.choice([0, 1])
-        
-        if "ip" in col_name:
-            return f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}"
-        
-        if "uuid" in col_name or "guid" in col_name:
-            return str(uuid.uuid4())
-        
-        if col_name in ("title", "game_title"):
-            titles = ["Shadow Quest", "Dragon Realm", "Star Commander", "Zombie Siege", "Racing Pro"]
-            return random.choice(titles)
-        
-        if col_name in ("description", "desc", "content", "text"):
-            descriptions = [
-                "An exciting adventure awaits",
-                "Join the battle for glory",
-                "Explore new worlds",
-                "Compete with players worldwide",
-                "Unlock powerful abilities"
-            ]
-            return random.choice(descriptions)
-        
-        if "version" in col_name:
-            return f"{random.randint(1, 5)}.{random.randint(0, 9)}.{random.randint(0, 99)}"
-        
-        if "count" in col_name:
-            return random.randint(0, 1000)
-        
-        if "price" in col_name or "amount" in col_name or "cost" in col_name:
-            return round(random.uniform(0.99, 99.99), 2)
-        
-        # Generate based on data type
-        if "INT" in col_type:
-            return random.randint(1, 10000)
-        
-        if "FLOAT" in col_type or "DOUBLE" in col_type or "DECIMAL" in col_type:
-            return round(random.uniform(0, 1000), 2)
-        
-        if "DATETIME" in col_type or "TIMESTAMP" in col_type:
-            base = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 365))
-            return base.strftime("%Y-%m-%d %H:%M:%S")
-        
-        if "DATE" in col_type:
-            base = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 365))
-            return base.strftime("%Y-%m-%d")
-        
-        if "TIME" in col_type:
-            return f"{random.randint(0, 23):02d}:{random.randint(0, 59):02d}:{random.randint(0, 59):02d}"
-        
-        if "BOOL" in col_type or "TINYINT(1)" in col_type:
-            return random.choice([0, 1])
-        
-        if "TEXT" in col_type or "BLOB" in col_type:
-            return f"Data block {row_index + 1}"
-        
-        if "VARCHAR" in col_type or "CHAR" in col_type:
-            return f"value_{row_index + 1}"
-        
-        if "ENUM" in col_type:
-            # Extract enum values
-            match = re.search(r"ENUM\s*\((.*?)\)", col_type, re.IGNORECASE)
-            if match:
-                values = [v.strip().strip("'\"") for v in match.group(1).split(",")]
-                return random.choice(values)
-            return "unknown"
-        
-        if "JSON" in col_type:
-            return json.dumps({"key": f"value_{row_index}"})
-        
-        # Default
-        return None
 
 
 class Database:
@@ -378,24 +339,45 @@ class MySQLDatabaseSystem:
     """
     Complete MySQL database system with multiple databases
     Provides realistic schema and data for honeypot deception
+    Supports per-user persistence
     """
     
-    def __init__(self, session_dir: Optional[str] = None):
+    def __init__(self, username: str = None, sessions_dir: str = None):
         self.databases: Dict[str, Database] = {}
         self.current_database: Optional[str] = None
-        self.session_dir = Path(session_dir) if session_dir else None
+        self.username = username or "anonymous"
         self.variables: Dict[str, Any] = {}
         
-        # Initialize with default databases
-        self._initialize_system_databases()
-        self._initialize_game_databases()
+        # Set up persistence directory
+        if sessions_dir:
+            self.sessions_dir = Path(sessions_dir)
+        else:
+            # Default to MySQL/sessions/database_states/
+            self.sessions_dir = Path(__file__).parent / "sessions" / "database_states"
+        
+        self.sessions_dir.mkdir(parents=True, exist_ok=True)
+        
+        # Try to load existing state for this user
+        if not self._load_state():
+            # Initialize with default databases
+            self._initialize_system_databases()
+            self._initialize_game_databases()
+            self._populate_sample_data()
+        
         self._initialize_variables()
+        
+    def _get_state_file_path(self) -> Path:
+        """Get the persistence file path for current user"""
+        safe_username = re.sub(r'[^\w\-]', '_', self.username)
+        return self.sessions_dir / f"{safe_username}_database.json"
         
     def _initialize_variables(self):
         """Initialize MySQL system variables"""
         self.variables = {
             "version": "8.0.32-0ubuntu0.20.04.2",
             "version_comment": "(Ubuntu)",
+            "version_compile_os": "Linux",
+            "version_compile_machine": "x86_64",
             "hostname": "nexus-db-01",
             "datadir": "/var/lib/mysql/",
             "basedir": "/usr/",
@@ -404,11 +386,16 @@ class MySQLDatabaseSystem:
             "socket": "/var/run/mysqld/mysqld.sock",
             "pid_file": "/var/run/mysqld/mysqld.pid",
             "character_set_server": "utf8mb4",
+            "character_set_client": "utf8mb4",
+            "character_set_connection": "utf8mb4",
+            "character_set_results": "utf8mb4",
             "collation_server": "utf8mb4_unicode_ci",
+            "collation_connection": "utf8mb4_unicode_ci",
             "max_connections": 151,
             "max_allowed_packet": 67108864,
             "innodb_buffer_pool_size": 134217728,
             "innodb_log_file_size": 50331648,
+            "innodb_version": "8.0.32",
             "query_cache_size": 0,
             "query_cache_type": "OFF",
             "log_error": "/var/log/mysql/error.log",
@@ -419,9 +406,14 @@ class MySQLDatabaseSystem:
             "secure_file_priv": "/var/lib/mysql-files/",
             "sql_mode": "ONLY_FULL_GROUP_BY,STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION",
             "time_zone": "SYSTEM",
+            "system_time_zone": "UTC",
             "autocommit": 1,
             "wait_timeout": 28800,
             "interactive_timeout": 28800,
+            "net_read_timeout": 30,
+            "net_write_timeout": 60,
+            "have_ssl": "YES",
+            "ssl_cipher": "TLS_AES_256_GCM_SHA384",
         }
         
     def _initialize_system_databases(self):
@@ -468,9 +460,9 @@ class MySQLDatabaseSystem:
         self.databases["sys"] = sys_db
         
     def _initialize_game_databases(self):
-        """Initialize game development databases"""
+        """Initialize game development databases with full schema"""
         
-        # nexus_gamedev - Main game development database
+        # ============ nexus_gamedev - Main game development database ============
         nexus_db = Database("nexus_gamedev")
         
         # Players table
@@ -485,10 +477,10 @@ class MySQLDatabaseSystem:
         players.add_column(Column("premium_currency", "INT(11)", default=0))
         players.add_column(Column("is_premium", "TINYINT(1)", default=0))
         players.add_column(Column("is_banned", "TINYINT(1)", default=0))
+        players.add_column(Column("country", "VARCHAR(2)"))
         players.add_column(Column("last_login", "DATETIME"))
         players.add_column(Column("created_at", "DATETIME", nullable=False))
         players.add_column(Column("updated_at", "DATETIME"))
-        players.row_count = 15847
         nexus_db.add_table(players)
         
         # Characters table
@@ -496,17 +488,45 @@ class MySQLDatabaseSystem:
         characters.add_column(Column("character_id", "INT(11)", auto_increment=True, primary_key=True))
         characters.add_column(Column("player_id", "INT(11)", nullable=False))
         characters.add_column(Column("name", "VARCHAR(50)", nullable=False))
-        characters.add_column(Column("class", "ENUM('warrior','mage','rogue','healer','archer')"))
+        characters.add_column(Column("class", "ENUM('warrior','mage','rogue','healer','archer','paladin','necromancer','assassin')"))
         characters.add_column(Column("level", "INT(11)", default=1))
         characters.add_column(Column("health", "INT(11)", default=100))
+        characters.add_column(Column("max_health", "INT(11)", default=100))
         characters.add_column(Column("mana", "INT(11)", default=50))
+        characters.add_column(Column("max_mana", "INT(11)", default=50))
         characters.add_column(Column("strength", "INT(11)", default=10))
         characters.add_column(Column("intelligence", "INT(11)", default=10))
         characters.add_column(Column("agility", "INT(11)", default=10))
+        characters.add_column(Column("defense", "INT(11)", default=10))
         characters.add_column(Column("playtime_seconds", "BIGINT(20)", default=0))
+        characters.add_column(Column("current_zone", "VARCHAR(50)"))
         characters.add_column(Column("created_at", "DATETIME", nullable=False))
-        characters.row_count = 28493
         nexus_db.add_table(characters)
+        
+        # Items table
+        items = Table("items", comment="Game items catalog")
+        items.add_column(Column("item_id", "INT(11)", auto_increment=True, primary_key=True))
+        items.add_column(Column("name", "VARCHAR(100)", nullable=False))
+        items.add_column(Column("description", "TEXT"))
+        items.add_column(Column("type", "ENUM('weapon','armor','consumable','material','quest')"))
+        items.add_column(Column("rarity", "ENUM('common','uncommon','rare','epic','legendary')"))
+        items.add_column(Column("base_price", "INT(11)", default=0))
+        items.add_column(Column("required_level", "INT(11)", default=1))
+        items.add_column(Column("stats", "JSON"))
+        items.add_column(Column("icon_url", "VARCHAR(255)"))
+        items.add_column(Column("created_at", "DATETIME"))
+        nexus_db.add_table(items)
+        
+        # Inventory table
+        inventory = Table("inventory", comment="Player inventory items")
+        inventory.add_column(Column("inventory_id", "INT(11)", auto_increment=True, primary_key=True))
+        inventory.add_column(Column("player_id", "INT(11)", nullable=False))
+        inventory.add_column(Column("item_id", "INT(11)", nullable=False))
+        inventory.add_column(Column("quantity", "INT(11)", default=1))
+        inventory.add_column(Column("slot", "INT(11)"))
+        inventory.add_column(Column("equipped", "TINYINT(1)", default=0))
+        inventory.add_column(Column("acquired_at", "DATETIME", nullable=False))
+        nexus_db.add_table(inventory)
         
         # Achievements table
         achievements = Table("achievements", comment="Game achievements")
@@ -517,7 +537,6 @@ class MySQLDatabaseSystem:
         achievements.add_column(Column("category", "VARCHAR(50)"))
         achievements.add_column(Column("icon_url", "VARCHAR(255)"))
         achievements.add_column(Column("is_hidden", "TINYINT(1)", default=0))
-        achievements.row_count = 156
         nexus_db.add_table(achievements)
         
         # Player achievements
@@ -526,34 +545,9 @@ class MySQLDatabaseSystem:
         player_achievements.add_column(Column("player_id", "INT(11)", nullable=False))
         player_achievements.add_column(Column("achievement_id", "INT(11)", nullable=False))
         player_achievements.add_column(Column("unlocked_at", "DATETIME", nullable=False))
-        player_achievements.row_count = 89421
         nexus_db.add_table(player_achievements)
         
-        # Inventory table
-        inventory = Table("inventory", comment="Player inventory items")
-        inventory.add_column(Column("inventory_id", "INT(11)", auto_increment=True, primary_key=True))
-        inventory.add_column(Column("player_id", "INT(11)", nullable=False))
-        inventory.add_column(Column("item_id", "INT(11)", nullable=False))
-        inventory.add_column(Column("quantity", "INT(11)", default=1))
-        inventory.add_column(Column("slot", "INT(11)"))
-        inventory.add_column(Column("acquired_at", "DATETIME", nullable=False))
-        inventory.row_count = 324891
-        nexus_db.add_table(inventory)
-        
-        # Items table
-        items = Table("items", comment="Game items catalog")
-        items.add_column(Column("item_id", "INT(11)", auto_increment=True, primary_key=True))
-        items.add_column(Column("name", "VARCHAR(100)", nullable=False))
-        items.add_column(Column("description", "TEXT"))
-        items.add_column(Column("type", "ENUM('weapon','armor','consumable','material','quest')"))
-        items.add_column(Column("rarity", "ENUM('common','uncommon','rare','epic','legendary')"))
-        items.add_column(Column("base_price", "INT(11)", default=0))
-        items.add_column(Column("stats", "JSON"))
-        items.add_column(Column("icon_url", "VARCHAR(255)"))
-        items.row_count = 2847
-        nexus_db.add_table(items)
-        
-        # Sessions table (for security monitoring)
+        # Sessions table (juicy for attackers)
         sessions = Table("sessions", comment="Active game sessions")
         sessions.add_column(Column("session_id", "VARCHAR(64)", primary_key=True))
         sessions.add_column(Column("player_id", "INT(11)", nullable=False))
@@ -562,66 +556,90 @@ class MySQLDatabaseSystem:
         sessions.add_column(Column("started_at", "DATETIME", nullable=False))
         sessions.add_column(Column("last_activity", "DATETIME"))
         sessions.add_column(Column("is_active", "TINYINT(1)", default=1))
-        sessions.row_count = 847
         nexus_db.add_table(sessions)
         
-        # Transactions table (for payment tracking - juicy target)
+        # Transactions table (payment data - very juicy)
         transactions = Table("transactions", comment="Payment transactions")
         transactions.add_column(Column("transaction_id", "VARCHAR(64)", primary_key=True))
         transactions.add_column(Column("player_id", "INT(11)", nullable=False))
         transactions.add_column(Column("amount", "DECIMAL(10,2)", nullable=False))
         transactions.add_column(Column("currency", "VARCHAR(3)", default="USD"))
         transactions.add_column(Column("payment_method", "VARCHAR(50)"))
+        transactions.add_column(Column("card_last_four", "VARCHAR(4)"))
         transactions.add_column(Column("status", "ENUM('pending','completed','failed','refunded')"))
+        transactions.add_column(Column("item_purchased", "VARCHAR(100)"))
         transactions.add_column(Column("created_at", "DATETIME", nullable=False))
-        transactions.row_count = 45892
         nexus_db.add_table(transactions)
+        
+        # Guilds table
+        guilds = Table("guilds", comment="Player guilds")
+        guilds.add_column(Column("guild_id", "INT(11)", auto_increment=True, primary_key=True))
+        guilds.add_column(Column("name", "VARCHAR(50)", nullable=False, unique=True))
+        guilds.add_column(Column("description", "TEXT"))
+        guilds.add_column(Column("leader_id", "INT(11)", nullable=False))
+        guilds.add_column(Column("member_count", "INT(11)", default=1))
+        guilds.add_column(Column("level", "INT(11)", default=1))
+        guilds.add_column(Column("experience", "BIGINT(20)", default=0))
+        guilds.add_column(Column("created_at", "DATETIME", nullable=False))
+        nexus_db.add_table(guilds)
+        
+        # Guild members
+        guild_members = Table("guild_members", comment="Guild membership")
+        guild_members.add_column(Column("id", "INT(11)", auto_increment=True, primary_key=True))
+        guild_members.add_column(Column("guild_id", "INT(11)", nullable=False))
+        guild_members.add_column(Column("player_id", "INT(11)", nullable=False))
+        guild_members.add_column(Column("rank", "ENUM('leader','officer','member')"))
+        guild_members.add_column(Column("joined_at", "DATETIME", nullable=False))
+        nexus_db.add_table(guild_members)
         
         self.databases["nexus_gamedev"] = nexus_db
         
-        # player_data - Player statistics and leaderboards
+        # ============ player_data - Player statistics ============
         player_data_db = Database("player_data")
         
         # Leaderboards table
         leaderboards = Table("leaderboards", comment="Game leaderboards")
         leaderboards.add_column(Column("id", "INT(11)", auto_increment=True, primary_key=True))
         leaderboards.add_column(Column("player_id", "INT(11)", nullable=False))
+        leaderboards.add_column(Column("player_name", "VARCHAR(50)"))
         leaderboards.add_column(Column("leaderboard_type", "VARCHAR(50)", nullable=False))
         leaderboards.add_column(Column("score", "BIGINT(20)", default=0))
         leaderboards.add_column(Column("rank", "INT(11)"))
         leaderboards.add_column(Column("season", "INT(11)", default=1))
         leaderboards.add_column(Column("updated_at", "DATETIME"))
-        leaderboards.row_count = 158470
         player_data_db.add_table(leaderboards)
         
         # Match history
         match_history = Table("match_history", comment="PvP match records")
         match_history.add_column(Column("match_id", "VARCHAR(64)", primary_key=True))
         match_history.add_column(Column("player1_id", "INT(11)", nullable=False))
+        match_history.add_column(Column("player1_name", "VARCHAR(50)"))
         match_history.add_column(Column("player2_id", "INT(11)", nullable=False))
+        match_history.add_column(Column("player2_name", "VARCHAR(50)"))
         match_history.add_column(Column("winner_id", "INT(11)"))
         match_history.add_column(Column("game_mode", "VARCHAR(50)"))
         match_history.add_column(Column("duration_seconds", "INT(11)"))
         match_history.add_column(Column("played_at", "DATETIME", nullable=False))
-        match_history.row_count = 892145
         player_data_db.add_table(match_history)
         
         # Player statistics
         player_stats = Table("player_stats", comment="Aggregated player statistics")
         player_stats.add_column(Column("player_id", "INT(11)", primary_key=True))
+        player_stats.add_column(Column("player_name", "VARCHAR(50)"))
         player_stats.add_column(Column("total_wins", "INT(11)", default=0))
         player_stats.add_column(Column("total_losses", "INT(11)", default=0))
         player_stats.add_column(Column("total_kills", "INT(11)", default=0))
         player_stats.add_column(Column("total_deaths", "INT(11)", default=0))
+        player_stats.add_column(Column("kd_ratio", "DECIMAL(5,2)", default=0.00))
+        player_stats.add_column(Column("win_rate", "DECIMAL(5,2)", default=0.00))
         player_stats.add_column(Column("total_playtime", "BIGINT(20)", default=0))
         player_stats.add_column(Column("highest_score", "BIGINT(20)", default=0))
         player_stats.add_column(Column("updated_at", "DATETIME"))
-        player_stats.row_count = 15847
         player_data_db.add_table(player_stats)
         
         self.databases["player_data"] = player_data_db
         
-        # game_analytics - Analytics data
+        # ============ game_analytics - Analytics data ============
         analytics_db = Database("game_analytics")
         
         # Events table
@@ -632,7 +650,6 @@ class MySQLDatabaseSystem:
         events.add_column(Column("session_id", "VARCHAR(64)"))
         events.add_column(Column("data", "JSON"))
         events.add_column(Column("timestamp", "DATETIME", nullable=False))
-        events.row_count = 15892847
         analytics_db.add_table(events)
         
         # Daily metrics
@@ -643,30 +660,305 @@ class MySQLDatabaseSystem:
         daily_metrics.add_column(Column("revenue", "DECIMAL(12,2)"))
         daily_metrics.add_column(Column("sessions", "INT(11)"))
         daily_metrics.add_column(Column("avg_session_length", "INT(11)"))
-        daily_metrics.row_count = 365
+        daily_metrics.add_column(Column("total_matches", "INT(11)"))
+        daily_metrics.add_column(Column("items_purchased", "INT(11)"))
         analytics_db.add_table(daily_metrics)
         
         self.databases["game_analytics"] = analytics_db
         
-        # asset_library - Game assets
+        # ============ asset_library - Game assets ============
         assets_db = Database("asset_library")
         
         # Assets table
         assets = Table("assets", comment="Game asset metadata")
         assets.add_column(Column("asset_id", "INT(11)", auto_increment=True, primary_key=True))
         assets.add_column(Column("name", "VARCHAR(255)", nullable=False))
-        assets.add_column(Column("type", "ENUM('texture','model','sound','animation','shader')"))
+        assets.add_column(Column("type", "ENUM('texture','model','sound','animation','shader','prefab')"))
         assets.add_column(Column("file_path", "VARCHAR(500)"))
         assets.add_column(Column("file_size", "BIGINT(20)"))
         assets.add_column(Column("checksum", "VARCHAR(64)"))
         assets.add_column(Column("version", "VARCHAR(20)"))
         assets.add_column(Column("created_by", "VARCHAR(100)"))
         assets.add_column(Column("created_at", "DATETIME", nullable=False))
-        assets.row_count = 8924
+        assets.add_column(Column("updated_at", "DATETIME"))
         assets_db.add_table(assets)
         
         self.databases["asset_library"] = assets_db
         
+    def _populate_sample_data(self):
+        """Populate tables with realistic sample data"""
+        random.seed(42)  # Consistent data generation
+        
+        nexus_db = self.databases.get("nexus_gamedev")
+        if not nexus_db:
+            return
+        
+        # Generate players (50 sample players)
+        players_table = nexus_db.get_table("players")
+        player_names = []
+        for i in range(50):
+            fname = random.choice(FIRST_NAMES)
+            lname = random.choice(LAST_NAMES)
+            username = f"{random.choice(GAME_NAMES)}{random.choice(GAME_SUFFIXES)}{random.randint(1, 999)}"
+            email = f"{fname.lower()}.{lname.lower()}{random.randint(1, 99)}@{random.choice(EMAIL_DOMAINS)}"
+            
+            created = datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 730))
+            last_login = created + datetime.timedelta(days=random.randint(0, 365))
+            
+            level = random.randint(1, 100)
+            exp = level * random.randint(1000, 10000)
+            
+            players_table.insert_row({
+                "username": username,
+                "email": email,
+                "password_hash": hashlib.sha256(f"{username}password".encode()).hexdigest(),
+                "level": level,
+                "experience": exp,
+                "gold": random.randint(100, 1000000),
+                "premium_currency": random.randint(0, 5000) if random.random() > 0.7 else 0,
+                "is_premium": 1 if random.random() > 0.8 else 0,
+                "is_banned": 1 if random.random() > 0.95 else 0,
+                "country": random.choice(COUNTRIES),
+                "last_login": last_login.strftime("%Y-%m-%d %H:%M:%S"),
+                "created_at": created.strftime("%Y-%m-%d %H:%M:%S"),
+                "updated_at": last_login.strftime("%Y-%m-%d %H:%M:%S")
+            })
+            player_names.append(username)
+        
+        # Generate characters (2-3 per player for first 30 players)
+        characters_table = nexus_db.get_table("characters")
+        for player_id in range(1, 31):
+            num_chars = random.randint(1, 3)
+            for _ in range(num_chars):
+                char_level = random.randint(1, 80)
+                base_hp = 100 + char_level * 10
+                base_mana = 50 + char_level * 5
+                
+                characters_table.insert_row({
+                    "player_id": player_id,
+                    "name": f"{random.choice(GAME_NAMES)}{random.choice(GAME_SUFFIXES)}",
+                    "class": random.choice(CHARACTER_CLASSES),
+                    "level": char_level,
+                    "health": base_hp,
+                    "max_health": base_hp,
+                    "mana": base_mana,
+                    "max_mana": base_mana,
+                    "strength": 10 + char_level + random.randint(0, 20),
+                    "intelligence": 10 + char_level + random.randint(0, 20),
+                    "agility": 10 + char_level + random.randint(0, 20),
+                    "defense": 10 + char_level + random.randint(0, 20),
+                    "playtime_seconds": random.randint(3600, 360000),
+                    "current_zone": random.choice(["Starter Town", "Dark Forest", "Crystal Cave", "Dragon Peak", "Shadow Valley"]),
+                    "created_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 365))).strftime("%Y-%m-%d %H:%M:%S")
+                })
+        
+        # Generate items (100 items)
+        items_table = nexus_db.get_table("items")
+        rarities = ["common", "common", "common", "uncommon", "uncommon", "rare", "epic", "legendary"]
+        
+        for item_type, item_names in ITEM_NAMES.items():
+            for item_name in item_names:
+                rarity = random.choice(rarities)
+                base_price = {"common": 100, "uncommon": 500, "rare": 2000, "epic": 10000, "legendary": 50000}[rarity]
+                
+                items_table.insert_row({
+                    "name": item_name,
+                    "description": f"A {rarity} {item_type}: {item_name}. Highly sought after by adventurers.",
+                    "type": item_type,
+                    "rarity": rarity,
+                    "base_price": base_price + random.randint(0, base_price // 2),
+                    "required_level": random.randint(1, 60),
+                    "stats": json.dumps({"power": random.randint(10, 100), "durability": random.randint(50, 100)}),
+                    "icon_url": f"/assets/items/{item_type}/{item_name.lower().replace(' ', '_')}.png",
+                    "created_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+        
+        # Generate achievements
+        achievements_table = nexus_db.get_table("achievements")
+        categories = ["Combat", "Exploration", "Social", "Collection", "Mastery"]
+        for name, desc, points in ACHIEVEMENT_NAMES:
+            achievements_table.insert_row({
+                "name": name,
+                "description": desc,
+                "points": points,
+                "category": random.choice(categories),
+                "icon_url": f"/assets/achievements/{name.lower().replace(' ', '_')}.png",
+                "is_hidden": 1 if random.random() > 0.9 else 0
+            })
+        
+        # Generate inventory items for players
+        inventory_table = nexus_db.get_table("inventory")
+        for player_id in range(1, 31):
+            num_items = random.randint(5, 20)
+            used_items = set()
+            for _ in range(num_items):
+                item_id = random.randint(1, 50)
+                if item_id not in used_items:
+                    used_items.add(item_id)
+                    inventory_table.insert_row({
+                        "player_id": player_id,
+                        "item_id": item_id,
+                        "quantity": random.randint(1, 10),
+                        "slot": random.randint(1, 50),
+                        "equipped": 1 if random.random() > 0.8 else 0,
+                        "acquired_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 100))).strftime("%Y-%m-%d %H:%M:%S")
+                    })
+        
+        # Generate player achievements
+        player_achievements_table = nexus_db.get_table("player_achievements")
+        for player_id in range(1, 31):
+            num_achievements = random.randint(1, 10)
+            used_achievements = set()
+            for _ in range(num_achievements):
+                ach_id = random.randint(1, 15)
+                if ach_id not in used_achievements:
+                    used_achievements.add(ach_id)
+                    player_achievements_table.insert_row({
+                        "player_id": player_id,
+                        "achievement_id": ach_id,
+                        "unlocked_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 200))).strftime("%Y-%m-%d %H:%M:%S")
+                    })
+        
+        # Generate transactions (payment data - looks juicy to attackers)
+        transactions_table = nexus_db.get_table("transactions")
+        payment_methods = ["credit_card", "paypal", "google_pay", "apple_pay", "crypto"]
+        purchased_items = ["Premium Pack", "Gold Bundle", "Rare Chest", "Season Pass", "Cosmetic Set", "XP Boost", "VIP Subscription"]
+        
+        for _ in range(100):
+            player_id = random.randint(1, 50)
+            amount = random.choice([4.99, 9.99, 19.99, 49.99, 99.99])
+            
+            transactions_table.insert_row({
+                "transaction_id": str(uuid.uuid4()),
+                "player_id": player_id,
+                "amount": amount,
+                "currency": "USD",
+                "payment_method": random.choice(payment_methods),
+                "card_last_four": f"{random.randint(1000, 9999)}" if random.random() > 0.5 else None,
+                "status": random.choice(["completed", "completed", "completed", "pending", "failed"]),
+                "item_purchased": random.choice(purchased_items),
+                "created_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(1, 180))).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        # Generate sessions
+        sessions_table = nexus_db.get_table("sessions")
+        for i in range(20):
+            player_id = random.randint(1, 50)
+            sessions_table.insert_row({
+                "session_id": hashlib.md5(f"session_{i}_{player_id}".encode()).hexdigest(),
+                "player_id": player_id,
+                "ip_address": f"{random.randint(1, 255)}.{random.randint(0, 255)}.{random.randint(0, 255)}.{random.randint(1, 254)}",
+                "user_agent": random.choice([
+                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) GameClient/2.1.0",
+                    "NexusGame/2.1.0 (iOS 17.0)",
+                    "NexusGame/2.1.0 (Android 13)",
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) GameClient/2.1.0"
+                ]),
+                "started_at": (datetime.datetime.now() - datetime.timedelta(hours=random.randint(0, 24))).strftime("%Y-%m-%d %H:%M:%S"),
+                "last_activity": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                "is_active": 1 if random.random() > 0.3 else 0
+            })
+        
+        # Generate guilds
+        guilds_table = nexus_db.get_table("guilds")
+        guild_names = ["Shadow Legion", "Dragon Slayers", "Crystal Knights", "Phoenix Rising", "Dark Brotherhood",
+                       "Storm Riders", "Iron Wolves", "Crimson Guard", "Mystic Order", "Chaos Warriors"]
+        for i, guild_name in enumerate(guild_names):
+            leader_id = random.randint(1, 30)
+            guilds_table.insert_row({
+                "name": guild_name,
+                "description": f"The mighty {guild_name} guild. Join us for epic adventures!",
+                "leader_id": leader_id,
+                "member_count": random.randint(5, 100),
+                "level": random.randint(1, 25),
+                "experience": random.randint(1000, 500000),
+                "created_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(30, 365))).strftime("%Y-%m-%d %H:%M:%S")
+            })
+        
+        # Populate player_data database
+        player_data_db = self.databases.get("player_data")
+        if player_data_db:
+            # Leaderboards
+            leaderboards_table = player_data_db.get_table("leaderboards")
+            lb_types = ["pvp_rating", "pve_score", "gold_collected", "monsters_killed", "achievements"]
+            for lb_type in lb_types:
+                for rank in range(1, 21):
+                    player_id = random.randint(1, 50)
+                    leaderboards_table.insert_row({
+                        "player_id": player_id,
+                        "player_name": player_names[player_id - 1] if player_id <= len(player_names) else f"Player{player_id}",
+                        "leaderboard_type": lb_type,
+                        "score": random.randint(10000, 1000000) // rank,
+                        "rank": rank,
+                        "season": 1,
+                        "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    })
+            
+            # Player stats
+            player_stats_table = player_data_db.get_table("player_stats")
+            for player_id in range(1, 51):
+                wins = random.randint(0, 500)
+                losses = random.randint(0, 500)
+                kills = random.randint(0, 10000)
+                deaths = random.randint(1, 5000)
+                
+                player_stats_table.insert_row({
+                    "player_id": player_id,
+                    "player_name": player_names[player_id - 1] if player_id <= len(player_names) else f"Player{player_id}",
+                    "total_wins": wins,
+                    "total_losses": losses,
+                    "total_kills": kills,
+                    "total_deaths": deaths,
+                    "kd_ratio": round(kills / max(deaths, 1), 2),
+                    "win_rate": round(wins / max(wins + losses, 1) * 100, 2),
+                    "total_playtime": random.randint(36000, 3600000),
+                    "highest_score": random.randint(10000, 500000),
+                    "updated_at": datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                })
+            
+            # Match history
+            match_table = player_data_db.get_table("match_history")
+            game_modes = ["ranked", "casual", "tournament", "custom"]
+            for _ in range(50):
+                p1 = random.randint(1, 50)
+                p2 = random.randint(1, 50)
+                while p2 == p1:
+                    p2 = random.randint(1, 50)
+                winner = random.choice([p1, p2])
+                
+                match_table.insert_row({
+                    "match_id": str(uuid.uuid4()),
+                    "player1_id": p1,
+                    "player1_name": player_names[p1 - 1] if p1 <= len(player_names) else f"Player{p1}",
+                    "player2_id": p2,
+                    "player2_name": player_names[p2 - 1] if p2 <= len(player_names) else f"Player{p2}",
+                    "winner_id": winner,
+                    "game_mode": random.choice(game_modes),
+                    "duration_seconds": random.randint(60, 1800),
+                    "played_at": (datetime.datetime.now() - datetime.timedelta(days=random.randint(0, 30))).strftime("%Y-%m-%d %H:%M:%S")
+                })
+        
+        # Populate analytics database
+        analytics_db = self.databases.get("game_analytics")
+        if analytics_db:
+            # Daily metrics for last 30 days
+            metrics_table = analytics_db.get_table("daily_metrics")
+            for days_ago in range(30):
+                date = datetime.date.today() - datetime.timedelta(days=days_ago)
+                metrics_table.insert_row({
+                    "date": date.strftime("%Y-%m-%d"),
+                    "dau": random.randint(5000, 15000),
+                    "new_users": random.randint(100, 500),
+                    "revenue": round(random.uniform(1000, 10000), 2),
+                    "sessions": random.randint(10000, 30000),
+                    "avg_session_length": random.randint(900, 3600),
+                    "total_matches": random.randint(2000, 8000),
+                    "items_purchased": random.randint(500, 2000)
+                })
+        
+        # Save the initial state
+        self.save_state()
+    
     def list_databases(self) -> List[str]:
         """List all databases"""
         return list(self.databases.keys())
@@ -684,6 +976,7 @@ class MySQLDatabaseSystem:
         if name.lower() in self.databases:
             return False
         self.databases[name.lower()] = Database(name)
+        self.save_state()
         return True
     
     def drop_database(self, name: str) -> bool:
@@ -692,6 +985,7 @@ class MySQLDatabaseSystem:
             del self.databases[name.lower()]
             if self.current_database == name.lower():
                 self.current_database = None
+            self.save_state()
             return True
         return False
     
@@ -710,7 +1004,6 @@ class MySQLDatabaseSystem:
     
     def get_variable(self, name: str) -> Any:
         """Get a MySQL system variable"""
-        # Handle @@ prefix
         var_name = name.lstrip("@").lower()
         return self.variables.get(var_name, None)
     
@@ -719,29 +1012,58 @@ class MySQLDatabaseSystem:
         var_name = name.lstrip("@").lower()
         self.variables[var_name] = value
         
-    def save_state(self, path: str):
-        """Save database state to file"""
-        state = {
-            "databases": {name: db.to_dict() for name, db in self.databases.items()},
-            "current_database": self.current_database,
-            "variables": self.variables
-        }
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(state, f, indent=2, default=str)
+    def save_state(self):
+        """Save database state to file for persistence"""
+        try:
+            state = {
+                "username": self.username,
+                "current_database": self.current_database,
+                "databases": {},
+                "saved_at": datetime.datetime.now().isoformat()
+            }
             
-    def load_state(self, path: str) -> bool:
+            # Only save user-created/modified databases (not system ones)
+            user_dbs = ["nexus_gamedev", "player_data", "game_analytics", "asset_library"]
+            for db_name in user_dbs:
+                if db_name in self.databases:
+                    state["databases"][db_name] = self.databases[db_name].to_dict()
+            
+            # Also save any user-created databases
+            for db_name, db in self.databases.items():
+                if db_name not in ["mysql", "information_schema", "performance_schema", "sys"] and db_name not in state["databases"]:
+                    state["databases"][db_name] = db.to_dict()
+            
+            state_file = self._get_state_file_path()
+            with open(state_file, "w", encoding="utf-8") as f:
+                json.dump(state, f, indent=2, default=str)
+            
+            logger.debug(f"Saved database state for user {self.username} to {state_file}")
+            
+        except Exception as e:
+            logger.error(f"Failed to save database state: {e}")
+            
+    def _load_state(self) -> bool:
         """Load database state from file"""
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            state_file = self._get_state_file_path()
+            if not state_file.exists():
+                return False
+            
+            with open(state_file, "r", encoding="utf-8") as f:
                 state = json.load(f)
             
-            self.databases = {}
-            for name, db_data in state.get("databases", {}).items():
-                self.databases[name] = Database.from_dict(db_data)
+            # Initialize system databases first
+            self._initialize_system_databases()
+            
+            # Load saved databases
+            for db_name, db_data in state.get("databases", {}).items():
+                self.databases[db_name] = Database.from_dict(db_data)
             
             self.current_database = state.get("current_database")
-            self.variables = state.get("variables", {})
+            
+            logger.info(f"Loaded database state for user {self.username} from {state_file}")
             return True
+            
         except Exception as e:
-            logger.error(f"Failed to load database state: {e}")
+            logger.warning(f"Failed to load database state: {e}")
             return False

@@ -1250,6 +1250,22 @@ class MySQLHoneypotSession(Session):
             self._connection = connection
         except Exception:
             self._connection = None
+        
+        # Reinitialize MySQL components with authenticated username for per-user persistence
+        username = self.session_data.get("username", "anonymous")
+        default_db = self.config["mysql"].get("default_database", "nexus_gamedev")
+        
+        if MYSQL_COMPONENTS_AVAILABLE:
+            # Get sessions directory from config
+            sessions_dir = Path(self.config.get("honeypot", {}).get("sessions_dir", "sessions"))
+            db_states_dir = sessions_dir / "database_states"
+            
+            # Reinitialize with username for per-user persistence
+            self.db_system = MySQLDatabaseSystem(username=username, sessions_dir=str(db_states_dir))
+            self.db_system.use_database(default_db)
+            self.llm_guard = MySQLLLMGuard()
+            self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
+            logger.info(f"MySQL components reinitialized for user {username}")
 
         # Setup forensic logging if enabled
         if self.config["forensics"].getboolean("chain_of_custody", True):
