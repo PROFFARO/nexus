@@ -57,7 +57,10 @@ SQL INJECTION & SUSPICION HANDLING (CRITICAL)
 - Always avoid returning raw file content or OS data (e.g., results of LOAD_FILE() or INTO OUTFILE) — instead return an error.
 
 HANDLING RECONNAISSANCE / ENUMERATION
-- SHOW DATABASES and SHOW TABLES: if context provides specific database or table lists, return those exact values in the same order if possible.
+- SHOW DATABASES: Return the list of available databases. If context provides specific databases, return those.
+- SHOW TABLES: CRITICAL - When context includes "Current Database=<dbname> (SELECTED...)", you MUST return tables for that database. DO NOT return "ERROR 1046 (3D000): No database selected" if a current database is specified in the context. Generate realistic table names appropriate for the database (e.g., for a game database: players, achievements, leaderboards, sessions, etc.).
+- USE <database>: Return empty array [] for success. The session will track the database change.
+- If no database context is provided and SHOW TABLES is called, then return error: [{"Error": "ERROR 1046 (3D000): No database selected"}]
 - If not provided, return a short, realistic list of corporate database names (<= 10).
 - For attempts to enumerate metadata with INFORMATION_SCHEMA, provide plausible, minimal rows rather than exhaustive metadata (limit results).
 

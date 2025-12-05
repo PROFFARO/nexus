@@ -24,6 +24,16 @@ from typing import Any, Dict, List, Optional, Tuple
 # Module-level logger (safe to call before main)
 logger = logging.getLogger(__name__)
 
+# Import new MySQL components
+try:
+    from mysql_database import MySQLDatabaseSystem
+    from mysql_command_executor import MySQLCommandExecutor
+    from mysql_llm_guard import MySQLLLMGuard
+    MYSQL_COMPONENTS_AVAILABLE = True
+except ImportError:
+    MYSQL_COMPONENTS_AVAILABLE = False
+    logger.warning("MySQL components not available, using legacy mode")
+
 # Thread-local used by ContextFilter
 thread_local = threading.local()
 
@@ -1094,10 +1104,27 @@ class MySQLHoneypotSession(Session):
         self.config = config
         self.attack_analyzer = MySQLAttackAnalyzer()
         self.vuln_logger = MySQLVulnerabilityLogger()
+        # Get default database from config for initial session context
+        default_db = config["mysql"].get("default_database", "nexus_gamedev")
+        
+        # Initialize new MySQL components for command handling
+        if MYSQL_COMPONENTS_AVAILABLE:
+            self.db_system = MySQLDatabaseSystem()
+            self.db_system.use_database(default_db)  # Set default database
+            self.llm_guard = MySQLLLMGuard()
+            self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
+            logger.info("MySQL components initialized successfully")
+        else:
+            self.db_system = None
+            self.llm_guard = None
+            self.command_executor = None
+            
         self.session_data = {
             "session_id": str(uuid.uuid4()),
             "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
             "end_time": None,
+            "database": default_db,  # Initialize with default database from config
+            "created_databases": [],  # Track databases created in this session
             "queries": [],
             "attack_analysis": [],
             "vulnerabilities": [],
@@ -1690,12 +1717,83 @@ class MySQLHoneypotSession(Session):
                 )
 
     async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
-        """Handle MySQL query with AI analysis"""
+        """Handle MySQL query with command executor and AI analysis"""
         query = sql.strip().rstrip(";")
+        username = self.session_data.get("username", "unknown")
         
         # DEBUG: Log current state before processing
         logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
 
+        # Use new command executor if available
+        if self.command_executor is not None:
+            # Execute through command executor (handles validation, injection, routing)
+            result, routing, error_info = self.command_executor.execute(
+                query,
+                username=username,
+                client_ip=self.session_data.get("client_info", {}).get("ip", "unknown")
+            )
+            
+            logger.info(f"[QUERY_DEBUG] Command executor result: routing={routing}, has_result={result is not None}")
+            
+            # Handle error responses (injection, gibberish, syntax errors)
+            if routing == "error" and error_info:
+                logger.warning(f"Query rejected: {error_info.get('message', 'Unknown error')}")
+                return self._format_error_response(error_info)
+            
+            # Handle local execution results
+            if routing == "local" and result is not None:
+                # Check for special result types
+                if isinstance(result, dict):
+                    if "error" in result:
+                        return self._format_error_response(result["error"])
+                    elif "success" in result:
+                        # Successful command like USE, CREATE, etc.
+                        if result.get("message") == "Database changed":
+                            # Sync database change with session data
+                            self.session_data["database"] = self.db_system.current_database
+                        return ResultSet(rows=[], columns=[])
+                    elif "exit" in result:
+                        # Exit command
+                        try:
+                            await self.close_session()
+                        except Exception as e:
+                            logger.debug(f"Error during session close: {e}")
+                        return ResultSet(rows=[], columns=[])
+                
+                # Format list results (SHOW, DESCRIBE, etc.)
+                if isinstance(result, list):
+                    return self._format_local_result(result, query)
+                
+                # Return as-is if already formatted
+                return result
+            
+            # Route to LLM if needed
+            if routing == "llm":
+                # Log query information
+                query_info = self._log_query_info(query)
+                
+                # Analyze for threats
+                attack_analysis, vulnerabilities = self._analyze_and_log_threats(query)
+                
+                # Update session data
+                self._update_session_data(query_info, attack_analysis, vulnerabilities)
+                
+                # Enhance context for LLM
+                if self.db_system and self.llm_guard:
+                    current_db = self.db_system.get_current_database()
+                    table_names = current_db.list_tables() if current_db else []
+                    # Store enhanced context for LLM
+                    self._llm_context = self.llm_guard.enhance_llm_context(
+                        query, 
+                        self.db_system.current_database,
+                        table_names,
+                        username
+                    )
+                
+                # Process query through LLM
+                return await self._process_llm_query(query)
+        
+        # Fallback to legacy handling if components not available
         # Syntax check
         if self._is_syntax_error(query):
             return self._generate_syntax_error(query)
@@ -1726,6 +1824,53 @@ class MySQLHoneypotSession(Session):
 
         # Process query through LLM
         return await self._process_llm_query(query)
+    
+    def _format_error_response(self, error_info: Dict[str, Any]) -> Any:
+        """Format error info into MySQL error response"""
+        code = error_info.get("code", error_info.get("error_code", 1064))
+        state = error_info.get("state", error_info.get("sql_state", "42000"))
+        message = error_info.get("message", "Unknown error")
+        
+        error_text = f"ERROR {code} ({state}): {message}"
+        
+        if ResultColumn is not None:
+            return ResultSet(
+                rows=[(error_text,)],
+                columns=[ResultColumn(name="Error", type=253)]
+            )
+        else:
+            return ResultSet(
+                rows=[(error_text,)],
+                columns=[_ResultColumn(name="Error", type=253)]
+            )
+    
+    def _format_local_result(self, result: List[Dict[str, Any]], query: str) -> Any:
+        """Format local execution result into MySQL ResultSet"""
+        if not result:
+            return ResultSet(rows=[], columns=[])
+        
+        # Get column names from first row
+        if isinstance(result[0], dict):
+            columns = list(result[0].keys())
+        else:
+            columns = ["Result"]
+        
+        # Build rows
+        rows = []
+        for row in result:
+            if isinstance(row, dict):
+                row_values = tuple(row.get(col, None) for col in columns)
+            else:
+                row_values = (row,)
+            rows.append(row_values)
+        
+        # Create column definitions
+        if ResultColumn is not None:
+            col_defs = [ResultColumn(name=col, type=253) for col in columns]
+        else:
+            col_defs = [_ResultColumn(name=col, type=253) for col in columns]
+        
+        return ResultSet(rows=rows, columns=col_defs)
 
     def _handle_session_variable(self, query: str, raw_sql: str) -> Optional[Any]:  # type: ignore
         """Handle session variable queries"""
@@ -1776,8 +1921,11 @@ class MySQLHoneypotSession(Session):
         # Build context if context_awareness is enabled (from config)
         context_info = ""
         if self.config["llm"].getboolean("context_awareness", True):
-            current_db = self.session_data.get("database", "None")
-            context_info = f"\nContext: User={username}, Session={session_id[:8]}, Current Database={current_db}"
+            current_db = self.session_data.get("database", None)
+            if current_db:
+                context_info = f"\nContext: User={username}, Session={session_id[:8]}, Current Database={current_db} (SELECTED - use this for SHOW TABLES and table queries)"
+            else:
+                context_info = f"\nContext: User={username}, Session={session_id[:8]}, Current Database=NONE (no database selected)"
 
         # Add threat adaptation context if enabled (from config)
         threat_context = ""
