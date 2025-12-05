@@ -34,6 +34,11 @@ class MySQLLLMGuard:
             self.sensitivity = "medium"
             self.check_sql_injection = True
             self.context_aware = True
+
+        # Initialize regex patterns
+        self.injection_patterns = [re.compile(p, re.IGNORECASE) for p in self.PROMPT_INJECTION_PATTERNS]
+        self.gibberish_patterns = [re.compile(p, re.IGNORECASE) for p in self.GIBBERISH_PATTERNS]
+        self.meta_patterns = [re.compile(p, re.IGNORECASE) for p in self.META_PATTERNS]
     PROMPT_INJECTION_PATTERNS = [
         # Direct instruction manipulation
         r"\bignore\s+(all\s+)?(previous|prior|earlier|above)\s+(instructions?|prompts?|context|commands?)\b",
@@ -142,10 +147,32 @@ class MySQLLLMGuard:
         "PROCEDURE", "FUNCTION", "VIEW", "CHARSET", "CHARACTER", "COLLATION",
     }
     
-    def __init__(self):
-        self.injection_patterns = [re.compile(p, re.IGNORECASE) for p in self.PROMPT_INJECTION_PATTERNS]
-        self.gibberish_patterns = [re.compile(p, re.IGNORECASE) for p in self.GIBBERISH_PATTERNS]
-        self.meta_patterns = [re.compile(p, re.IGNORECASE) for p in self.META_PATTERNS]
+
+        
+    def _check_prompt_injection(self, query: str) -> bool:
+        """Check if query contains prompt injection patterns"""
+        for pattern in self.PROMPT_INJECTION_PATTERNS:
+            if re.search(pattern, query, re.IGNORECASE):
+                logger.warning(f"Prompt injection detected: {pattern[:50]}...")
+                return True
+        return False
+
+    def _check_sql_injection(self, query: str) -> bool:
+        """Check for SQL injection patterns"""
+        # Simple heuristic check - real detection is done by AttackAnalyzer
+        # This is just a fast pre-filter for the guard
+        suspicious_patterns = [
+            r"union.*select",
+            r"waitfor.*delay",
+            r"benchmark\(",
+            r"into.*outfile",
+            r"load_file\(",
+            r"information_schema",
+        ]
+        for pattern in suspicious_patterns:
+            if re.search(pattern, query, re.IGNORECASE):
+                return True
+        return False
         
     def validate_query(self, query: str) -> Dict[str, Any]:
         """

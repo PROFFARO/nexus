@@ -1149,8 +1149,8 @@ class MySQLHoneypotSession(Session):
         if MYSQL_COMPONENTS_AVAILABLE:
             self.db_system = MySQLDatabaseSystem()
             self.db_system.use_database(default_db)  # Set default database
-            self.llm_guard = MySQLLLMGuard()
-            self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
+            self.llm_guard = MySQLLLMGuard(self.config)
+            self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard, self.config)
             logger.info("MySQL components initialized successfully")
         else:
             self.db_system = None
@@ -1696,7 +1696,10 @@ class MySQLHoneypotSession(Session):
                 },
             )
 
-        if attack_analysis.get("attack_types") and self.attack_logging:
+        # attack_logging config check
+        should_log_attacks = self.config["honeypot"].getboolean("attack_logging", True)
+
+        if attack_analysis.get("attack_types") and should_log_attacks:
             logger.warning(
                 "MySQL attack pattern detected",
                 extra={
@@ -1712,7 +1715,7 @@ class MySQLHoneypotSession(Session):
                 self.forensic_logger.log_event("attack_detected", attack_analysis)
 
         for vuln in vulnerabilities:
-            if self.attack_logging:
+            if should_log_attacks:
                 logger.critical(
                     "MySQL vulnerability exploitation attempt",
                     extra={
