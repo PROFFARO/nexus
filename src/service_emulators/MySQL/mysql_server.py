@@ -196,6 +196,44 @@ from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables import RunnablePassthrough
 from langchain_core.runnables.history import RunnableWithMessageHistory
 
+# Additional Logging Imports
+import logging.handlers
+import json
+
+class MySQLJSONFormatter(logging.Formatter):
+    """JSON Formatter for structured logging"""
+    def __init__(self, sensor_name):
+        super().__init__()
+        self.sensor_name = sensor_name
+
+    def format(self, record):
+        log_entry = {
+            "timestamp": datetime.datetime.fromtimestamp(record.created, datetime.timezone.utc).isoformat(),
+            "sensor": self.sensor_name,
+            "level": record.levelname,
+            "message": record.getMessage(),
+            "logger": record.name,
+            "module": record.module,
+            "line": record.lineno
+        }
+        
+        # Merge extra fields if present (passed via extra={'structured_data': ...})
+        if hasattr(record, "structured_data") and isinstance(record.structured_data, dict):
+            log_entry.update(record.structured_data)
+        
+        # Include session_id if available on record (from ContextFilter)
+        if hasattr(record, "session_id"):
+            log_entry["session_id"] = record.session_id
+            
+        return json.dumps(log_entry)
+
+class ContextFilter(logging.Filter):
+    """Filter to add context info to logs"""
+    def filter(self, record):
+        if hasattr(thread_local, "session_id"):
+            record.session_id = thread_local.session_id
+        return True
+
 # Load environment variables
 try:
     from dotenv import load_dotenv
@@ -1250,6 +1288,14 @@ class MySQLHoneypotSession(Session):
             self._connection = connection
         except Exception:
             self._connection = None
+            
+        # Check rate limiting
+        if self.config["security"].getboolean("rate_limiting", True):
+             client_ip = self.session_data["client_info"]["ip"]
+             max_conn = int(self.config["security"].get("max_connections_per_ip", 10))
+             # In a real implementation we would track active connections here
+             # For now we just log the check
+             logger.debug(f"Checking rate limit for {client_ip} (limit: {max_conn})")
         
         # Reinitialize MySQL components with authenticated username for per-user persistence
         username = self.session_data.get("username", "anonymous")
@@ -1267,8 +1313,8 @@ class MySQLHoneypotSession(Session):
             try:
                 self.db_system = MySQLDatabaseSystem(username=username, sessions_dir=str(db_states_dir))
                 self.db_system.use_database(default_db)
-                self.llm_guard = MySQLLLMGuard()
-                self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard)
+                self.llm_guard = MySQLLLMGuard(self.config)
+                self.command_executor = MySQLCommandExecutor(self.db_system, self.llm_guard, self.config)
                 logger.info(f"MySQL components reinitialized for user {username}")
             except Exception as e:
                 logger.error(f"Failed to reinitialize MySQL components: {e}")
@@ -1579,15 +1625,27 @@ class MySQLHoneypotSession(Session):
         return None
 
     def _handle_use_database(self, query: str) -> Optional[Any]:
-        """Handle USE database commands - update session context"""
+        """Handle USE database commands - update session context AND db_system"""
         if query.lower().startswith("use "):
             try:
                 # Extract database name (handle quotes if present)
                 parts = query.split(maxsplit=1)
                 if len(parts) > 1:
                     db_name = parts[1].strip().strip(";'\"`")
+                    
+                    # Update BOTH session_data AND db_system
+                    old_db = self.session_data.get("database")
                     self.session_data["database"] = db_name
-                    logger.info(f"USE database command: switched to {db_name}", extra={"query": query})
+                    
+                    # Critical: Also update db_system so SHOW TABLES works correctly
+                    if self.db_system:
+                        if self.db_system.use_database(db_name):
+                            logger.info(f"[USE_DATABASE] Switched: {old_db} -> {db_name} (db_system synced)")
+                        else:
+                            logger.warning(f"[USE_DATABASE] Database '{db_name}' not found in db_system, available: {self.db_system.list_databases()}")
+                    else:
+                        logger.info(f"[USE_DATABASE] Switched: {old_db} -> {db_name} (session only)")
+                    
                     # Successful USE returns no rows
                     return ResultSet(rows=[], columns=[])
             except Exception as e:
@@ -1638,7 +1696,7 @@ class MySQLHoneypotSession(Session):
                 },
             )
 
-        if attack_analysis.get("attack_types"):
+        if attack_analysis.get("attack_types") and self.attack_logging:
             logger.warning(
                 "MySQL attack pattern detected",
                 extra={
@@ -1654,23 +1712,24 @@ class MySQLHoneypotSession(Session):
                 self.forensic_logger.log_event("attack_detected", attack_analysis)
 
         for vuln in vulnerabilities:
-            logger.critical(
-                "MySQL vulnerability exploitation attempt",
-                extra={
-                    "vulnerability_id": vuln["vulnerability_id"],
-                    "vuln_name": vuln["vuln_name"],
-                    "description": vuln["description"],
-                    "pattern_matched": vuln["pattern_matched"],
-                    "input": vuln["input"],
-                    "severity": vuln["severity"],
-                    "cvss_score": vuln["cvss_score"],
-                    "indicators": vuln["indicators"],
-                    "session_id": self.session_data["session_id"],
-                },
-            )
+            if self.attack_logging:
+                logger.critical(
+                    "MySQL vulnerability exploitation attempt",
+                    extra={
+                        "vulnerability_id": vuln["vulnerability_id"],
+                        "vuln_name": vuln["vuln_name"],
+                        "description": vuln["description"],
+                        "pattern_matched": vuln["pattern_matched"],
+                        "input": vuln["input"],
+                        "severity": vuln["severity"],
+                        "cvss_score": vuln["cvss_score"],
+                        "indicators": vuln["indicators"],
+                        "session_id": self.session_data["session_id"],
+                    },
+                )
 
-            if self.forensic_logger:
-                self.forensic_logger.log_event("vulnerability_exploit", vuln)
+                if self.forensic_logger:
+                    self.forensic_logger.log_event("vulnerability_exploit", vuln)
 
         return attack_analysis, vulnerabilities
 
@@ -1740,13 +1799,91 @@ class MySQLHoneypotSession(Session):
                 )
 
     async def handle_query(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
-        """Handle MySQL query with command executor and AI analysis"""
+        """Handle MySQL query with logging wrapper"""
+        start_time = time.time()
+        
+        # Prepare context data
+        username = self.session_data.get("username", "unknown")
+        client_ip = self.session_data.get("client_info", {}).get("ip", "unknown")
+        session_id = self.session_data.get("session_id", "unknown")
+        
+        # Log Request Structurally
+        request_data = {
+            "event": "query_request",
+            "query": sql,
+            "client_ip": client_ip,
+            "username": username,
+            "session_id": session_id,
+        }
+        logger.info("Incoming MySQL Query", extra={"structured_data": request_data})
+        
+        status = "success"
+        result_summary = "unknown"
+        error_details = None
+        
         try:
-            query = sql.strip().rstrip(";")
+            result = await self._handle_query_logic(sql, attrs)
+            
+            # Analyze result for logging summary
+            if result is None:
+                 result_summary = "None"
+            elif hasattr(result, "rows"):
+                result_summary = f"{len(result.rows)} rows"
+            elif isinstance(result, list):
+                 result_summary = f"{len(result)} items"
+            elif hasattr(result, "message"): 
+                 result_summary = result.message
+            else:
+                 result_summary = str(type(result).__name__)
+                 
+            return result
+            
+        except Exception as e:
+            status = "error"
+            error_details = str(e)
+            result_summary = f"Exception: {type(e).__name__}"
+            raise e 
+            
+        finally:
+            duration_ms = (time.time() - start_time) * 1000
+            
+            response_data = {
+                "event": "query_response",
+                "query": sql, 
+                "status": status,
+                "duration_ms": round(duration_ms, 2),
+                "summary": result_summary,
+                "session_id": session_id
+            }
+            if error_details:
+                response_data["error"] = error_details
+                
+            logger.info("MySQL Query Processed", extra={"structured_data": response_data})
+
+    async def _handle_query_logic(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
+        """Core logic for handling MySQL query"""
+        try:
+            # Pass original query to executor for proper validation
+            # The executor will validate semicolons before stripping them
+            query = sql.strip()
             username = self.session_data.get("username", "unknown")
             
-            # DEBUG: Log current state before processing
-            logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={self.session_data.get('database')}")
+            # CRITICAL: Sync mysql_mimic's self.database to db_system
+            # mysql_mimic handles USE commands internally and updates self.database
+            # BEFORE queries reach handle_query. We must sync this to db_system.
+            mimic_db = getattr(self, 'database', None)  # mysql_mimic's database attribute
+            if mimic_db and self.db_system:
+                if self.db_system.current_database != mimic_db:
+                    old_db = self.db_system.current_database
+                    if self.db_system.use_database(mimic_db):
+                        logger.info(f"[DB_SYNC] Synced db_system from mysql_mimic: {old_db} -> {mimic_db}")
+                        self.session_data["database"] = mimic_db
+                    else:
+                        logger.warning(f"[DB_SYNC] Failed to sync database '{mimic_db}', not in db_system")
+            
+            # DEBUG: Log current state before processing - use db_system for accuracy
+            db_system_db = self.db_system.current_database if self.db_system else None
+            logger.info(f"[QUERY_DEBUG] handle_query called: query='{query}', current_db={db_system_db}")
 
             # Use new command executor if available
             if self.command_executor is not None:
@@ -1779,7 +1916,10 @@ class MySQLHoneypotSession(Session):
                                 # Successful command like USE, CREATE, etc.
                                 if result.get("message") == "Database changed":
                                     # Sync database change with session data
-                                    self.session_data["database"] = self.db_system.current_database
+                                    old_db = self.session_data.get("database")
+                                    new_db = self.db_system.current_database
+                                    self.session_data["database"] = new_db
+                                    logger.info(f"[USE_SYNC] Database synced: {old_db} -> {new_db}")
                                 return ResultSet(rows=[], columns=[])
                             elif "exit" in result:
                                 # Exit command
@@ -3352,7 +3492,7 @@ def _load_config(args) -> ConfigParser:
 
 
 def _setup_logging(config: ConfigParser):
-    """Setup logging configuration"""
+    """Setup logging configuration with rotation and structured format"""
     global logger
 
     logging.Formatter.formatTime = (
@@ -3367,9 +3507,44 @@ def _setup_logging(config: ConfigParser):
     log_level = config["logging"].get("log_level", "INFO").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    log_file_handler = logging.FileHandler(
-        config["honeypot"].get("log_file", "mysql_log.log")
-    )
+    # Determine log file path
+    log_file_path = Path(config["honeypot"].get("log_file", "mysql_log.log"))
+    
+    # Ensure log directory exists
+    try:
+        if not log_file_path.is_absolute():
+            # If relative, it's relative to CWD (usually src/service_emulators/MySQL)
+            # The config says ../../logs/mysql_log.log
+            # We should try to respect that.
+            pass
+        
+        log_dir = log_file_path.parent
+        if str(log_dir) != ".":
+             log_dir.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        print(f"Warning: Could not create log directory {log_dir}: {e}")
+
+    # Log Rotation Settings
+    try:
+        max_bytes = config["logging"].getint("log_rotation_size", 100) * 1024 * 1024
+        backup_count = config["logging"].getint("log_backup_count", 10)
+    except (ValueError, KeyError):
+        max_bytes = 100 * 1024 * 1024
+        backup_count = 10
+
+    try:
+        # Use RotatingFileHandler
+        log_file_handler = logging.handlers.RotatingFileHandler(
+            str(log_file_path),
+            maxBytes=max_bytes,
+            backupCount=backup_count,
+            encoding='utf-8'
+        )
+    except Exception as e:
+        print(f"Error creating log handler for {log_file_path}: {e}")
+        # Fallback to local file
+        log_file_handler = logging.FileHandler("mysql_server_fallback.log")
+
     logger.addHandler(log_file_handler)
 
     # Configure structured logging

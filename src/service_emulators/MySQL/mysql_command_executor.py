@@ -26,12 +26,21 @@ class MySQLCommandExecutor:
     - Handles metadata commands, DDL, DML, session commands
     """
     
-    def __init__(self, database_system: MySQLDatabaseSystem, llm_guard: MySQLLLMGuard):
+    def __init__(self, database_system: MySQLDatabaseSystem, llm_guard: MySQLLLMGuard, config=None):
         self.db = database_system
         self.guard = llm_guard
+        self.config = config
         self.start_time = datetime.datetime.now()
         self.query_count = 0
         self.connection_id = random.randint(1000000, 9999999)
+        
+        # Load settings
+        if self.config:
+            self.schema_evolution = self.config["database_simulation"].getboolean("schema_evolution", True)
+            self.deception_techniques = self.config["ai_features"].getboolean("deception_techniques", True)
+        else:
+            self.schema_evolution = True
+            self.deception_techniques = True
         
     def execute(
         self,
@@ -58,14 +67,34 @@ class MySQLCommandExecutor:
         if not query or not query.strip():
             return ([], "local", None)
         
-        query = query.strip().rstrip(";")
+        # Check for trailing/multiple semicolons before stripping
+        original_query = query.strip()
+        if original_query.endswith(';;') or ';;' in original_query:
+            return (None, "error", {
+                "error_code": 1064,
+                "sql_state": "42000",
+                "message": f"You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near ';' at line 1"
+            })
         
-        # Validate query (injection + syntax check)
+        query = original_query.rstrip(";")
+        
+        # Run strict syntax validation FIRST
+        syntax_error = self._validate_strict_syntax(query)
+        if syntax_error:
+            return (None, "error", syntax_error)
+        
+        # Validate query (injection + basic syntax check via guard)
         validation = self.guard.validate_query(query)
         
         if not validation["is_valid"]:
             error_info = self.guard.get_error_response(query, validation["reason"])
             return (None, "error", error_info)
+        
+        # Handle string literal injections locally (don't send to LLM)
+        if validation.get("reason") == "string_literal":
+            literal = validation.get("literal_value", "")
+            # Return as a simple result like MySQL would
+            return ([{literal: literal}], "local", None)
         
         # Classify and route the command
         command_type = self._classify_query(query)
@@ -77,6 +106,172 @@ class MySQLCommandExecutor:
         
         # Route to LLM only if we can't handle locally
         return (None, "llm", None)
+    
+    def _validate_strict_syntax(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Strict SQL syntax validation to catch typos and malformed queries.
+        Returns error dict if invalid, None if valid.
+        """
+        query_upper = query.upper().strip()
+        query_lower = query.lower().strip()
+        
+        # ===== Check for common SQL keyword typos =====
+        typo_check = self._check_keyword_typos(query_lower)
+        if typo_check:
+            return typo_check
+        
+        # ===== Validate SHOW command syntax =====
+        if query_upper.startswith("SHOW"):
+            show_error = self._validate_show_syntax(query_upper, query)
+            if show_error:
+                return show_error
+        
+        # ===== Validate SELECT syntax =====
+        if query_upper.startswith("SELECT"):
+            select_error = self._validate_select_syntax(query_upper, query)
+            if select_error:
+                return select_error
+        
+        return None
+    
+    def _check_keyword_typos(self, query_lower: str) -> Optional[Dict[str, Any]]:
+        """Check for common SQL keyword typos"""
+        # Define typo patterns: (typo_regex, near_text_extractor)
+        typo_patterns = [
+            # WHERE typos
+            (r'\bwere\b(?!\s+you)', 'were'),
+            (r'\bwhre\b', 'whre'),
+            (r'\bwher\b(?!\s)', 'wher'),
+            (r'\bwehre\b', 'wehre'),
+            (r'\bwehere\b', 'wehere'),
+            # FROM typos
+            (r'\bform\b(?!\s+data)', 'form'),
+            (r'\bfomr\b', 'fomr'),
+            (r'\bfrmo\b', 'frmo'),
+            (r'\bfrom\s+form\b', 'form'),
+            # SELECT typos
+            (r'^selec\b', 'selec'),
+            (r'^slect\b', 'slect'),
+            (r'^selcet\b', 'selcet'),
+            (r'^selet\b', 'selet'),
+            (r'^seelct\b', 'seelct'),
+            # INSERT typos
+            (r'^insrt\b', 'insrt'),
+            (r'^isert\b', 'isert'),
+            (r'^inset\b', 'inset'),
+            (r'^inesrt\b', 'inesrt'),
+            # UPDATE typos
+            (r'^upate\b', 'upate'),
+            (r'^upadte\b', 'upadte'),
+            (r'^udpate\b', 'udpate'),
+            (r'^updaet\b', 'updaet'),
+            # DELETE typos
+            (r'^delte\b', 'delte'),
+            (r'^deleet\b', 'deleet'),
+            (r'^dlete\b', 'dlete'),
+            (r'^deelte\b', 'deelte'),
+            # CREATE typos
+            (r'^crate\b', 'crate'),
+            (r'^craete\b', 'craete'),
+            (r'^creat\b(?!e)', 'creat'),
+            # DROP typos
+            (r'^drpo\b', 'drpo'),
+            (r'^dorp\b', 'dorp'),
+            (r'^drrop\b', 'drrop'),
+            # TABLE typos
+            (r'\btabel\b', 'tabel'),
+            (r'\btabel\b', 'tabel'),
+            (r'\btble\b', 'tble'),
+            # DATABASE typos
+            (r'\bdatabse\b', 'databse'),
+            (r'\bdatabass\b', 'databass'),
+            (r'\bdatbase\b', 'datbase'),
+            # DESCRIBE typos
+            (r'^descirbe\b', 'descirbe'),
+            (r'^desribe\b', 'desribe'),
+            (r'^describr\b', 'describr'),
+        ]
+        
+        for pattern, near_text in typo_patterns:
+            if re.search(pattern, query_lower):
+                return {
+                    "error_code": 1064,
+                    "sql_state": "42000",
+                    "message": f"You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '{near_text}' at line 1"
+                }
+        
+        return None
+    
+    def _validate_show_syntax(self, query_upper: str, original_query: str) -> Optional[Dict[str, Any]]:
+        """Validate SHOW command has valid target"""
+        # Extract what comes after SHOW
+        show_match = re.match(r'^SHOW\s+(.+)$', query_upper)
+        if not show_match:
+            return {
+                "error_code": 1064,
+                "sql_state": "42000",
+                "message": "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '' at line 1"
+            }
+        
+        show_target = show_match.group(1).strip()
+        first_word = show_target.split()[0] if show_target.split() else ""
+        
+        # Valid SHOW targets
+        valid_show_targets = {
+            "DATABASES", "TABLES", "COLUMNS", "FIELDS", "INDEX", "INDEXES", "KEYS",
+            "CREATE", "VARIABLES", "STATUS", "PROCESSLIST", "GRANTS", "PRIVILEGES",
+            "ENGINES", "PLUGINS", "WARNINGS", "ERRORS", "MASTER", "SLAVE", "BINARY",
+            "BINLOG", "LOGS", "RELAYLOG", "EVENTS", "TRIGGERS", "PROCEDURE", "FUNCTION",
+            "TABLE", "FULL", "EXTENDED", "GLOBAL", "SESSION", "STORAGE", "CHARACTER",
+            "CHARSET", "COLLATION", "OPEN", "PROFILES", "PROFILE", "COUNT", "SCHEMAS",
+        }
+        
+        if first_word and first_word not in valid_show_targets:
+            # Check for common typos of SHOW targets
+            show_typos = {
+                "DATABSES": "DATABASES", "DATABASS": "DATABASES", "DATBASES": "DATABASES",
+                "DATABASESL": "DATABASES", "DATABASSES": "DATABASES", "DATABAES": "DATABASES",
+                "TBLES": "TABLES", "TALBES": "TABLES", "TABELS": "TABLES", 
+                "TABLESL": "TABLES", "TABES": "TABLES", "TBALES": "TABLES",
+                "COLUMS": "COLUMNS", "COLUMSN": "COLUMNS", "COULMNS": "COLUMNS",
+                "VARAIBLES": "VARIABLES", "VARIBLES": "VARIABLES", "VARIABELS": "VARIABLES",
+                "STAUS": "STATUS", "STAUTS": "STATUS", "STATTUS": "STATUS",
+                "PORCESSLIST": "PROCESSLIST", "PRCESSLIST": "PROCESSLIST",
+                "ENGIENS": "ENGINES", "EINGINES": "ENGINES",
+                "GRANTES": "GRANTS", "GRNATS": "GRANTS",
+            }
+            
+            if first_word in show_typos:
+                near_text = first_word.lower()
+            else:
+                near_text = first_word.lower() if len(first_word) < 20 else first_word[:20].lower()
+            
+            return {
+                "error_code": 1064,
+                "sql_state": "42000",
+                "message": f"You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near '{near_text}' at line 1"
+            }
+        
+        return None
+    
+    def _validate_select_syntax(self, query_upper: str, original_query: str) -> Optional[Dict[str, Any]]:
+        """Validate SELECT syntax"""
+        # Simple SELECT without FROM is valid: SELECT 1, SELECT 'text', SELECT @@var
+        # But SELECT * without FROM is not valid
+        
+        # Check for SELECT * FROM or SELECT columns FROM
+        if re.search(r'\*\s*$', query_upper) and 'FROM' not in query_upper:
+            # SELECT * without FROM - error
+            return {
+                "error_code": 1064,
+                "sql_state": "42000",
+                "message": "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'SELECT *' at line 1"
+            }
+        
+        # Check if query mentions column names (not just literals) without FROM
+        # This is complex, so we only check for obvious errors
+        
+        return None
     
     def _classify_query(self, query: str) -> str:
         """Classify MySQL query type"""
@@ -732,6 +927,10 @@ class MySQLCommandExecutor:
     
     def _handle_create_database(self, query: str, username: str) -> Any:
         """Handle CREATE DATABASE"""
+        if not self.schema_evolution:
+             return {"error": {"code": 1142, "state": "42000",
+                             "message": "CREATE command denied to user for this database"}}
+
         db_match = re.search(r'DATABASE\s+(?:IF\s+NOT\s+EXISTS\s+)?[`"]?(\w+)[`"]?', query, re.IGNORECASE)
         if not db_match:
             return {"error": {"code": 1064, "state": "42000",
@@ -777,6 +976,10 @@ class MySQLCommandExecutor:
     
     def _handle_create_table(self, query: str, username: str) -> Any:
         """Handle CREATE TABLE"""
+        if not self.schema_evolution:
+             return {"error": {"code": 1142, "state": "42000",
+                             "message": "CREATE command denied to user for this table"}}
+
         if not self.db.current_database:
             return {"error": {"code": 1046, "state": "3D000",
                             "message": "No database selected"}}
@@ -884,6 +1087,9 @@ class MySQLCommandExecutor:
     
     def _handle_grant(self, query: str, username: str) -> Dict[str, Any]:
         """Handle GRANT"""
+        if not self.deception_techniques:
+            return {"error": {"code": 1045, "state": "28000",
+                            "message": f"Access denied for user '{username}'@'%'"}}
         return {"success": True, "message": "Query OK, 0 rows affected"}
     
     def _handle_revoke(self, query: str, username: str) -> Dict[str, Any]:

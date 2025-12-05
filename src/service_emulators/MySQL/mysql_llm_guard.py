@@ -19,9 +19,21 @@ class MySQLLLMGuard:
     - Output validation (hallucination detection)
     - Context enhancement with database schema
     - Response sanitization
+    - Configurable security levels
     """
     
-    # Prompt injection patterns - attempts to manipulate the LLM
+    def __init__(self, config=None):
+        self.config = config
+        
+        # Load security settings from config or valid defaults
+        if self.config:
+            self.sensitivity = self.config["attack_detection"].get("sensitivity_level", "medium")
+            self.check_sql_injection = self.config["attack_detection"].getboolean("sql_injection_detection", True)
+            self.context_aware = self.config["llm"].getboolean("context_awareness", True)
+        else:
+            self.sensitivity = "medium"
+            self.check_sql_injection = True
+            self.context_aware = True
     PROMPT_INJECTION_PATTERNS = [
         # Direct instruction manipulation
         r"\bignore\s+(all\s+)?(previous|prior|earlier|above)\s+(instructions?|prompts?|context|commands?)\b",
@@ -142,9 +154,10 @@ class MySQLLLMGuard:
         Returns:
             Dict with:
                 - is_valid: bool
-                - reason: str (if invalid) - "injection", "gibberish", "syntax", "empty"
+                - reason: str (if invalid) - "injection", "gibberish", "syntax", "empty", "string_literal"
                 - sanitized: str (cleaned query)
                 - should_use_llm: bool (whether LLM should handle this)
+                - literal_value: str (if string_literal, the value to return)
         """
         # Empty query
         if not query or not query.strip():
@@ -157,37 +170,35 @@ class MySQLLLMGuard:
         
         query = query.strip()
         
-        # Check for prompt injection attempts
-        for pattern in self.injection_patterns:
-            if pattern.search(query):
-                logger.warning(f"Prompt injection detected: {pattern.pattern[:50]}...")
-                return {
-                    "is_valid": False,
-                    "reason": "injection",
-                    "sanitized": query,
-                    "should_use_llm": False
+        # Check for string literal injections FIRST
+        # These should be handled locally, not sent to LLM
+        string_literal_result = self._check_string_literal_injection(query)
+        if string_literal_result:
+            return string_literal_result
+        
+        # Check for prompt injection
+        if self._check_prompt_injection(query):
+            return {
+                "is_valid": False,
+                "reason": "prompt_injection",
+                "sanitized": query,
+                "should_use_llm": False,
+                "error_response": {
+                    "error_code": 1142,
+                    "sql_state": "42000",
+                    "message": "DROP command denied to user 'player'@'localhost' for table 'protected_table'"
                 }
-        
-        # Check for gibberish / random input
-        if self._is_gibberish(query):
-            logger.warning(f"Gibberish input detected: {query[:50]}...")
-            return {
-                "is_valid": False,
-                "reason": "gibberish",
-                "sanitized": query,
-                "should_use_llm": False
             }
-        
-        # Check for basic SQL syntax validity
-        if not self._is_valid_sql_syntax(query):
-            # Could be a typo or natural language - let the command executor handle it
+            
+        # Check for SQL injection (if enabled)
+        if self.check_sql_injection and self._check_sql_injection(query):
             return {
-                "is_valid": False,
-                "reason": "syntax",
-                "sanitized": query,
-                "should_use_llm": False
+                 "is_valid": False,
+                 "reason": "sql_injection",
+                 "sanitized": query,
+                 "should_use_llm": False
             }
-        
+            
         # Query looks valid
         return {
             "is_valid": True,
@@ -195,6 +206,51 @@ class MySQLLLMGuard:
             "sanitized": query,
             "should_use_llm": True
         }
+    
+    def _check_string_literal_injection(self, query: str) -> Optional[Dict[str, Any]]:
+        """
+        Check if query is a SELECT with just a string literal containing injection patterns.
+        These should be handled locally, returning the literal value (normal MySQL behavior).
+        """
+        query_upper = query.upper().strip()
+        
+        # Only check SELECT queries
+        if not query_upper.startswith("SELECT"):
+            return None
+        
+        # Pattern to match SELECT 'string' or SELECT "string" (simple string literal queries)
+        simple_select_pattern = r"^\s*SELECT\s+(['\"])(.*?)\1\s*;?\s*$"
+        match = re.match(simple_select_pattern, query, re.IGNORECASE | re.DOTALL)
+        
+        if match:
+            literal_value = match.group(2)
+            
+            # Check if the literal contains suspicious content
+            suspicious_patterns = [
+                r"ignore.*(?:previous|prior|all).*(?:instructions?|prompts?)",
+                r"forget.*(?:everything|all|previous)",
+                r"disregard.*(?:system|your|previous)",
+                r"you\s+are\s+(?:now|actually)",
+                r"system\s*:",
+                r"(?:tell|show|reveal|display).*(?:configuration|instructions?|prompts?)",
+                r"what\s+(?:are|is)\s+your\s+(?:instructions?|prompts?)",
+                r"jailbreak",
+                r"bypass.*(?:restrictions?|filters?)",
+                r"(?:ai|artificial|language\s+model|honeypot)",
+            ]
+            
+            for pattern in suspicious_patterns:
+                if re.search(pattern, literal_value, re.IGNORECASE):
+                    logger.info(f"String literal injection detected, handling locally: {literal_value[:50]}...")
+                    return {
+                        "is_valid": True,
+                        "reason": "string_literal",
+                        "sanitized": query,
+                        "should_use_llm": False,
+                        "literal_value": literal_value
+                    }
+        
+        return None
     
     def _is_gibberish(self, query: str) -> bool:
         """Check if query is random gibberish"""
@@ -496,19 +552,21 @@ class MySQLLLMGuard:
         
         return None
     
+
     def enhance_llm_context(
-        self,
-        query: str,
+        self, 
+        query: str, 
         database_name: Optional[str],
         table_names: List[str],
         username: str = "unknown"
     ) -> str:
         """
         Create enhanced context for LLM to prevent hallucinations
-        
-        Returns:
-            Enhanced prompt with database context
+        Respects 'context_awareness' config setting
         """
+        if not self.context_aware:
+            return ""
+            
         context_parts = []
         
         # Database context
