@@ -1734,11 +1734,12 @@ Write the summary in a professional, factual tone. Focus only on the data provid
                         <thead>
                             <tr>
                                 <th>Query</th>
-                                <th>Type</th>
-                                <th>Anomaly Score</th>
+                                <th>Count</th>
+                                <th>Max Score</th>
                                 <th>Risk Level</th>
                                 <th>ML Labels</th>
-                                <th>Timestamp</th>
+                                <th>Confidence</th>
+                                <th>Latest Timestamp</th>
                             </tr>
                         </thead>
                         <tbody>
@@ -2541,9 +2542,9 @@ Write the summary in a professional, factual tone. Focus only on the data provid
         return f"{avg_time:.1f}"
     
     def _generate_ml_anomalies_table(self) -> str:
-        """Generate ML anomalies table from session data"""
+        """Generate ML anomalies table from session data with clustering"""
         # Extract ML results from already-loaded session data
-        ml_anomalies = []
+        anomalies_map = {}
         
         sessions = self.report_data.get('session_details', [])
         for session in sessions:
@@ -2552,68 +2553,105 @@ Write the summary in a professional, factual tone. Focus only on the data provid
                 # Check if item has ML analysis data
                 attack_analysis = item.get('attack_analysis', {})
                 if 'ml_anomaly_score' in attack_analysis or 'ml_anomaly_score' in item:
-                    # Get ML data from either attack_analysis or direct item fields
+                    # Get ML data
                     ml_score = attack_analysis.get('ml_anomaly_score', item.get('ml_anomaly_score', 0))
                     ml_labels = attack_analysis.get('ml_labels', item.get('ml_labels', []))
                     ml_risk_level = attack_analysis.get('ml_risk_level', item.get('ml_risk_level', 'low'))
                     ml_confidence = attack_analysis.get('ml_confidence', item.get('ml_confidence', 0))
-                    ml_risk_score = attack_analysis.get('ml_risk_score', item.get('ml_risk_score', 0))
-                    attack_vectors = attack_analysis.get('attack_vectors', item.get('attack_vectors', []))
+                    timestamp = item.get('timestamp', '')
                     
                     # Only include if there's actual ML data
                     if ml_score > 0 or ml_labels:
                         # Get the display text (command, query, or request)
-                        display_text = item.get('command', item.get('query', item.get('path', item.get('request', ''))))
+                        text = item.get('command', item.get('query', item.get('path', item.get('request', '')))).strip()
                         
-                        ml_anomalies.append({
-                            'text': display_text,
-                            'anomaly_score': ml_score,
-                            'ml_labels': ml_labels,
-                            'ml_risk_level': ml_risk_level,
-                            'ml_confidence': ml_confidence,
-                            'ml_risk_score': ml_risk_score,
-                            'attack_vectors': attack_vectors,
-                            'timestamp': item.get('timestamp', ''),
-                            'session_id': session.get('session_id', 'unknown')
-                        })
+                        if not text:
+                            continue
+                            
+                        # Initialize or update cluster
+                        if text not in anomalies_map:
+                            anomalies_map[text] = {
+                                'text': text,
+                                'max_score': ml_score,
+                                'count': 0,
+                                'ml_labels': set(ml_labels) if ml_labels else set(),
+                                'risk_levels': {ml_risk_level} if ml_risk_level else set(),
+                                'latest_timestamp': timestamp,
+                                'confidences': [ml_confidence] if ml_confidence else []
+                            }
+                        
+                        # Update metrics
+                        cluster = anomalies_map[text]
+                        cluster['count'] += 1
+                        cluster['max_score'] = max(cluster['max_score'], ml_score)
+                        
+                        if ml_labels:
+                            cluster['ml_labels'].update(ml_labels)
+                        if ml_risk_level:
+                            cluster['risk_levels'].add(ml_risk_level)
+                        if ml_confidence:
+                            cluster['confidences'].append(ml_confidence)
+                        if timestamp > cluster['latest_timestamp']:
+                            cluster['latest_timestamp'] = timestamp
+
+        if not anomalies_map:
+            return "<tr><td colspan='7'>No ML anomaly data available</td></tr>"
         
-        if not ml_anomalies:
-            return "<tr><td colspan='6'>No ML anomaly data available</td></tr>"
+        # Convert map to list
+        ml_anomalies = list(anomalies_map.values())
         
         # Sort by anomaly score (highest first)
-        ml_anomalies.sort(key=lambda x: x['anomaly_score'], reverse=True)
+        ml_anomalies.sort(key=lambda x: x['max_score'], reverse=True)
         
         rows = []
-        for anomaly in ml_anomalies[:20]:  # Top 20 anomalies
-            score = anomaly['anomaly_score']
+        for anomaly in ml_anomalies[:50]:  # Top 50 unique anomalies (increased from 20)
+            score = anomaly['max_score']
+            count = anomaly['count']
             
-            # Use the actual ml_risk_level from the data
-            risk_level = anomaly['ml_risk_level'].capitalize() if anomaly['ml_risk_level'] else 'Low'
-            risk_class = f"severity-{anomaly['ml_risk_level'].lower()}" if anomaly['ml_risk_level'] else "severity-low"
+            # Determine overall risk level
+            risk_levels = anomaly['risk_levels']
+            if 'critical' in risk_levels or 'Critical' in risk_levels:
+                risk_level = 'Critical'
+            elif 'high' in risk_levels or 'High' in risk_levels:
+                risk_level = 'High'
+            elif 'medium' in risk_levels or 'Medium' in risk_levels:
+                risk_level = 'Medium'
+            else:
+                risk_level = 'Low'
+                
+            risk_class = f"severity-{risk_level.lower()}"
             
             # Format ML labels
-            labels = ', '.join(anomaly['ml_labels'][:3]) if anomaly['ml_labels'] else 'normal'
+            labels_list = sorted(list(anomaly['ml_labels']))
+            labels = ', '.join(labels_list[:3]) if labels_list else 'normal'
+            if len(labels_list) > 3:
+                labels += f" (+{len(labels_list)-3})"
             
-            # Format confidence - handle both decimal and percentage formats
-            confidence = anomaly['ml_confidence']
-            if confidence > 1:  # Already a percentage
-                confidence_str = f"{confidence:.1f}%"
-            elif confidence > 0:  # Decimal format
-                confidence_str = f"{confidence * 100:.1f}%"
+            # calculate average confidence
+            confs = anomaly['confidences']
+            avg_conf = sum(confs) / len(confs) if confs else 0
+            
+            # Format confidence
+            if avg_conf > 1:  # Already a percentage
+                confidence_str = f"{avg_conf:.1f}%"
+            elif avg_conf > 0:  # Decimal format
+                confidence_str = f"{avg_conf * 100:.1f}%"
             else:
                 confidence_str = 'N/A'
             
             # Truncate text for display
-            text_display = anomaly['text'][:50] + ('...' if len(anomaly['text']) > 50 else '')
+            text_display = anomaly['text'][:60] + ('...' if len(anomaly['text']) > 60 else '')
+            text_display = text_display.replace('<', '&lt;').replace('>', '&gt;')
             
             rows.append(f"""
                 <tr>
                     <td><code>{text_display}</code></td>
+                    <td>{count}</td>
                     <td>{score:.3f}</td>
                     <td><span class="{risk_class}">{risk_level}</span></td>
                     <td>{labels}</td>
                     <td>{confidence_str}</td>
-                    <td>{anomaly['timestamp'][:19] if anomaly['timestamp'] else 'N/A'}</td>
+                    <td>{anomaly['latest_timestamp'][:19] if anomaly['latest_timestamp'] else 'N/A'}</td>
                 </tr>
             """)
         

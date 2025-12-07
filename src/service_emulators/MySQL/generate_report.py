@@ -11,6 +11,7 @@ from report_generator import MySQLHoneypotReportGenerator
 def main():
     parser = argparse.ArgumentParser(description='Generate MySQL Honeypot Security Reports')
     parser.add_argument('--sessions-dir', default='sessions', help='Directory containing session files')
+    parser.add_argument('--logs-dir', default='logs', help='Directory containing log files')
     parser.add_argument('--output-dir', default='reports', help='Output directory for reports')
     parser.add_argument('--format', choices=['json', 'html', 'both'], default='both', help='Report format')
     
