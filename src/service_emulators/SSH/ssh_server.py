@@ -6,6 +6,8 @@ import datetime
 import hashlib
 import json
 import logging
+import gzip
+from logging.handlers import RotatingFileHandler
 import os
 import random
 import re
@@ -100,8 +102,28 @@ class AttackAnalyzer:
             try:
                 ml_config = MLConfig("ssh")
                 if ml_config.is_enabled():
+                    # Pass additional ML parameters from config.ini to the detector
+                    ml_params = {
+                        "batch_size": config["ml"].getint("batch_size", 32) if "ml" in config else 32,
+                        "cache_embeddings": config["ml"].getboolean("cache_embeddings", True) if "ml" in config else True,
+                        "use_gpu": config["ml"].getboolean("use_gpu", False) if "ml" in config else False,
+                        "model_update_interval": config["ml"].getint("model_update_interval", 3600) if "ml" in config else 3600,
+                        "min_training_samples": config["ml"].getint("min_training_samples", 100) if "ml" in config else 100,
+                    }
+                    
+                    # Set ML config parameters if the config object supports it
+                    try:
+                        for key, value in ml_params.items():
+                            if hasattr(ml_config, key):
+                                setattr(ml_config, key, value)
+                    except Exception as param_e:
+                        logging.debug(f"ML config parameter setting skipped: {param_e}")
+                    
                     self.ml_detector = MLDetector("ssh", ml_config)
-                    logging.info("ML detector initialized for SSH service")
+                    
+                    # Log ML configuration
+                    logging.info(f"ML detector initialized for SSH service with params: batch_size={ml_params['batch_size']}, "
+                                f"use_gpu={ml_params['use_gpu']}, cache_embeddings={ml_params['cache_embeddings']}")
             except Exception as e:
                 logging.warning(f"Failed to initialize ML detector: {e}")
                 self.ml_detector = None
@@ -681,6 +703,122 @@ class ForensicChainLogger:
             json.dump(self.chain_data, f, indent=2)
 
 
+class ConnectionRateLimiter:
+    """
+    Rate limiter for SSH connections.
+    Tracks connections per IP and blocks excessive connection attempts.
+    Also manages IP blocklist for automated_blocking feature.
+    """
+    
+    def __init__(self):
+        self.connections_per_ip: Dict[str, int] = {}
+        self.connection_times: Dict[str, List[float]] = {}  # Track connection timestamps
+        self.blocked_ips: Dict[str, float] = {}  # IP -> block expiry time
+        self.high_threat_ips: Dict[str, int] = {}  # IP -> cumulative threat score
+        self.last_cleanup = time.time()
+        self.cleanup_interval = 300  # Cleanup every 5 minutes
+    
+    def _cleanup_old_entries(self):
+        """Remove stale entries periodically"""
+        current_time = time.time()
+        if current_time - self.last_cleanup < self.cleanup_interval:
+            return
+        
+        self.last_cleanup = current_time
+        
+        # Remove expired blocks
+        expired_blocks = [ip for ip, expiry in self.blocked_ips.items() if current_time > expiry]
+        for ip in expired_blocks:
+            del self.blocked_ips[ip]
+            logger.info(f"IP block expired: {ip}")
+        
+        # Remove old connection times (older than 1 hour)
+        cutoff = current_time - 3600
+        for ip, times in list(self.connection_times.items()):
+            self.connection_times[ip] = [t for t in times if t > cutoff]
+            if not self.connection_times[ip]:
+                del self.connection_times[ip]
+    
+    def check_rate_limit(self, ip: str) -> tuple:
+        """
+        Check if connection should be allowed.
+        
+        Returns:
+            Tuple of (allowed: bool, reason: str)
+        """
+        self._cleanup_old_entries()
+        
+        # Check if rate limiting is enabled
+        if not config["security"].getboolean("rate_limiting", True):
+            return (True, "rate_limiting_disabled")
+        
+        # Check if IP is blocked
+        if ip in self.blocked_ips:
+            if time.time() < self.blocked_ips[ip]:
+                return (False, "ip_blocked")
+            else:
+                del self.blocked_ips[ip]
+        
+        # Get max connections setting
+        max_conn = config["security"].getint("max_connections_per_ip", 5)
+        
+        # Count current connections
+        current = self.connections_per_ip.get(ip, 0)
+        
+        if current >= max_conn:
+            logger.warning(f"Rate limit exceeded for IP: {ip} (current: {current}, max: {max_conn})")
+            return (False, "rate_limit_exceeded")
+        
+        return (True, "allowed")
+    
+    def register_connection(self, ip: str):
+        """Register a new connection from an IP"""
+        self.connections_per_ip[ip] = self.connections_per_ip.get(ip, 0) + 1
+        
+        if ip not in self.connection_times:
+            self.connection_times[ip] = []
+        self.connection_times[ip].append(time.time())
+    
+    def unregister_connection(self, ip: str):
+        """Unregister a connection when it closes"""
+        if ip in self.connections_per_ip:
+            self.connections_per_ip[ip] = max(0, self.connections_per_ip[ip] - 1)
+            if self.connections_per_ip[ip] == 0:
+                del self.connections_per_ip[ip]
+    
+    def report_threat(self, ip: str, threat_score: int):
+        """
+        Report a threat from an IP. If automated_blocking is enabled and
+        cumulative threat score exceeds threshold, block the IP.
+        """
+        if not config["security"].getboolean("automated_blocking", False):
+            return
+        
+        # Accumulate threat score for this IP
+        self.high_threat_ips[ip] = self.high_threat_ips.get(ip, 0) + threat_score
+        
+        # Check if score exceeds threshold (3x alert_threshold = auto-block)
+        alert_threshold = config["attack_detection"].getint("alert_threshold", 70)
+        block_threshold = alert_threshold * 3  # Need significant threat to auto-block
+        
+        if self.high_threat_ips[ip] >= block_threshold:
+            # Block IP for 1 hour
+            self.blocked_ips[ip] = time.time() + 3600
+            logger.critical(f"Automated blocking: IP {ip} blocked for 1 hour (threat score: {self.high_threat_ips[ip]})")
+    
+    def is_blocked(self, ip: str) -> bool:
+        """Check if an IP is currently blocked"""
+        if ip not in self.blocked_ips:
+            return False
+        if time.time() > self.blocked_ips[ip]:
+            del self.blocked_ips[ip]
+            return False
+        return True
+
+
+# Global rate limiter instance
+connection_rate_limiter = ConnectionRateLimiter()
+
 class JSONFormatter(logging.Formatter):
     def __init__(self, sensor_name, *args, **kwargs):
         super().__init__(*args, **kwargs)
@@ -746,8 +884,9 @@ class MySSHServer(asyncssh.SSHServer):
                 self.forensic_logger if hasattr(self, 'forensic_logger') else None
             )
             logger.info("Nano session handler initialized")
-        except ImportError as e:
-            logger.warning(f"Nano session handler not available: {e}")
+        except ImportError:
+            # editors module is optional - only log at debug level
+            logger.debug("Nano session handler not available (editors module not installed)")
             self.nano_handler = None
         
         # Initialize seed filesystem if configured (legacy support)
@@ -1215,6 +1354,20 @@ alias gs='git status'
         else:
             dst_ip, dst_port = "-", "-"
 
+        # Store the source IP for rate limiter management
+        self._src_ip = src_ip
+        
+        # Check rate limiting before allowing connection
+        rate_allowed, rate_reason = connection_rate_limiter.check_rate_limit(src_ip)
+        if not rate_allowed:
+            self._rate_limited = True
+            self._rate_limit_reason = rate_reason
+            logger.warning(f"Connection rejected by rate limiter: {src_ip} - {rate_reason}")
+        else:
+            self._rate_limited = False
+            # Register the connection
+            connection_rate_limiter.register_connection(src_ip)
+
         # Store the connection details in thread-local storage
         thread_local.src_ip = src_ip
         thread_local.src_port = src_port
@@ -1258,9 +1411,14 @@ alias gs='git status'
                 else None
             )
             self.vuln_logger = VulnerabilityLogger()
+            # Check both honeypot.forensic_chain and forensics.chain_of_custody to enable forensic logging
+            forensic_chain_enabled = (
+                config["honeypot"].getboolean("forensic_chain", True) or 
+                config["forensics"].getboolean("chain_of_custody", True)
+            )
             self.forensic_logger = (
                 ForensicChainLogger(str(self.session_dir))
-                if config["forensics"].getboolean("chain_of_custody", True)
+                if forensic_chain_enabled
                 else None
             )
 
@@ -1370,6 +1528,10 @@ alias gs='git status'
 
     def connection_lost(self, exc: Optional[Exception]) -> None:
         """Handle connection loss"""
+        # Unregister connection from rate limiter
+        if hasattr(self, '_src_ip') and self._src_ip and not getattr(self, '_rate_limited', False):
+            connection_rate_limiter.unregister_connection(self._src_ip)
+        
         if exc:
             logger.error(f"Connection lost with error: {exc}", extra=self.get_log_context())
         else:
@@ -1410,17 +1572,46 @@ alias gs='git status'
                     and self.session_transcript
                 ):
                     replay_file = self.session_dir / "session_replay.json"
+                    replay_data = {
+                        "session_id": getattr(self, "session_id", "unknown"),
+                        "start_time": self.session_data["start_time"],
+                        "end_time": self.session_data["end_time"],
+                        "transcript": self.session_transcript,
+                    }
+                    
+                    # Add command replay data if enabled
+                    if config["features"].getboolean("command_replay", True):
+                        # Calculate timing deltas for replay
+                        commands = self.session_data.get("commands", [])
+                        replay_commands = []
+                        prev_timestamp = None
+                        
+                        for cmd in commands:
+                            cmd_timestamp = cmd.get("timestamp")
+                            delay_ms = 0
+                            
+                            if prev_timestamp and cmd_timestamp:
+                                try:
+                                    prev_dt = datetime.datetime.fromisoformat(prev_timestamp)
+                                    curr_dt = datetime.datetime.fromisoformat(cmd_timestamp)
+                                    delay_ms = int((curr_dt - prev_dt).total_seconds() * 1000)
+                                except:
+                                    delay_ms = 0
+                            
+                            replay_commands.append({
+                                "command": cmd.get("command", ""),
+                                "timestamp": cmd_timestamp,
+                                "delay_ms": delay_ms,
+                                "interactive": cmd.get("interactive", True),
+                            })
+                            prev_timestamp = cmd_timestamp
+                        
+                        replay_data["command_replay"] = replay_commands
+                        replay_data["total_commands"] = len(replay_commands)
+                        replay_data["replay_version"] = "1.0"
+                    
                     with open(replay_file, "w") as f:
-                        json.dump(
-                            {
-                                "session_id": getattr(self, "session_id", "unknown"),
-                                "start_time": self.session_data["start_time"],
-                                "end_time": self.session_data["end_time"],
-                                "transcript": self.session_transcript,
-                            },
-                            f,
-                            indent=2,
-                        )
+                        json.dump(replay_data, f, indent=2)
 
                 # Add session summary as evidence
                 if hasattr(self, "forensic_logger") and self.forensic_logger:
@@ -1447,6 +1638,49 @@ alias gs='git status'
                         )
                     except Exception as e:
                         logger.error(f"Final forensic logging failed: {e}")
+                
+                # Generate forensic report if enabled
+                if config["forensics"].getboolean("forensic_reports", True):
+                    try:
+                        forensic_report = {
+                            "report_id": str(uuid.uuid4()),
+                            "report_generated": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                            "session_info": {
+                                "session_id": getattr(self, "session_id", "unknown"),
+                                "start_time": self.session_data["start_time"],
+                                "end_time": self.session_data["end_time"],
+                                "duration": self.session_data.get("duration", "unknown"),
+                                "username": getattr(self, "username", "unknown"),
+                                "source_ip": getattr(self, "_src_ip", "unknown"),
+                            },
+                            "attack_summary": {
+                                "total_commands": len(self.session_data.get("commands", [])),
+                                "attack_detections": len(self.session_data.get("attack_analysis", [])),
+                                "vulnerabilities_triggered": len(self.session_data.get("vulnerabilities", [])),
+                                "files_downloaded": len(self.session_data.get("files_downloaded", [])),
+                                "files_uploaded": len(self.session_data.get("files_uploaded", [])),
+                            },
+                            "attack_timeline": self.session_data.get("attack_analysis", []),
+                            "vulnerability_details": self.session_data.get("vulnerabilities", []),
+                            "file_operations": {
+                                "downloads": self.session_data.get("files_downloaded", []),
+                                "uploads": self.session_data.get("files_uploaded", []),
+                            },
+                            "command_history": [cmd.get("command", "") for cmd in self.session_data.get("commands", [])],
+                        }
+                        
+                        # Add forensic chain if available
+                        if hasattr(self, "forensic_logger") and self.forensic_logger:
+                            forensic_report["forensic_chain"] = self.forensic_logger.chain_data
+                        
+                        report_file = self.session_dir / "forensic_report.json"
+                        with open(report_file, "w") as f:
+                            json.dump(forensic_report, f, indent=2)
+                        
+                        logger.info(f"Forensic report generated: {report_file}")
+                    except Exception as e:
+                        logger.error(f"Forensic report generation failed: {e}")
+
 
         # Ensure session summary is called on connection loss if attributes are set
         if (
@@ -1509,6 +1743,25 @@ async def session_summary(
 ):
     # Check if the summary has already been generated
     if server.summary_generated:
+        return
+
+    # Check if AI attack summaries are enabled
+    ai_summaries_enabled = config["ai_features"].getboolean("ai_attack_summaries", True)
+    
+    if not ai_summaries_enabled:
+        # Generate basic (non-AI) summary
+        server.summary_generated = True
+        basic_summary = {
+            "commands_executed": len(server.session_data.get("commands", [])),
+            "attacks_detected": len(server.session_data.get("attack_analysis", [])),
+            "vulnerabilities_triggered": len(server.session_data.get("vulnerabilities", [])),
+            "files_downloaded": len(server.session_data.get("files_downloaded", [])),
+            "files_uploaded": len(server.session_data.get("files_uploaded", [])),
+            "duration": server.session_data.get("duration", "unknown"),
+            "username": process.get_extra_info("username"),
+            "judgement": "UNKNOWN",  # Basic summary doesn't analyze intent
+        }
+        logger.info("Session summary (basic)", extra=basic_summary)
         return
 
     try:
@@ -1849,8 +2102,11 @@ def _perform_threat_analysis(command: str, server: MySSHServer) -> tuple:
     }
     vulnerabilities = []
 
-    # Analyze command for attacks
-    if server.attack_analyzer and config["ai_features"].getboolean(
+    # Check if behavioral analysis is enabled
+    behavioral_analysis_enabled = config["honeypot"].getboolean("behavioral_analysis", True)
+    
+    # Analyze command for attacks (only if behavioral_analysis is enabled)
+    if server.attack_analyzer and behavioral_analysis_enabled and config["ai_features"].getboolean(
         "real_time_analysis", True
     ):
         try:
@@ -1888,8 +2144,14 @@ def _log_threats(
     attack_analysis: dict, vulnerabilities: list, command: str, server: MySSHServer
 ):
     """Log detected threats"""
-    # Log attack analysis
-    if attack_analysis.get("attack_types"):
+    # Check if attack logging is enabled
+    attack_logging_enabled = config["honeypot"].getboolean("attack_logging", True)
+    
+    # Check if intrusion detection is enabled
+    intrusion_detection_enabled = config["security"].getboolean("intrusion_detection", True)
+    
+    # Log attack analysis (only if attack_logging is enabled)
+    if attack_analysis.get("attack_types") and attack_logging_enabled:
         log_extra = {
             "attack_types": attack_analysis["attack_types"],
             "severity": attack_analysis["severity"],
@@ -1902,6 +2164,22 @@ def _log_threats(
 
         if attack_analysis.get("alert_triggered", False):
             logger.critical("High-threat attack detected", extra=log_extra)
+            
+            # Intrusion detection: log additional details for high threats
+            if intrusion_detection_enabled:
+                intrusion_log = {
+                    "event_type": "intrusion_attempt",
+                    "threat_score": attack_analysis.get("threat_score", 0),
+                    "attack_types": attack_analysis["attack_types"],
+                    "command": command,
+                    "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+                }
+                logger.critical("INTRUSION DETECTED", extra=intrusion_log)
+                
+            # Report threat for automated blocking consideration
+            if hasattr(server, '_src_ip') and server._src_ip:
+                threat_score = attack_analysis.get("threat_score", 0)
+                connection_rate_limiter.report_threat(server._src_ip, threat_score)
         else:
             logger.warning("Attack pattern detected", extra=log_extra)
 
@@ -1926,6 +2204,10 @@ def _log_threats(
                 logger.critical(
                     "Critical vulnerability exploitation attempt", extra=enhanced_vuln
                 )
+                
+                # Report vulnerability exploitation for auto-blocking
+                if hasattr(server, '_src_ip') and server._src_ip:
+                    connection_rate_limiter.report_threat(server._src_ip, enhanced_vuln["threat_score"])
             else:
                 logger.critical(
                     "Vulnerability exploitation attempt", extra=enhanced_vuln
@@ -1979,14 +2261,17 @@ async def _get_llm_response(
     
     enhanced_command = command
 
-    # Apply dynamic responses if enabled
-    if config["ai_features"].getboolean(
+    # Check if adaptive responses are enabled (master control for attack-based enhancements)
+    adaptive_responses_enabled = config["honeypot"].getboolean("adaptive_responses", True)
+    
+    # Apply dynamic responses if enabled (requires adaptive_responses to be on)
+    if adaptive_responses_enabled and config["ai_features"].getboolean(
         "dynamic_responses", True
     ) and attack_analysis.get("attack_types"):
         enhanced_command += f" [HONEYPOT_CONTEXT: Detected {', '.join(attack_analysis['attack_types'])} behavior]"
 
-    # Apply deception techniques if enabled
-    if config["ai_features"].getboolean("deception_techniques", True):
+    # Apply deception techniques if enabled (requires adaptive_responses to be on)
+    if adaptive_responses_enabled and config["ai_features"].getboolean("deception_techniques", True):
         if "reconnaissance" in attack_analysis.get("attack_types", []):
             enhanced_command += (
                 " [DECEPTION: Show realistic but controlled system information]"
@@ -1996,8 +2281,14 @@ async def _get_llm_response(
                 " [DECEPTION: Simulate security resistance while logging attempts]"
             )
     
-    # Enhance prompt with filesystem context using LLMGuard
-    if hasattr(server, "llm_guard") and hasattr(server, "virtual_fs"):
+    # Check threat_adaptation config (controls threat-based context modifications)
+    threat_adaptation_enabled = config["llm"].getboolean("threat_adaptation", True)
+    if threat_adaptation_enabled and attack_analysis.get("threat_score", 0) > 50:
+        enhanced_command += f" [THREAT_LEVEL: {attack_analysis.get('severity', 'unknown')}]"
+    
+    # Enhance prompt with filesystem context using LLMGuard (controlled by context_awareness)
+    context_awareness_enabled = config["llm"].getboolean("context_awareness", True)
+    if context_awareness_enabled and hasattr(server, "llm_guard") and hasattr(server, "virtual_fs"):
         enhanced_command = server.llm_guard.enhance_prompt(
             enhanced_command,
             server.virtual_fs,
@@ -2120,15 +2411,71 @@ async def process_command(
     _handle_file_operations(command, server)
 
     # Store command in session data and history
-    server.session_data["commands"].append(
-        {
-            "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-            "command": command,
-            "interactive": interactive,
-            "attack_analysis": attack_analysis,
-            "vulnerabilities": vulnerabilities,
+    command_entry = {
+        "timestamp": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "command": command,
+        "interactive": interactive,
+        "attack_analysis": attack_analysis,
+        "vulnerabilities": vulnerabilities,
+    }
+    
+    # Network analysis: track outbound connection attempts
+    if config["features"].getboolean("network_analysis", True):
+        network_patterns = {
+            "ssh_outbound": r"ssh\s+[\w@\.\-]+",
+            "wget_download": r"wget\s+https?://[^\s]+",
+            "curl_download": r"curl\s+.*https?://[^\s]+",
+            "scp_transfer": r"scp\s+.*[\w@\.\-]+:",
+            "nc_connection": r"(nc|netcat)\s+[\d\.\-]+\s+\d+",
+            "ping_target": r"ping\s+[\d\.\w\-]+",
+            "nmap_scan": r"nmap\s+",
+            "telnet_connection": r"telnet\s+[\d\.\w\-]+",
         }
-    )
+        network_activity = []
+        for activity_type, pattern in network_patterns.items():
+            if re.search(pattern, command, re.IGNORECASE):
+                network_activity.append(activity_type)
+        
+        if network_activity:
+            command_entry["network_activity"] = network_activity
+            # Track in session data
+            if "network_connections" not in server.session_data:
+                server.session_data["network_connections"] = []
+            server.session_data["network_connections"].append({
+                "timestamp": command_entry["timestamp"],
+                "command": command,
+                "activities": network_activity,
+            })
+    
+    # Process monitoring: track simulated process creation/manipulation
+    if config["features"].getboolean("process_monitoring", True):
+        process_patterns = {
+            "background_process": r"&\s*$",
+            "nohup_process": r"nohup\s+",
+            "kill_process": r"kill\s+(-\d+\s+)?\d+",
+            "pkill_process": r"pkill\s+",
+            "service_start": r"(systemctl|service)\s+(start|restart|stop)",
+            "cron_edit": r"crontab\s+",
+            "at_schedule": r"\bat\s+",
+            "daemon_spawn": r"(\./|/usr/|/bin/|/sbin/)[\w/]+\s+.*(-d|--daemon|--background)",
+        }
+        process_activity = []
+        for activity_type, pattern in process_patterns.items():
+            if re.search(pattern, command, re.IGNORECASE):
+                process_activity.append(activity_type)
+        
+        if process_activity:
+            command_entry["process_activity"] = process_activity
+            # Track in session data
+            if "process_operations" not in server.session_data:
+                server.session_data["process_operations"] = []
+            server.session_data["process_operations"].append({
+                "timestamp": command_entry["timestamp"],
+                "command": command,
+                "activities": process_activity,
+            })
+    
+    server.session_data["commands"].append(command_entry)
 
     if command.strip() and not command.strip().lower() == "history":
         server.command_history.append(command.strip())
@@ -2536,7 +2883,7 @@ async def start_server() -> None:
         ),
         keepalive_interval=30,
         keepalive_count_max=10,
-        login_timeout=3600,
+        login_timeout=config["security"].getint("connection_timeout", 300),
     )
 
     print(f"[SUCCESS] SSH honeypot listening on {host}:{port}")
@@ -2592,13 +2939,24 @@ def choose_llm(llm_provider: Optional[str] = None, model_name: Optional[str] = N
 
     # Get temperature parameter from config, default to 0.2 if not specified
     temperature = config["llm"].getfloat("temperature", 0.2)
+    
+    # Get max_response_tokens from config (limits LLM output length)
+    max_response_tokens = config["llm"].getint("max_response_tokens", 2048)
+    
+    # Get creativity_level (0.0-1.0) and blend with temperature
+    creativity_level = config["llm"].getfloat("creativity_level", 0.4)
+    # Creativity level modulates the base temperature slightly
+    effective_temperature = temperature * (0.8 + creativity_level * 0.4)  # Range: temperature * 0.8 to temperature * 1.2
 
-    # Base model kwargs
-    base_kwargs = {"temperature": temperature}
+    # Base model kwargs with max_tokens support
+    base_kwargs = {
+        "temperature": effective_temperature,
+        "max_tokens": max_response_tokens,
+    }
 
     # Provider-specific kwargs
     openai_kwargs = {**base_kwargs, "request_timeout": 30, "max_retries": 2}
-    gemini_kwargs = {**base_kwargs, "timeout": 30}
+    gemini_kwargs = {"temperature": effective_temperature, "timeout": 30, "max_output_tokens": max_response_tokens}
     other_kwargs = {**base_kwargs, "request_timeout": 30, "max_retries": 2}
 
     if llm_provider_name == "openai":
@@ -2820,9 +3178,34 @@ try:
     log_level = config["logging"].get("log_level", "INFO").upper()
     logger.setLevel(getattr(logging, log_level, logging.INFO))
 
-    log_file_handler = logging.FileHandler(
-        config["honeypot"].get("log_file", "ssh_log.log")
+    # Configure log rotation with size and backup count from config
+    log_rotation_size_mb = config["logging"].getint("log_rotation_size", 100)
+    log_backup_count = config["logging"].getint("log_backup_count", 10)
+    log_compression_enabled = config["logging"].getboolean("log_compression", True)
+    
+    log_file_path = config["honeypot"].get("log_file", "ssh_log.log")
+    
+    # Use RotatingFileHandler for log rotation
+    log_file_handler = RotatingFileHandler(
+        log_file_path,
+        maxBytes=log_rotation_size_mb * 1024 * 1024,  # Convert MB to bytes
+        backupCount=log_backup_count,
     )
+    
+    # Add compression for rotated logs if enabled
+    if log_compression_enabled:
+        def namer(name):
+            return name + ".gz"
+        
+        def rotator(source, dest):
+            with open(source, "rb") as sf:
+                with gzip.open(dest, "wb") as df:
+                    df.writelines(sf)
+            os.remove(source)
+        
+        log_file_handler.namer = namer
+        log_file_handler.rotator = rotator
+    
     logger.addHandler(log_file_handler)
 
     # Configure structured logging

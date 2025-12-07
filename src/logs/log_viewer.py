@@ -354,7 +354,7 @@ class LogViewer:
         return self.parse_logs(log_file, session_id, decode, filter_type)
     
     def get_ml_insights(self, conversations: Dict[str, Any]) -> Dict[str, Any]:
-        """Generate ML insights from conversations"""
+        """Generate ML insights from conversations with comprehensive analysis"""
         if not self.ml_detector:
             return {'ml_available': False}
         
@@ -365,23 +365,56 @@ class LogViewer:
             'total_sessions': len(conversations),
             'anomalies': [],
             'risk_summary': {'high': 0, 'medium': 0, 'low': 0},
+            'attack_patterns': {},  # Track attack patterns detected
             'metrics': {
                 'entries_analyzed': 0,
                 'anomalies_detected': 0,
+                'avg_anomaly_score': 0.0,
+                'max_anomaly_score': 0.0,
             }
         }
+        
+        all_scores = []
         
         for session_id, conv in conversations.items():
             for entry in conv['entries']:
                 insights['metrics']['entries_analyzed'] += 1
                 ml_result = self.analyze_log_entry_ml(entry)
                 
+                # Track attack patterns from entry data
+                raw = entry.get('raw', {})
+                attack_types = raw.get('attack_types', [])
+                for attack_type in attack_types:
+                    insights['attack_patterns'][attack_type] = insights['attack_patterns'].get(attack_type, 0) + 1
+                
                 if ml_result and 'ml_anomaly_score' in ml_result:
                     anomaly_score = ml_result['ml_anomaly_score']
+                    all_scores.append(anomaly_score)
+                    
                     if anomaly_score > 0.7:
                         risk_level = 'high' if anomaly_score > 0.9 else 'medium'
                         insights['risk_summary'][risk_level] += 1
                         insights['metrics']['anomalies_detected'] += 1
+                        
+                        # Store anomaly details
+                        insights['anomalies'].append({
+                            'session_id': session_id,
+                            'anomaly_score': anomaly_score,
+                            'risk_level': risk_level,
+                            'message': entry.get('message', '')[:100],
+                            'timestamp': entry.get('timestamp', ''),
+                            'ml_labels': ml_result.get('labels', []),
+                        })
+                    else:
+                        insights['risk_summary']['low'] += 1
+        
+        # Calculate aggregate metrics
+        if all_scores:
+            insights['metrics']['avg_anomaly_score'] = sum(all_scores) / len(all_scores)
+            insights['metrics']['max_anomaly_score'] = max(all_scores)
+        
+        # Sort anomalies by score descending
+        insights['anomalies'].sort(key=lambda x: x['anomaly_score'], reverse=True)
         
         return insights
     
@@ -418,100 +451,155 @@ class LogViewer:
     
     def format_text(self, conversations: Dict[str, Any], include_ml: bool = False,
                    show_full: bool = False) -> str:
-        """Format as human-readable text"""
+        """Format as human-readable text with enhanced professional styling"""
         output = []
         timestamp = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         
-        output.append("=" * 120)
-        output.append(f"NEXUS {self.service.upper()} HONEYPOT - COMPREHENSIVE SESSION ANALYSIS")
-        output.append(f"Generated: {timestamp}")
-        output.append("=" * 120)
+        # Unicode box drawing characters for modern look
+        BOX_TOP = "╔" + "═" * 118 + "╗"
+        BOX_MID = "╠" + "═" * 118 + "╣"
+        BOX_BOT = "╚" + "═" * 118 + "╝"
+        BOX_EDGE = "║"
+        SECTION_DIV = "├" + "─" * 118 + "┤"
         
-        # System details
-        output.append("\nSYSTEM DETAILS:")
-        output.append(f"  Service Protocol: {self.service.upper()}")
-        output.append(f"  Total Sessions: {len(conversations)}")
+        # Header
+        output.append(BOX_TOP)
+        title = f"NEXUS {self.service.upper()} HONEYPOT - COMPREHENSIVE SESSION ANALYSIS"
+        output.append(f"{BOX_EDGE}  {title:^114}  {BOX_EDGE}")
+        output.append(f"{BOX_EDGE}  Generated: {timestamp:^102}  {BOX_EDGE}")
+        output.append(BOX_MID)
+        
+        # Summary Statistics
+        total_sessions = len(conversations)
         total_entries = sum(len(c['entries']) for c in conversations.values())
-        output.append(f"  Total Entries: {total_entries}")
         total_commands = sum(len(c['commands']) for c in conversations.values())
         total_responses = sum(len(c['responses']) for c in conversations.values())
         total_attacks = sum(len(c['attacks']) for c in conversations.values())
-        output.append(f"  Commands: {total_commands} | Responses: {total_responses} | Attacks: {total_attacks}")
         
-        # ML details if enabled
-        if include_ml and self.ml_detector:
-            output.append("\nML ANALYSIS ENABLED:")
-            output.append(f"  Detector: {self.service.upper()} ML Detector")
-            ml_insights = self.get_ml_insights(conversations)
-            if ml_insights.get('ml_available'):
-                metrics = ml_insights.get('metrics', {})
-                risk = ml_insights.get('risk_summary', {})
-                output.append(f"  Entries Analyzed: {metrics.get('entries_analyzed', 0)}")
-                output.append(f"  Anomalies Detected: {metrics.get('anomalies_detected', 0)}")
-                output.append(f"  Risk: High={risk.get('high', 0)} | Medium={risk.get('medium', 0)} | Low={risk.get('low', 0)}")
+        output.append(f"{BOX_EDGE}  {'SUMMARY STATISTICS':^114}  {BOX_EDGE}")
+        output.append(SECTION_DIV)
+        output.append(f"{BOX_EDGE}    Protocol: {self.service.upper():<20} Sessions: {total_sessions:<15} Total Entries: {total_entries:<20}  {BOX_EDGE}")
+        output.append(f"{BOX_EDGE}    Commands: {total_commands:<20} Responses: {total_responses:<15} Attacks Detected: {total_attacks:<20}  {BOX_EDGE}")
         
-        output.append("\n" + "=" * 120)
+        # ML Summary if enabled
+        if include_ml:
+            output.append(SECTION_DIV)
+            if self.ml_detector:
+                output.append(f"{BOX_EDGE}  {'ML ANALYSIS STATUS: ENABLED':^114}  {BOX_EDGE}")
+                ml_insights = self.get_ml_insights(conversations)
+                if ml_insights.get('ml_available'):
+                    metrics = ml_insights.get('metrics', {})
+                    risk = ml_insights.get('risk_summary', {})
+                    output.append(f"{BOX_EDGE}    Entries Analyzed: {metrics.get('entries_analyzed', 0):<15} Anomalies: {metrics.get('anomalies_detected', 0):<15}                            {BOX_EDGE}")
+                    output.append(f"{BOX_EDGE}    Risk Levels -> High: {risk.get('high', 0)}  |  Medium: {risk.get('medium', 0)}  |  Low: {risk.get('low', 0):<50}  {BOX_EDGE}")
+            else:
+                output.append(f"{BOX_EDGE}  {'ML ANALYSIS: Not Available (ML components not loaded)':^114}  {BOX_EDGE}")
         
-        # Session details
+        output.append(BOX_MID)
+        
+        # Session Details
         for idx, (session_id, conv) in enumerate(conversations.items(), 1):
-            output.append(f"\n[SESSION {idx}] {session_id}")
-            output.append("-" * 120)
+            # Session Header
+            output.append(f"{BOX_EDGE}  SESSION {idx}/{total_sessions}: {session_id[:90]:<90}  {BOX_EDGE}")
+            output.append(SECTION_DIV)
             
-            # Connection details
+            # Connection Info
             src = conv['src_ip']
             src_port = conv.get('src_port', '?')
             dst = conv['dst_ip']
             dst_port = conv.get('dst_port', '?')
-            output.append(f"  Connection: {src}:{src_port} -> {dst}:{dst_port}")
+            output.append(f"{BOX_EDGE}    Connection: {src}:{src_port} --> {dst}:{dst_port:<65}  {BOX_EDGE}")
             
-            # Protocol details
+            # Protocol Details
             if conv['protocol_details']:
-                output.append(f"  Protocol Details:")
+                proto_details = []
                 for key, value in conv['protocol_details'].items():
                     if isinstance(value, (dict, list)):
-                        output.append(f"    {key}: {json.dumps(value, default=str)[:70]}")
+                        proto_details.append(f"{key}: {...}")
                     else:
-                        output.append(f"    {key}: {value}")
+                        proto_details.append(f"{key}: {value}")
+                proto_str = " | ".join(proto_details[:4])  # First 4 details
+                output.append(f"{BOX_EDGE}    Details: {proto_str[:105]:<105}  {BOX_EDGE}")
             
-            # Statistics
+            # Statistics Bar
             stats = conv['statistics']
-            output.append(f"  Statistics: {stats['total_entries']} entries | {stats['total_commands']} commands | {stats['total_responses']} responses | {stats['total_attacks']} attacks")
+            output.append(f"{BOX_EDGE}    Stats: {stats['total_entries']} entries | {stats['total_commands']} commands | {stats['total_responses']} responses | {stats['total_attacks']} attacks{' '*30}  {BOX_EDGE}")
             
-            # Command timeline
+            # Command Timeline (FULL - no truncation)
             if conv['commands']:
-                output.append(f"\n  COMMAND TIMELINE ({len(conv['commands'])} total):")
+                output.append(SECTION_DIV)
+                output.append(f"{BOX_EDGE}    COMMAND TIMELINE ({len(conv['commands'])} commands):{' '*70}  {BOX_EDGE}")
                 for i, cmd in enumerate(conv['commands'], 1):
                     ts = cmd.get('timestamp', '')[:19]
                     details = self.analyzer.format_command_details(cmd)
-                    is_attack = cmd.get('message', '').lower()
-                    output.append(f"    {i}. [{ts}]{details}")
+                    # Detect attack indicator
+                    attack_indicator = ""
+                    pd = cmd.get('protocol_details', {})
+                    if pd.get('attack_types'):
+                        attack_indicator = " [!ATTACK]"
+                    
+                    line = f"      {i:>3}. [{ts}]{details}{attack_indicator}"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
             
-            # Responses
+            # Responses (FULL - no truncation, with --conversation flag shows content)
             if conv['responses']:
-                output.append(f"\n  RESPONSES ({len(conv['responses'])} total):")
-                for i, resp in enumerate(conv['responses'][:5], 1):  # Show first 5
+                output.append(SECTION_DIV)
+                output.append(f"{BOX_EDGE}    RESPONSES ({len(conv['responses'])} total):{' '*77}  {BOX_EDGE}")
+                for i, resp in enumerate(conv['responses'], 1):
                     ts = resp.get('timestamp', '')[:19]
-                    msg = resp.get('message', '')[:70]
-                    output.append(f"    {i}. [{ts}] {msg}")
-                if len(conv['responses']) > 5:
-                    output.append(f"    ... and {len(conv['responses']) - 5} more")
+                    msg = resp.get('message', '')[:80]
+                    line = f"      {i:>3}. [{ts}] {msg}"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                    
+                    # Show decoded details if available and full mode enabled
+                    if show_full and resp.get('decoded_details'):
+                        decoded_lines = resp['decoded_details'][:200].split('\n')
+                        for dl in decoded_lines[:3]:
+                            output.append(f"{BOX_EDGE}           {dl[:104]:<104}  {BOX_EDGE}")
             
-            # Attacks
+            # Attacks (FULL with severity indicators)
             if conv['attacks']:
-                output.append(f"\n  DETECTED ATTACKS ({len(conv['attacks'])} total):")
+                output.append(SECTION_DIV)
+                severity_icons = {'critical': '!!!', 'high': '!! ', 'medium': '!  ', 'low': '.  ', 'unknown': '?  '}
+                output.append(f"{BOX_EDGE}    DETECTED ATTACKS ({len(conv['attacks'])} total):{' '*70}  {BOX_EDGE}")
                 for i, attack in enumerate(conv['attacks'], 1):
                     ts = attack.get('timestamp', '')[:19]
-                    msg = attack.get('message', '')[:70]
+                    msg = attack.get('message', '')[:60]
                     raw = attack.get('raw', {})
                     types = raw.get('attack_types', [])
                     severity = raw.get('severity', 'unknown')
-                    output.append(f"    {i}. [{ts}] {msg}")
+                    sev_icon = severity_icons.get(severity, '?  ')
+                    
+                    line = f"      {sev_icon} [{ts}] {msg}"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
                     if types:
-                        output.append(f"       Types: {', '.join(types)} | Severity: {severity}")
+                        types_str = f"           Types: {', '.join(types[:5])} | Severity: {severity.upper()}"
+                        output.append(f"{BOX_EDGE}{types_str[:116]:<116}  {BOX_EDGE}")
+                    
+                    # Show indicators if available
+                    indicators = raw.get('indicators', [])
+                    if indicators:
+                        ind_str = f"           Indicators: {', '.join(str(ind) for ind in indicators[:3])}"
+                        output.append(f"{BOX_EDGE}{ind_str[:116]:<116}  {BOX_EDGE}")
             
-            output.append("-" * 120)
+            # ML Analysis for session if enabled
+            if include_ml and self.ml_detector:
+                session_ml = self.get_ml_insights({session_id: conv})
+                if session_ml.get('metrics', {}).get('anomalies_detected', 0) > 0:
+                    output.append(SECTION_DIV)
+                    output.append(f"{BOX_EDGE}    ML ANALYSIS:{' '*99}  {BOX_EDGE}")
+                    metrics = session_ml.get('metrics', {})
+                    risk = session_ml.get('risk_summary', {})
+                    ml_line = f"           Anomalies: {metrics.get('anomalies_detected', 0)} | High: {risk.get('high', 0)} | Medium: {risk.get('medium', 0)} | Low: {risk.get('low', 0)}"
+                    output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+            
+            output.append(BOX_MID)
         
-        output.append("\n" + "=" * 120)
+        # Footer
+        output.append(f"{BOX_EDGE}  {'END OF ANALYSIS REPORT':^114}  {BOX_EDGE}")
+        output.append(f"{BOX_EDGE}  {'Generated by nexus honeypot platform':^114}  {BOX_EDGE}")
+        output.append(BOX_BOT)
+        
         return "\n".join(output)
     
     def format_json(self, conversations: Dict[str, Any], include_ml: bool = False) -> str:
@@ -579,14 +667,28 @@ class LogViewer:
     
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False, include_ml: bool = False) -> str:
-        """Format conversations (backward compatibility)"""
+        """Format conversations (backward compatibility) - 'both' returns text format for display"""
         if format_type == 'json':
             return self.format_json(conversations, include_ml)
         else:
+            # For 'both', return text for display - JSON saved separately
             return self.format_text(conversations, include_ml, show_full)
     
-    def save_conversation(self, content: str, output_file: str) -> str:
-        """Save to file"""
+    def save_conversation(self, content: str, output_file: str, format_type: str = 'text',
+                         conversations: Dict[str, Any] = None, include_ml: bool = False) -> Dict[str, str]:
+        """
+        Save to file(s). For 'both' format, saves both text and JSON files.
+        
+        Args:
+            content: The text content to save
+            output_file: Base output path
+            format_type: 'text', 'json', or 'both'
+            conversations: Required for 'both' format to generate JSON
+            include_ml: Include ML insights in output
+            
+        Returns:
+            Dictionary with 'text' and/or 'json' paths
+        """
         output_path = Path(output_file)
         
         if not output_path.is_absolute():
@@ -594,10 +696,33 @@ class LogViewer:
         
         output_path.parent.mkdir(parents=True, exist_ok=True)
         
-        with open(output_path, 'w', encoding='utf-8') as f:
-            f.write(content)
+        saved_files = {}
         
-        return str(output_path.resolve())
+        if format_type == 'both':
+            # Save both formats
+            base_name = output_path.stem
+            base_dir = output_path.parent
+            
+            # Save text file
+            text_path = base_dir / f"{base_name}.txt"
+            with open(text_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            saved_files['text'] = str(text_path.resolve())
+            
+            # Save JSON file
+            if conversations:
+                json_path = base_dir / f"{base_name}.json"
+                json_content = self.format_json(conversations, include_ml)
+                with open(json_path, 'w', encoding='utf-8') as f:
+                    f.write(json_content)
+                saved_files['json'] = str(json_path.resolve())
+        else:
+            # Single format save
+            with open(output_path, 'w', encoding='utf-8') as f:
+                f.write(content)
+            saved_files[format_type] = str(output_path.resolve())
+        
+        return saved_files
 
 def main():
     parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer with ML Analysis')
@@ -608,7 +733,7 @@ def main():
     parser.add_argument('--decode', '-d', action='store_true', help='Decode base64 details')
     parser.add_argument('--conversation', '-c', action='store_true', help='Show full conversation')
     parser.add_argument('--save', '-s', help='Save to file')
-    parser.add_argument('--format', choices=['text', 'json'], default='text', help='Output format')
+    parser.add_argument('--format', choices=['text', 'json', 'both'], default='text', help='Output format (both saves as text and json)')
     parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks', 'anomalies'],
                        default='all', help='Filter entries')
     
@@ -717,35 +842,39 @@ def main():
                 
                 if ml_insights.get('ml_available'):
                     print(f" Service: {ml_insights['service'].upper()}")
-                    print(f" Analysis Time: {ml_insights['analysis_timestamp']}")
+                    print(f" Analysis Time: {ml_insights.get('timestamp', 'N/A')}")
                     print(f" Total Sessions: {ml_insights['total_sessions']}")
-                    print(f" Entries Analyzed: {ml_insights['ml_metrics']['entries_analyzed']}")
-                    print(f" Anomalies Detected: {ml_insights['ml_metrics']['anomalies_detected']}")
-                    print(f" Average Anomaly Score: {ml_insights['ml_metrics']['avg_anomaly_score']:.3f}")
-                    print(f" Maximum Anomaly Score: {ml_insights['ml_metrics']['max_anomaly_score']:.3f}")
+                    metrics = ml_insights.get('metrics', {})
+                    print(f" Entries Analyzed: {metrics.get('entries_analyzed', 0)}")
+                    print(f" Anomalies Detected: {metrics.get('anomalies_detected', 0)}")
+                    print(f" Average Anomaly Score: {metrics.get('avg_anomaly_score', 0):.3f}")
+                    print(f" Maximum Anomaly Score: {metrics.get('max_anomaly_score', 0):.3f}")
                     
                     # Risk breakdown
-                    risk_summary = ml_insights['risk_summary']
+                    risk_summary = ml_insights.get('risk_summary', {})
                     print(f"\n RISK BREAKDOWN:")
-                    print(f"    High Risk: {risk_summary['high']}")
-                    print(f"    Medium Risk: {risk_summary['medium']}")
-                    print(f"    Low Risk: {risk_summary['low']}")
+                    print(f"    High Risk: {risk_summary.get('high', 0)}")
+                    print(f"    Medium Risk: {risk_summary.get('medium', 0)}")
+                    print(f"    Low Risk: {risk_summary.get('low', 0)}")
                     
                     # Attack patterns
-                    if ml_insights['attack_patterns']:
+                    attack_patterns = ml_insights.get('attack_patterns', {})
+                    if attack_patterns:
                         print(f"\n ATTACK PATTERNS DETECTED:")
-                        for pattern, count in sorted(ml_insights['attack_patterns'].items(), key=lambda x: x[1], reverse=True):
+                        for pattern, count in sorted(attack_patterns.items(), key=lambda x: x[1], reverse=True):
                             print(f"   • {pattern}: {count} occurrences")
                     
                     # Top anomalies
-                    if ml_insights['anomalies']:
+                    anomalies = ml_insights.get('anomalies', [])
+                    if anomalies:
                         print(f"\n TOP ANOMALIES:")
-                        for i, anomaly in enumerate(ml_insights['anomalies'][:5], 1):
-                            risk_emoji = "High" if anomaly['risk_level'] == 'high' else "Low"
-                            print(f"   {i}. {risk_emoji} Score: {anomaly['anomaly_score']:.3f} | Session: {anomaly['session_id']}")
-                            print(f"       {anomaly['message']}")
-                            if anomaly['ml_labels']:
-                                print(f"      Labels: {', '.join(anomaly['ml_labels'])}")
+                        for i, anomaly in enumerate(anomalies[:5], 1):
+                            risk_emoji = "High" if anomaly.get('risk_level') == 'high' else "Medium" if anomaly.get('risk_level') == 'medium' else "Low"
+                            print(f"   {i}. {risk_emoji} Score: {anomaly.get('anomaly_score', 0):.3f} | Session: {anomaly.get('session_id', 'N/A')}")
+                            print(f"       {anomaly.get('message', 'N/A')}")
+                            ml_labels = anomaly.get('ml_labels', [])
+                            if ml_labels:
+                                print(f"      Labels: {', '.join(ml_labels)}")
                 else:
                     print(" ML analysis not available")
                 
@@ -756,8 +885,15 @@ def main():
         output = viewer.format_conversation(conversations, args.format, args.conversation, include_ml)
         
         if args.save:
-            saved_path = viewer.save_conversation(output, args.save)
-            print(f"Conversation saved to: {saved_path}")
+            saved_paths = viewer.save_conversation(
+                output, args.save, 
+                format_type=args.format,
+                conversations=conversations if args.format == 'both' else None,
+                include_ml=include_ml
+            )
+            # Print saved paths
+            for fmt, path in saved_paths.items():
+                print(f"[SAVED] {fmt.upper()} file: {path}")
         else:
             # Handle encoding issues on Windows
             try:

@@ -76,9 +76,9 @@ class NexusCLI:
                                help='Decode base64 encoded details')
         logs_parser.add_argument('--conversation', '-c', action='store_true',
                                help='Show full conversation format')
-        logs_parser.add_argument('--save', '-s', help='Save analysis to file (absolute or relative path)')
-        logs_parser.add_argument('--format', choices=['text', 'json'], default='text',
-                               help='Output format (text or json)')
+        logs_parser.add_argument('--save', '-s', help='Save analysis to file or directory (dynamic filename generated if directory)')
+        logs_parser.add_argument('--format', choices=['text', 'json', 'both'], default='text',
+                               help='Output format (text, json, or both for dual output)')
         logs_parser.add_argument('--filter', choices=['all', 'commands', 'responses', 'attacks', 'anomalies'],
                                default='all', help='Filter log entries')
         
@@ -853,28 +853,38 @@ except Exception as e:
         if args.session_id:
             cmd.extend(['--session-id', args.session_id])
         if args.log_file:
-            # Validate and sanitize log file path to prevent path traversal
-            log_path = Path(args.log_file).resolve()
-            try:
-                log_path.relative_to(Path.cwd())
-                cmd.extend(['--log-file', str(log_path)])
-            except ValueError:
-                print(f"[ERROR] Log file path must be within current directory")
-                return 1
+            # Allow any log file path - no path restriction needed for reading logs
+            log_path = Path(args.log_file)
+            if not log_path.is_absolute():
+                log_path = Path.cwd() / log_path
+            cmd.extend(['--log-file', str(log_path.resolve())])
         if args.decode:
             cmd.append('--decode')
         if args.conversation:
             cmd.append('--conversation')
         if args.save:
-            # Validate and sanitize save path to prevent path traversal
-            save_path = Path(args.save).resolve()
-            # Ensure the path is within current directory or subdirectories
-            try:
-                save_path.relative_to(Path.cwd())
-                cmd.extend(['--save', str(save_path)])
-            except ValueError:
-                print(f"[ERROR] Save path must be within current directory")
-                return 1
+            # Allow saving to any directory - generate dynamic filename if needed
+            save_path = Path(args.save)
+            if not save_path.is_absolute():
+                save_path = Path.cwd() / save_path
+            
+            # If it's a directory or ends with separator, generate dynamic filename
+            if save_path.is_dir() or str(args.save).endswith(('/', '\\')):
+                save_path.mkdir(parents=True, exist_ok=True)
+                import datetime
+                timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
+                base_filename = f"{args.service}_logs_{timestamp}"
+                
+                if args.format == 'both':
+                    # For 'both' format, pass directory and let log_viewer handle it
+                    cmd.extend(['--save', str(save_path / base_filename)])
+                else:
+                    ext = 'json' if args.format == 'json' else 'txt'
+                    cmd.extend(['--save', str(save_path / f"{base_filename}.{ext}")])
+            else:
+                # Ensure parent directory exists
+                save_path.parent.mkdir(parents=True, exist_ok=True)
+                cmd.extend(['--save', str(save_path.resolve())])
         if args.format:
             cmd.extend(['--format', args.format])
         if args.filter:
