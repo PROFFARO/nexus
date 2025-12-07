@@ -165,21 +165,74 @@ class MySQLAnalyzer(ProtocolAnalyzer):
             'client_ip': log_entry.get('client_ip', log_entry.get('src_ip', 'unknown')),
             'src_port': log_entry.get('src_port'),
             'dst_port': log_entry.get('dst_port'),
+            'session_id': log_entry.get('session_id', ''),
+            'query_type': log_entry.get('query_type', ''),
         }
         
+        # Extract LLM response details
+        if 'llm_response' in log_entry:
+            details['llm_response'] = log_entry['llm_response']
+            details['model'] = log_entry.get('model', '')
+        
+        # Extract ML analysis details
+        if 'ml_anomaly_score' in log_entry:
+            details['ml_anomaly_score'] = log_entry['ml_anomaly_score']
+            details['ml_labels'] = log_entry.get('ml_labels', [])
+            details['ml_reason'] = log_entry.get('ml_reason', '')
+        
+        # Extract attack details
         if 'attack_types' in log_entry:
             details['attack_types'] = log_entry['attack_types']
             details['severity'] = log_entry.get('severity', 'unknown')
+            details['threat_score'] = log_entry.get('threat_score', 0)
             details['indicators'] = log_entry.get('indicators', [])
+        
+        # Extract vulnerability details
+        if 'vulnerability_id' in log_entry:
+            details['vulnerability_id'] = log_entry['vulnerability_id']
+            details['vuln_name'] = log_entry.get('vuln_name', '')
+            details['cvss_score'] = log_entry.get('cvss_score', 0)
         
         return details
     
+    def categorize_entry(self, message: str, log_entry: Dict[str, Any]) -> str:
+        """Categorize MySQL log entry (command, response, attack, other)"""
+        message_lower = message.lower()
+        
+        # Attack patterns
+        if 'attack' in message_lower or 'vulnerability' in message_lower:
+            return 'attack'
+        
+        # Query received = command (the attacker's input)
+        if 'query received' in message_lower or 'query_debug' in message_lower:
+            return 'command'
+        
+        # Responses from honeypot
+        if 'llm response' in message_lower or 'response' in message_lower:
+            return 'response'
+        if 'fallback response' in message_lower:
+            return 'response'
+        if 'query completed' in message_lower:
+            return 'response'
+        if 'setup failed' in message_lower:
+            return 'response'
+        
+        return 'other'
+    
     def format_command_details(self, entry: Dict[str, Any]) -> str:
-        """Format MySQL query details"""
+        """Format MySQL query details with full query text"""
         pd = entry.get('protocol_details', {})
-        query = pd.get('query', 'N/A')
-        query_short = (query[:60] + '...') if len(query) > 60 else query
-        return f"  {query_short}"
+        query = pd.get('query', '')
+        
+        if not query:
+            return ""
+        
+        # Show full query (up to 100 chars) - truncate only if very long
+        query_display = query.strip()
+        if len(query_display) > 100:
+            query_display = query_display[:97] + '...'
+        
+        return f"  {query_display}"
 
 
 class SessionReader:
@@ -525,37 +578,86 @@ class LogViewer:
             stats = conv['statistics']
             output.append(f"{BOX_EDGE}    Stats: {stats['total_entries']} entries | {stats['total_commands']} commands | {stats['total_responses']} responses | {stats['total_attacks']} attacks{' '*30}  {BOX_EDGE}")
             
-            # Command Timeline (FULL - no truncation)
-            if conv['commands']:
+            # Command Timeline - only show commands with actual query/command content
+            commands_with_content = [cmd for cmd in conv['commands'] 
+                                     if cmd.get('protocol_details', {}).get('query', '').strip()]
+            if commands_with_content:
                 output.append(SECTION_DIV)
-                output.append(f"{BOX_EDGE}    COMMAND TIMELINE ({len(conv['commands'])} commands):{' '*70}  {BOX_EDGE}")
-                for i, cmd in enumerate(conv['commands'], 1):
+                output.append(f"{BOX_EDGE}    QUERY TIMELINE ({len(commands_with_content)} queries):{' '*70}  {BOX_EDGE}")
+                for i, cmd in enumerate(commands_with_content, 1):
                     ts = cmd.get('timestamp', '')[:19]
-                    details = self.analyzer.format_command_details(cmd)
-                    # Detect attack indicator
-                    attack_indicator = ""
                     pd = cmd.get('protocol_details', {})
+                    query = pd.get('query', '').strip()
+                    query_type = pd.get('query_type', '')
+                    
+                    # Show query with type indicator
+                    if len(query) > 90:
+                        query = query[:87] + '...'
+                    
+                    # Detect attack indicator from ML or attack types
+                    attack_indicator = ""
                     if pd.get('attack_types'):
                         attack_indicator = " [!ATTACK]"
+                    elif pd.get('severity') in ['critical', 'high']:
+                        attack_indicator = " [!]"
                     
-                    line = f"      {i:>3}. [{ts}]{details}{attack_indicator}"
+                    line = f"      {i:>3}. [{ts}] {query}{attack_indicator}"
                     output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                    
+                    # Show ML analysis if present
+                    if show_full and pd.get('ml_anomaly_score'):
+                        ml_line = f"           ML Score: {pd['ml_anomaly_score']:.3f} | Labels: {', '.join(pd.get('ml_labels', []))}"
+                        output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
             
-            # Responses (FULL - no truncation, with --conversation flag shows content)
+            # Responses - show with LLM response content
             if conv['responses']:
                 output.append(SECTION_DIV)
-                output.append(f"{BOX_EDGE}    RESPONSES ({len(conv['responses'])} total):{' '*77}  {BOX_EDGE}")
-                for i, resp in enumerate(conv['responses'], 1):
-                    ts = resp.get('timestamp', '')[:19]
-                    msg = resp.get('message', '')[:80]
-                    line = f"      {i:>3}. [{ts}] {msg}"
-                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                # Filter to only show meaningful responses (LLM responses or query completed with data)
+                meaningful_responses = [r for r in conv['responses'] 
+                                        if 'llm response' in r.get('message', '').lower() 
+                                        or r.get('protocol_details', {}).get('llm_response')]
+                
+                if meaningful_responses:
+                    output.append(f"{BOX_EDGE}    LLM RESPONSES ({len(meaningful_responses)} total):{' '*70}  {BOX_EDGE}")
+                    for i, resp in enumerate(meaningful_responses, 1):
+                        ts = resp.get('timestamp', '')[:19]
+                        pd = resp.get('protocol_details', {})
+                        llm_resp = pd.get('llm_response', '')
+                        model = pd.get('model', '')
+                        query = pd.get('query', '')[:40]
+                        
+                        # First line - query and model
+                        line = f"      {i:>3}. [{ts}] Query: {query}"
+                        if model:
+                            line += f" (Model: {model})"
+                        output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                        
+                        # Show LLM response preview
+                        if llm_resp:
+                            resp_preview = llm_resp.replace('\n', ' ')[:100]
+                            if len(llm_resp) > 100:
+                                resp_preview += '...'
+                            line2 = f"           Response: {resp_preview}"
+                            output.append(f"{BOX_EDGE}{line2[:116]:<116}  {BOX_EDGE}")
+                else:
+                    # Show all responses if no LLM responses
+                    output.append(f"{BOX_EDGE}    RESPONSES ({len(conv['responses'])} total):{' '*77}  {BOX_EDGE}")
+                    for i, resp in enumerate(conv['responses'][:20], 1):  # Limit to 20
+                        ts = resp.get('timestamp', '')[:19]
+                        msg = resp.get('message', '')[:80]
+                        line = f"      {i:>3}. [{ts}] {msg}"
+                        output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                    
+                    if len(conv['responses']) > 20:
+                        output.append(f"{BOX_EDGE}           ... and {len(conv['responses']) - 20} more responses{' '*70}  {BOX_EDGE}")
                     
                     # Show decoded details if available and full mode enabled
-                    if show_full and resp.get('decoded_details'):
-                        decoded_lines = resp['decoded_details'][:200].split('\n')
-                        for dl in decoded_lines[:3]:
-                            output.append(f"{BOX_EDGE}           {dl[:104]:<104}  {BOX_EDGE}")
+                    if show_full:
+                        for resp in conv['responses'][:5]:
+                            if resp.get('decoded_details'):
+                                decoded_lines = resp['decoded_details'][:200].split('\n')
+                                for dl in decoded_lines[:3]:
+                                    output.append(f"{BOX_EDGE}           {dl[:104]:<104}  {BOX_EDGE}")
             
             # Attacks (FULL with severity indicators)
             if conv['attacks']:
@@ -640,15 +742,35 @@ class LogViewer:
                     }
                     for e in conv['entries']
                 ],
-                'commands': len(conv['commands']),
-                'responses': len(conv['responses']),
+                'commands': [
+                    {
+                        'timestamp': c.get('timestamp'),
+                        'query': c.get('protocol_details', {}).get('query', ''),
+                        'query_type': c.get('protocol_details', {}).get('query_type', ''),
+                        'username': c.get('protocol_details', {}).get('username', ''),
+                    }
+                    for c in conv['commands']
+                ],
+                'responses': [
+                    {
+                        'timestamp': r.get('timestamp'),
+                        'message': r.get('message', ''),
+                        'llm_response': r.get('protocol_details', {}).get('llm_response', ''),
+                        'model': r.get('protocol_details', {}).get('model', ''),
+                    }
+                    for r in conv['responses']
+                ],
                 'attacks': [
                     {
                         'timestamp': a.get('timestamp'),
                         'message': a.get('message'),
+                        'query': a.get('protocol_details', {}).get('query', ''),
                         'attack_types': a.get('raw', {}).get('attack_types', []),
                         'severity': a.get('raw', {}).get('severity'),
-                        'indicators': a.get('raw', {}).get('indicators', [])[:3],
+                        'threat_score': a.get('raw', {}).get('threat_score', 0),
+                        'indicators': a.get('raw', {}).get('indicators', []),
+                        'vulnerability_id': a.get('protocol_details', {}).get('vulnerability_id', ''),
+                        'cvss_score': a.get('protocol_details', {}).get('cvss_score', 0),
                     }
                     for a in conv['attacks']
                 ]

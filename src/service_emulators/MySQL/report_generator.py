@@ -20,13 +20,27 @@ except ImportError as e:
     ML_AVAILABLE = False
     print(f"Warning: ML components not available for MYSQL report generation: {e}")
 
+# Import LLM components for AI-generated insights
+LLM_AVAILABLE = False
+try:
+    from langchain_openai import ChatOpenAI
+    from langchain_google_genai import ChatGoogleGenerativeAI
+    from langchain_ollama import ChatOllama
+    from dotenv import load_dotenv
+    load_dotenv()
+    LLM_AVAILABLE = True
+except ImportError:
+    pass  # LLM features will use rule-based fallback
+
 
 class MySQLHoneypotReportGenerator:
     """Generate comprehensive security reports for MySQL honeypot with modern UI/UX"""
     
-    def __init__(self, sessions_dir: str, logs_dir: str = None):
+    def __init__(self, sessions_dir: str, logs_dir: str = None, ai_provider: str = 'ollama', ai_model: str = None):
         self.sessions_dir = Path(sessions_dir)
         self.logs_dir = Path(logs_dir) if logs_dir else None
+        self.ai_provider = ai_provider
+        self.ai_model = ai_model
         
         # Initialize ML detector for enhanced analysis
         self.ml_detector = None
@@ -133,10 +147,11 @@ class MySQLHoneypotReportGenerator:
             if not session_dir.is_dir():
                 continue
             
-            # Try multiple session file names for compatibility
+            # Try multiple session file names - prefer session_data.json for queries
+            # session_summary.json often has empty queries while session_data.json has actual data
             session_files = [
-                session_dir / "session_summary.json",
-                session_dir / "session_data.json"
+                session_dir / "session_data.json",  # Prioritize - usually has queries
+                session_dir / "session_summary.json"
             ]
             
             session_data = None
@@ -144,8 +159,17 @@ class MySQLHoneypotReportGenerator:
                 if session_file.exists():
                     try:
                         with open(session_file, 'r', encoding='utf-8') as f:
-                            session_data = json.load(f)
-                        break
+                            file_data = json.load(f)
+                        
+                        if session_data is None:
+                            session_data = file_data
+                        else:
+                            # Merge: prefer queries from file that has them
+                            if file_data.get('queries') and len(file_data.get('queries', [])) > len(session_data.get('queries', [])):
+                                session_data['queries'] = file_data['queries']
+                            # Also merge attack_analysis if present
+                            if file_data.get('attack_analysis') and not session_data.get('attack_analysis'):
+                                session_data['attack_analysis'] = file_data['attack_analysis']
                     except Exception as e:
                         print(f"Warning: Could not read session file {session_file}: {e}")
                         continue
@@ -531,11 +555,11 @@ class MySQLHoneypotReportGenerator:
         return analysis
     
     def _generate_enhanced_analysis(self):
-        """Generate enhanced analysis combining session and log data"""
+        """Generate enhanced analysis combining session and log data with AI insights"""
         sessions = self.report_data['session_details']
         log_analysis = self.report_data.get('log_analysis', {})
         
-        # Executive Summary
+        # Executive Summary - Core Statistics
         self.report_data['executive_summary'] = {
             'total_sessions': len(sessions),
             'total_queries': self.report_data['metadata']['total_queries'],
@@ -546,6 +570,12 @@ class MySQLHoneypotReportGenerator:
             'critical_events': len([e for e in log_analysis.get('timeline', []) if e.get('level') == 'CRITICAL']),
             'warning_events': len([e for e in log_analysis.get('timeline', []) if e.get('level') == 'WARNING'])
         }
+        
+        # Generate AI-powered executive summary
+        self.report_data['executive_summary']['ai_summary'] = self._generate_ai_executive_summary()
+        
+        # Generate risk assessment
+        self.report_data['executive_summary']['risk_assessment'] = self._calculate_risk_assessment()
         
         # Threat Intelligence
         attack_patterns = log_analysis.get('attack_patterns', Counter())
@@ -563,7 +593,7 @@ class MySQLHoneypotReportGenerator:
         # Merge attacker data from logs with session data
         self._merge_log_attacker_data()
         
-        # Generate recommendations
+        # Generate recommendations (now with AI enhancement)
         self.report_data['recommendations'] = self._generate_recommendations()
     
     def _analyze_vulnerability_trends(self, sessions: List[Dict]) -> Dict:
@@ -713,6 +743,228 @@ class MySQLHoneypotReportGenerator:
         
         return recommendations
     
+    def _generate_ai_executive_summary(self) -> Dict[str, Any]:
+        """Generate AI-powered executive summary using LLM or rule-based fallback"""
+        summary = self.report_data.get('executive_summary', {})
+        attack_analysis = self.report_data.get('attack_analysis', {})
+        
+        # Build context from actual data
+        context = self._build_summary_context(summary, attack_analysis)
+        
+        # Try LLM-based generation if available
+        if LLM_AVAILABLE:
+            try:
+                ai_summary = self._generate_llm_summary(context)
+                return {
+                    'ai_generated': True,
+                    'content': ai_summary,
+                    'generated_at': datetime.now(timezone.utc).isoformat()
+                }
+            except Exception as e:
+                print(f"LLM summary generation failed, using fallback: {e}")
+        
+        # Rule-based fallback
+        return {
+            'ai_generated': False,
+            'content': self._generate_rule_based_summary(summary, attack_analysis),
+            'generated_at': datetime.now(timezone.utc).isoformat()
+        }
+    
+    def _build_summary_context(self, summary: Dict, attack_analysis: Dict) -> str:
+        """Build context string for LLM summary generation"""
+        attack_types = attack_analysis.get('attack_types', {})
+        severity_dist = attack_analysis.get('severity_distribution', {})
+        
+        return f"""
+MySQL Honeypot Security Analysis Data:
+- Total Sessions: {summary.get('total_sessions', 0)}
+- Total Queries: {summary.get('total_queries', 0)}
+- Attack Sessions: {summary.get('attack_sessions', 0)}
+- Unique Attackers: {summary.get('unique_attackers', 0)}
+- Critical Events: {summary.get('critical_events', 0)}
+- High Risk Sessions: {summary.get('high_risk_sessions', 0)}
+
+Attack Types Detected:
+{chr(10).join(f'  - {k}: {v}' for k, v in attack_types.items()) if attack_types else '  None detected'}
+
+Severity Distribution:
+{chr(10).join(f'  - {k}: {v}' for k, v in severity_dist.items()) if severity_dist else '  None recorded'}
+"""
+    
+    def _generate_llm_summary(self, context: str) -> str:
+        """Generate summary using LLM"""
+        prompt = f"""You are a cybersecurity analyst writing an executive summary for a MySQL honeypot security report.
+
+Based on the following data, write a concise 2-3 paragraph executive summary highlighting:
+1. Overall threat landscape and attack volume
+2. Most significant attack types and their severity
+3. Key findings that require attention
+
+Data:
+{context}
+
+Write the summary in a professional, factual tone. Focus only on the data provided - do not make up statistics."""
+        
+        model = self.ai_model  # Use configured model or None for defaults
+        
+        # Use configured provider priority
+        if self.ai_provider == 'ollama':
+            try:
+                llm = ChatOllama(model=model or "llama3.2", temperature=0.3)
+                response = llm.invoke(prompt)
+                return response.content if hasattr(response, 'content') else str(response)
+            except Exception:
+                pass
+        
+        elif self.ai_provider == 'openai':
+            openai_key = os.getenv("OPENAI_API_KEY")
+            if openai_key:
+                try:
+                    llm = ChatOpenAI(model=model or "gpt-4o-mini", temperature=0.3, api_key=openai_key)
+                    response = llm.invoke(prompt)
+                    return response.content if hasattr(response, 'content') else str(response)
+                except Exception:
+                    pass
+        
+        elif self.ai_provider == 'google':
+            google_key = os.getenv("GOOGLE_API_KEY")
+            if google_key:
+                try:
+                    llm = ChatGoogleGenerativeAI(model=model or "gemini-1.5-flash", temperature=0.3, google_api_key=google_key)
+                    response = llm.invoke(prompt)
+                    return response.content if hasattr(response, 'content') else str(response)
+                except Exception:
+                    pass
+        
+        # Fallback chain if primary provider fails
+        providers = [
+            ('ollama', lambda: ChatOllama(model=model or "llama3.2", temperature=0.3)),
+            ('openai', lambda: ChatOpenAI(model=model or "gpt-4o-mini", temperature=0.3, api_key=os.getenv("OPENAI_API_KEY")) if os.getenv("OPENAI_API_KEY") else None),
+            ('google', lambda: ChatGoogleGenerativeAI(model=model or "gemini-1.5-flash", temperature=0.3, google_api_key=os.getenv("GOOGLE_API_KEY")) if os.getenv("GOOGLE_API_KEY") else None)
+        ]
+        
+        for name, factory in providers:
+            if name == self.ai_provider:
+                continue  # Already tried
+            try:
+                llm = factory()
+                if llm:
+                    response = llm.invoke(prompt)
+                    return response.content if hasattr(response, 'content') else str(response)
+            except Exception:
+                pass
+        
+        raise Exception("No LLM provider available")
+    
+    def _generate_rule_based_summary(self, summary: Dict, attack_analysis: Dict) -> str:
+        """Generate summary using rules when LLM unavailable"""
+        total_sessions = summary.get('total_sessions', 0)
+        total_queries = summary.get('total_queries', 0)
+        attack_sessions = summary.get('attack_sessions', 0)
+        unique_attackers = summary.get('unique_attackers', 0)
+        critical_events = summary.get('critical_events', 0)
+        
+        attack_types = attack_analysis.get('attack_types', {})
+        severity_dist = attack_analysis.get('severity_distribution', {})
+        
+        lines = []
+        
+        # Overview paragraph
+        if total_sessions > 0:
+            attack_rate = (attack_sessions / total_sessions * 100) if total_sessions > 0 else 0
+            lines.append(f"During the analysis period, the MySQL honeypot captured {total_sessions} sessions from {unique_attackers} unique IP addresses, processing a total of {total_queries} queries.")
+            
+            if attack_sessions > 0:
+                lines.append(f" Of these, {attack_sessions} sessions ({attack_rate:.1f}%) contained potentially malicious activity.")
+            else:
+                lines.append(" No malicious activity was detected during this period.")
+        else:
+            lines.append("No sessions were captured during the analysis period.")
+        
+        # Attack analysis paragraph
+        if attack_types:
+            top_attack = max(attack_types.items(), key=lambda x: x[1])
+            lines.append(f"\n\nThe most prevalent attack type was '{top_attack[0].replace('_', ' ')}' with {top_attack[1]} occurrences.")
+            
+            critical_count = severity_dist.get('critical', 0)
+            high_count = severity_dist.get('high', 0)
+            if critical_count > 0 or high_count > 0:
+                lines.append(f" There were {critical_count} critical and {high_count} high-severity events requiring immediate attention.")
+        
+        # Risk assessment
+        if critical_events > 0:
+            lines.append("\n\nImmediate action is recommended to investigate the critical events detected. Consider implementing additional security controls and monitoring.")
+        elif attack_sessions > 0:
+            lines.append("\n\nContinued monitoring is recommended. Review the attack patterns to strengthen detection and prevention measures.")
+        
+        return "".join(lines)
+    
+    def _calculate_risk_assessment(self) -> Dict[str, Any]:
+        """Calculate overall risk assessment based on collected data"""
+        summary = self.report_data.get('executive_summary', {})
+        attack_analysis = self.report_data.get('attack_analysis', {})
+        
+        # Extract metrics
+        total_sessions = summary.get('total_sessions', 0)
+        attack_sessions = summary.get('attack_sessions', 0)
+        critical_events = summary.get('critical_events', 0)
+        high_risk_sessions = summary.get('high_risk_sessions', 0)
+        
+        severity_dist = attack_analysis.get('severity_distribution', {})
+        critical_count = severity_dist.get('critical', 0)
+        high_count = severity_dist.get('high', 0)
+        
+        # Calculate risk score (0-100)
+        risk_score = 0
+        
+        # Attack rate contribution (max 30)
+        if total_sessions > 0:
+            attack_rate = attack_sessions / total_sessions
+            risk_score += min(30, attack_rate * 60)
+        
+        # Critical events contribution (max 30)
+        risk_score += min(30, critical_count * 5)
+        
+        # High severity contribution (max 20)
+        risk_score += min(20, high_count * 2)
+        
+        # High risk sessions contribution (max 20)
+        risk_score += min(20, high_risk_sessions * 3)
+        
+        risk_score = min(100, max(0, risk_score))
+        
+        # Determine risk level
+        if risk_score >= 70:
+            risk_level = 'critical'
+            color = '#dc3545'
+            recommendation = 'Immediate action required. Review all critical events and implement emergency security measures.'
+        elif risk_score >= 50:
+            risk_level = 'high'
+            color = '#fd7e14'
+            recommendation = 'Elevated risk detected. Prioritize addressing high-severity findings.'
+        elif risk_score >= 30:
+            risk_level = 'medium'
+            color = '#ffc107'
+            recommendation = 'Moderate risk level. Continue monitoring and address recommendations.'
+        else:
+            risk_level = 'low'
+            color = '#28a745'
+            recommendation = 'Risk within acceptable parameters. Maintain current security posture.'
+        
+        return {
+            'risk_score': round(risk_score, 1),
+            'risk_level': risk_level,
+            'color': color,
+            'recommendation': recommendation,
+            'contributing_factors': {
+                'attack_rate': round((attack_sessions / total_sessions * 100) if total_sessions > 0 else 0, 1),
+                'critical_events': critical_count,
+                'high_severity_events': high_count,
+                'high_risk_sessions': high_risk_sessions
+            }
+        }
+
+    
     def _generate_html_report(self) -> str:
         """Generate modern HTML report with advanced UI/UX matching other services"""
         return self._build_complete_html_template()
@@ -728,6 +980,22 @@ class MySQLHoneypotReportGenerator:
         recommendations = self.report_data.get('recommendations', [])
         sessions = self.report_data.get('session_details', [])
         log_analysis = self.report_data.get('log_analysis', {})
+        
+        # Extract AI summary and risk assessment values (avoid {{}} issues in f-strings)
+        ai_summary = summary.get('ai_summary', {})
+        ai_summary_content = ai_summary.get('content', 'Summary generation in progress...')
+        
+        risk_assessment = summary.get('risk_assessment', {})
+        risk_score = risk_assessment.get('risk_score', 0)
+        risk_level = risk_assessment.get('risk_level', 'low')
+        risk_color = risk_assessment.get('color', '#28a745')
+        risk_recommendation = risk_assessment.get('recommendation', 'Risk assessment pending.')
+        
+        contributing_factors = risk_assessment.get('contributing_factors', {})
+        attack_rate = contributing_factors.get('attack_rate', 0)
+        critical_events_count = contributing_factors.get('critical_events', 0)
+        high_severity_count = contributing_factors.get('high_severity_events', 0)
+        high_risk_sessions_count = contributing_factors.get('high_risk_sessions', 0)
         
         # Generate data sections
         attackers_rows = self._generate_attackers_table()
@@ -746,6 +1014,7 @@ class MySQLHoneypotReportGenerator:
     <title>NEXUS MySQL Security Analysis Report</title>
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
     <style>
         :root {{
             --primary-color: #0ea5e9;
@@ -1203,6 +1472,68 @@ class MySQLHoneypotReportGenerator:
                     </div>
                 </div>
 
+                <!-- AI Executive Summary Section -->
+                <div style="background: linear-gradient(135deg, #1e293b 0%, #334155 100%); padding: 25px; border-radius: 12px; margin-bottom: 30px; color: white; position: relative; overflow: hidden;">
+                    <div style="position: absolute; top: -50px; right: -50px; width: 150px; height: 150px; background: rgba(14, 165, 233, 0.1); border-radius: 50%;"></div>
+                    <div style="position: absolute; bottom: -30px; left: -30px; width: 100px; height: 100px; background: rgba(16, 185, 129, 0.1); border-radius: 50%;"></div>
+                    <h3 style="margin-bottom: 15px; display: flex; align-items: center; gap: 10px;">
+                        <i class="fas fa-robot" style="color: #38bdf8;"></i> 
+                        AI-Generated Executive Summary
+                        <span style="font-size: 0.75rem; background: {self._get_ai_badge_color()}; padding: 4px 8px; border-radius: 4px; font-weight: 500;">
+                            {self._get_ai_badge_text()}
+                        </span>
+                    </h3>
+                    <p style="line-height: 1.8; margin: 0; opacity: 0.95;">{ai_summary_content}</p>
+                </div>
+
+                <!-- Risk Assessment Gauge -->
+                <div style="display: grid; grid-template-columns: 300px 1fr; gap: 30px; margin-bottom: 30px;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md); text-align: center;">
+                        <h4 style="margin-bottom: 20px; color: var(--text-secondary);"><i class="fas fa-tachometer-alt"></i> Risk Score</h4>
+                        <div style="position: relative; width: 150px; height: 150px; margin: 0 auto;">
+                            <svg viewBox="0 0 100 100" style="transform: rotate(-90deg);">
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="#e2e8f0" stroke-width="10"/>
+                                <circle cx="50" cy="50" r="45" fill="none" stroke="{risk_color}" 
+                                        stroke-width="10" stroke-linecap="round"
+                                        stroke-dasharray="{risk_score * 2.83} 283"
+                                        style="transition: stroke-dasharray 1s ease-in-out;"/>
+                            </svg>
+                            <div style="position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%); text-align: center;">
+                                <div style="font-size: 2rem; font-weight: 700; color: {risk_color};">
+                                    {risk_score}
+                                </div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">/ 100</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 15px; font-weight: 600; color: {risk_color}; text-transform: uppercase; letter-spacing: 1px;">
+                            {risk_level.upper()} RISK
+                        </div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                        <h4 style="margin-bottom: 15px;"><i class="fas fa-clipboard-check"></i> Risk Assessment</h4>
+                        <p style="margin-bottom: 20px; color: var(--text-secondary);">{risk_recommendation}</p>
+                        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">Attack Rate</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;">{attack_rate}%</div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">Critical Events</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;">{critical_events_count}</div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">High Severity</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;">{high_severity_count}</div>
+                            </div>
+                            <div style="background: #f8fafc; padding: 12px; border-radius: 8px;">
+                                <div style="font-size: 0.875rem; color: var(--text-secondary);">High Risk Sessions</div>
+                                <div style="font-size: 1.25rem; font-weight: 600;">{high_risk_sessions_count}</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+
                 <!-- Key Metrics Grid -->
                 <div class="stats-grid">
                     <div class="stat-card">
@@ -1249,19 +1580,20 @@ class MySQLHoneypotReportGenerator:
                         </table>
                     </div>
                     <div>
-                        <h3><i class="fas fa-chart-bar"></i> Attack Distribution</h3>
-                        <table class="data-table">
-                            <thead>
-                                <tr>
-                                    <th>Attack Type</th>
-                                    <th>Count</th>
-                                    <th>Percentage</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {attacks_rows}
-                            </tbody>
-                        </table>
+                        <h3><i class="fas fa-chart-pie"></i> Attack Distribution</h3>
+                        <div id="attack-distribution-chart" style="min-height: 300px;"></div>
+                    </div>
+                </div>
+
+                <!-- Interactive Charts Row -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 30px; margin-bottom: 30px;">
+                    <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: var(--shadow-sm);">
+                        <h4><i class="fas fa-chart-bar"></i> Severity Distribution</h4>
+                        <div id="severity-chart" style="min-height: 280px;"></div>
+                    </div>
+                    <div style="background: white; padding: 20px; border-radius: 12px; box-shadow: var(--shadow-sm);">
+                        <h4><i class="fas fa-clock"></i> Hourly Activity Pattern</h4>
+                        <div id="hourly-chart" style="min-height: 280px;"></div>
                     </div>
                 </div>
 
@@ -1410,7 +1742,7 @@ class MySQLHoneypotReportGenerator:
                             </tr>
                         </thead>
                         <tbody>
-                            {self._generate_ml_query_anomalies_table()}
+                            {self._generate_ml_anomalies_table()}
                         </tbody>
                     </table>
                 </div>
@@ -1509,9 +1841,98 @@ class MySQLHoneypotReportGenerator:
             }}
         }}
         
-        // Initialize the report
+        // Initialize ApexCharts
         document.addEventListener('DOMContentLoaded', function() {{
-            console.log('MySQL Security Report loaded');
+            console.log('MySQL Security Report loaded - Initializing charts');
+            
+            // Attack Distribution Donut Chart
+            const attackData = {self._generate_attack_chart_data()};
+            if (attackData.series.length > 0) {{
+                new ApexCharts(document.querySelector("#attack-distribution-chart"), {{
+                    series: attackData.series,
+                    labels: attackData.labels,
+                    chart: {{
+                        type: 'donut',
+                        height: 300,
+                        animations: {{
+                            enabled: true,
+                            easing: 'easeinout',
+                            speed: 800,
+                            animateGradually: {{ enabled: true, delay: 150 }}
+                        }}
+                    }},
+                    colors: ['#ef4444', '#f59e0b', '#10b981', '#0ea5e9', '#8b5cf6', '#ec4899'],
+                    plotOptions: {{
+                        pie: {{
+                            donut: {{
+                                size: '65%',
+                                labels: {{
+                                    show: true,
+                                    total: {{
+                                        show: true,
+                                        label: 'Total Attacks',
+                                        fontSize: '14px',
+                                        fontWeight: 600
+                                    }}
+                                }}
+                            }}
+                        }}
+                    }},
+                    legend: {{ position: 'bottom' }},
+                    dataLabels: {{ enabled: true, formatter: (val) => val.toFixed(1) + '%' }}
+                }}).render();
+            }}
+            
+            // Severity Distribution Bar Chart
+            const severityData = {self._generate_severity_chart_data()};
+            if (severityData.series.length > 0) {{
+                new ApexCharts(document.querySelector("#severity-chart"), {{
+                    series: [{{ name: 'Count', data: severityData.series }}],
+                    chart: {{
+                        type: 'bar',
+                        height: 280,
+                        animations: {{ enabled: true, easing: 'easeinout', speed: 600 }}
+                    }},
+                    colors: ['#ef4444', '#fd7e14', '#ffc107', '#28a745'],
+                    plotOptions: {{
+                        bar: {{
+                            horizontal: false,
+                            borderRadius: 8,
+                            columnWidth: '60%'
+                        }}
+                    }},
+                    xaxis: {{ categories: severityData.labels }},
+                    dataLabels: {{ enabled: true }}
+                }}).render();
+            }}
+            
+            // Hourly Activity Area Chart
+            const hourlyData = {self._generate_hourly_chart_data()};
+            if (hourlyData.series.length > 0) {{
+                new ApexCharts(document.querySelector("#hourly-chart"), {{
+                    series: [{{ name: 'Sessions', data: hourlyData.series }}],
+                    chart: {{
+                        type: 'area',
+                        height: 280,
+                        animations: {{ enabled: true, easing: 'easeinout', speed: 800 }},
+                        toolbar: {{ show: false }}
+                    }},
+                    colors: ['#0ea5e9'],
+                    fill: {{
+                        type: 'gradient',
+                        gradient: {{
+                            shadeIntensity: 1,
+                            opacityFrom: 0.7,
+                            opacityTo: 0.2,
+                            stops: [0, 90, 100]
+                        }}
+                    }},
+                    stroke: {{ curve: 'smooth', width: 3 }},
+                    xaxis: {{ categories: hourlyData.labels, title: {{ text: 'Hour of Day' }} }},
+                    yaxis: {{ title: {{ text: 'Sessions' }} }},
+                    dataLabels: {{ enabled: false }}
+                }}).render();
+            }}
         }});
     </script>
 </body>
@@ -2006,17 +2427,84 @@ class MySQLHoneypotReportGenerator:
         return "".join(rows)
     
     def _get_ml_metric(self, metric_name: str) -> str:
-        """Get ML performance metric"""
+        """Get dynamically computed ML performance metrics from session data"""
+        sessions = self.report_data.get('session_details', [])
+        
+        # Collect actual ML results from sessions
+        total_predictions = 0
+        true_positives = 0
+        false_positives = 0
+        true_negatives = 0
+        false_negatives = 0
+        
+        for session in sessions:
+            for query in session.get('queries', []):
+                attack_analysis = query.get('attack_analysis', {})
+                ml_score = attack_analysis.get('ml_anomaly_score', 0)
+                ml_labels = attack_analysis.get('ml_labels', [])
+                actual_attack_types = attack_analysis.get('attack_types', [])
+                
+                if ml_score > 0 or ml_labels:
+                    total_predictions += 1
+                    
+                    # ML predicted anomaly
+                    ml_predicted_attack = ml_score > 0.5 or 'anomaly' in ml_labels or 'high_risk' in ml_labels
+                    # Actually was attack
+                    actual_attack = len(actual_attack_types) > 0
+                    
+                    if ml_predicted_attack and actual_attack:
+                        true_positives += 1
+                    elif ml_predicted_attack and not actual_attack:
+                        false_positives += 1
+                    elif not ml_predicted_attack and not actual_attack:
+                        true_negatives += 1
+                    elif not ml_predicted_attack and actual_attack:
+                        false_negatives += 1
+        
+        # Calculate metrics with safe division
+        if total_predictions == 0:
+            return "N/A"
+        
+        precision = true_positives / (true_positives + false_positives) if (true_positives + false_positives) > 0 else 0
+        recall = true_positives / (true_positives + false_negatives) if (true_positives + false_negatives) > 0 else 0
+        f1 = 2 * (precision * recall) / (precision + recall) if (precision + recall) > 0 else 0
+        
         metrics = {
-            'precision': '0.95',
-            'recall': '0.92', 
-            'f1_score': '0.94',
-            'auc_score': '0.97'
+            'precision': f"{precision:.2f}",
+            'recall': f"{recall:.2f}",
+            'f1_score': f"{f1:.2f}",
+            'auc_score': f"{max(0.5, (precision + recall) / 2):.2f}"
         }
         return metrics.get(metric_name, '0.00')
+
     def _get_ml_accuracy(self) -> str:
-        """Get ML model accuracy"""
-        return "94.2"  # Placeholder - would be from model evaluation
+        """Get ML model accuracy computed from actual predictions"""
+        sessions = self.report_data.get('session_details', [])
+        
+        correct_predictions = 0
+        total_predictions = 0
+        
+        for session in sessions:
+            for query in session.get('queries', []):
+                attack_analysis = query.get('attack_analysis', {})
+                ml_score = attack_analysis.get('ml_anomaly_score', 0)
+                ml_labels = attack_analysis.get('ml_labels', [])
+                actual_attack_types = attack_analysis.get('attack_types', [])
+                
+                if ml_score > 0 or ml_labels:
+                    total_predictions += 1
+                    
+                    ml_predicted_attack = ml_score > 0.5 or 'anomaly' in ml_labels or 'high_risk' in ml_labels
+                    actual_attack = len(actual_attack_types) > 0
+                    
+                    if ml_predicted_attack == actual_attack:
+                        correct_predictions += 1
+        
+        if total_predictions == 0:
+            return "N/A"
+        
+        accuracy = (correct_predictions / total_predictions) * 100
+        return f"{accuracy:.1f}"
     
     def _get_ml_model_status(self, model_type: str) -> str:
         """Get ML model status"""
@@ -2035,8 +2523,22 @@ class MySQLHoneypotReportGenerator:
         return datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')
     
     def _get_avg_inference_time(self) -> str:
-        """Get average ML inference time"""
-        return "12"  # Placeholder - would be calculated from actual metrics
+        """Get average ML inference time computed from actual session data"""
+        sessions = self.report_data.get('session_details', [])
+        inference_times = []
+        
+        for session in sessions:
+            for query in session.get('queries', []):
+                attack_analysis = query.get('attack_analysis', {})
+                inference_time = attack_analysis.get('ml_inference_time_ms')
+                if inference_time is not None and inference_time > 0:
+                    inference_times.append(inference_time)
+        
+        if not inference_times:
+            return "N/A"
+        
+        avg_time = sum(inference_times) / len(inference_times)
+        return f"{avg_time:.1f}"
     
     def _generate_ml_anomalies_table(self) -> str:
         """Generate ML anomalies table from session data"""
@@ -2180,8 +2682,85 @@ class MySQLHoneypotReportGenerator:
             'auc_score': '0.96'
         }
         return metrics.get(metric_name, '0.00')
-
-
+    
+    def _generate_attack_chart_data(self) -> str:
+        """Generate JSON data for attack distribution donut chart"""
+        import json
+        attack_analysis = self.report_data.get('attack_analysis', {})
+        attack_types = attack_analysis.get('attack_types', {})
+        
+        if not attack_types:
+            return json.dumps({'series': [], 'labels': []})
+        
+        # Sort by count and get top 6
+        sorted_attacks = sorted(attack_types.items(), key=lambda x: x[1], reverse=True)[:6]
+        
+        labels = [attack_type.replace('_', ' ').title() for attack_type, _ in sorted_attacks]
+        series = [count for _, count in sorted_attacks]
+        
+        return json.dumps({'series': series, 'labels': labels})
+    
+    def _generate_severity_chart_data(self) -> str:
+        """Generate JSON data for severity distribution bar chart"""
+        import json
+        attack_analysis = self.report_data.get('attack_analysis', {})
+        severity_dist = attack_analysis.get('severity_distribution', {})
+        
+        if not severity_dist:
+            return json.dumps({'series': [], 'labels': []})
+        
+        # Order by severity level
+        severity_order = ['critical', 'high', 'medium', 'low']
+        labels = []
+        series = []
+        
+        for severity in severity_order:
+            if severity in severity_dist:
+                labels.append(severity.title())
+                series.append(severity_dist[severity])
+        
+        return json.dumps({'series': series, 'labels': labels})
+    
+    def _generate_hourly_chart_data(self) -> str:
+        """Generate JSON data for hourly activity area chart"""
+        import json
+        from collections import defaultdict
+        
+        sessions = self.report_data.get('session_details', [])
+        hourly_counts = defaultdict(int)
+        
+        for session in sessions:
+            start_time = session.get('start_time', '')
+            if start_time:
+                try:
+                    # Parse ISO format timestamp
+                    dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
+                    hourly_counts[dt.hour] += 1
+                except Exception:
+                    pass
+        
+        if not hourly_counts:
+            return json.dumps({'series': [], 'labels': []})
+        
+        # Ensure all 24 hours are represented
+        labels = [f'{h:02d}:00' for h in range(24)]
+        series = [hourly_counts.get(h, 0) for h in range(24)]
+        
+        return json.dumps({'series': series, 'labels': labels})
+    
+    def _get_ai_badge_text(self) -> str:
+        """Get badge text for AI summary section"""
+        ai_summary = self.report_data.get('executive_summary', {}).get('ai_summary', {})
+        if ai_summary.get('ai_generated', False):
+            return 'AI Generated'
+        return 'Rule-Based'
+    
+    def _get_ai_badge_color(self) -> str:
+        """Get badge color for AI summary section"""
+        ai_summary = self.report_data.get('executive_summary', {}).get('ai_summary', {})
+        if ai_summary.get('ai_generated', False):
+            return 'rgba(16, 185, 129, 0.3)'  # Green for AI
+        return 'rgba(245, 158, 11, 0.3)'  # Orange for rule-based
 
 if __name__ == "__main__":
     import sys

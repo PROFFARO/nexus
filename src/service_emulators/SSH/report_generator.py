@@ -1717,11 +1717,12 @@ HTML_TEMPLATE = """<!DOCTYPE html>
             document.getElementById('stat-commands').textContent = summary.total_commands || 0;
             document.getElementById('stat-attackers').textContent = summary.unique_attackers || 0;
             
-            // Calculate Avg Risk (Simple approximation)
+            // Calculate Avg Risk (Percentage based on commands)
             let totalRisk = 0;
             reportData.attacker_details.forEach(a => totalRisk += a.risk_score);
-            const avgRisk = reportData.attacker_details.length ? (totalRisk / reportData.attacker_details.length).toFixed(1) : 0;
-            document.getElementById('stat-risk').textContent = avgRisk;
+            const totalCmds = summary.total_commands || 1;
+            const avgRisk = ((totalRisk / totalCmds)).toFixed(1);
+            document.getElementById('stat-risk').textContent = avgRisk + '%';
 
             // Charts
             initCharts(summary);
@@ -2129,8 +2130,10 @@ HTML_TEMPLATE = """<!DOCTYPE html>
                         </div>
                     </div>
                     <div class="text-right">
-                        <div class="text-xs text-slate-400">Risk Score</div>
-                        <div class="font-bold text-xl ${attacker.risk_score > 10 ? 'text-red-400' : 'text-yellow-400'}">${attacker.risk_score}</div>
+                        <div class="text-xs text-slate-400">Avg Risk Score</div>
+                        <div class="font-bold text-xl ${attacker.risk_score > 10 ? 'text-red-400' : 'text-yellow-400'}">
+                            ${(attacker.commands > 0 ? (attacker.risk_score / attacker.commands).toFixed(1) : 0)}%
+                        </div>
                     </div>
                 `;
                 container.appendChild(div);

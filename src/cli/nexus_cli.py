@@ -66,6 +66,14 @@ class NexusCLI:
         report_parser.add_argument('--anomaly-threshold', type=float, default=0.7,
                                  help='Anomaly detection threshold for reports (0.0-1.0, default: 0.7)')
         
+        # AI Insights options
+        report_parser.add_argument('--ai-provider', choices=['ollama', 'openai', 'google', 'none'], 
+                                 default='ollama',
+                                 help='AI provider for generating insights (default: ollama)')
+        report_parser.add_argument('--ai-model', 
+                                 help='AI model name (e.g., llama3.2, gpt-4o-mini, gemini-1.5-flash)')
+
+        
         # Logs command for viewing session conversations
         logs_parser = subparsers.add_parser('logs', help='View and analyze session logs')
         logs_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'],
@@ -740,7 +748,17 @@ try:
     
     # Set logs directory to the main logs directory
     logs_dir = Path(r"{mysql_dir_escaped}").parent.parent / "logs"
-    generator = MySQLHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}", logs_dir=str(logs_dir))
+    
+    # Get AI provider settings
+    ai_provider = "{getattr(args, 'ai_provider', 'ollama')}"
+    ai_model = {repr(getattr(args, 'ai_model', None))}
+    
+    generator = MySQLHoneypotReportGenerator(
+        sessions_dir=r"{sessions_dir_escaped}", 
+        logs_dir=str(logs_dir),
+        ai_provider=ai_provider if ai_provider != 'none' else 'ollama',
+        ai_model=ai_model
+    )
     report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}")
     
     if "error" in report_files:
