@@ -63,14 +63,10 @@ class FeatureExtractor:
         """Extract features based on service type"""
         if self.service_type == 'ssh':
             return self._extract_ssh_features(data)
-        elif self.service_type == 'http':
-            return self._extract_http_features(data)
         elif self.service_type == 'ftp':
             return self._extract_ftp_features(data)
         elif self.service_type == 'mysql':
             return self._extract_mysql_features(data)
-        elif self.service_type == 'smb':
-            return self._extract_smb_features(data)
         else:
             return self._extract_generic_features(data)
     
@@ -94,55 +90,6 @@ class FeatureExtractor:
             'session_duration': session_data.get('duration', 0),
             'commands_per_session': session_data.get('command_count', 1),
             'failed_attempts': session_data.get('failed_attempts', 0)
-        }
-        
-        return features
-    
-    def _extract_http_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract HTTP-specific features"""
-        # Validate input data type
-        if not isinstance(data, dict):
-            logging.warning(f"HTTP feature extractor received non-dict data: {type(data)}")
-            return {
-                'text_features': str(data) if data else '',
-                'url_length': len(str(data)) if data else 0,
-                'query_params': 0,
-                'path_segments': 0,
-                'suspicious_keywords': 0,
-                'sql_injection_patterns': 0,
-                'xss_patterns': 0,
-                'path_traversal': 0,
-                'user_agent_length': 0,
-                'has_referer': False,
-                'content_length': 0,
-                'header_count': 0,
-                'suspicious_extensions': 0
-            }
-        
-        request = self._ensure_string(data.get('request', ''))
-        headers = data.get('headers', {})
-        url = self._ensure_string(data.get('url', ''))
-        method = self._ensure_string(data.get('method', 'GET'))
-        
-        parsed_url = urlparse(url)
-        query_params = parse_qs(parsed_url.query)
-        
-        features = {
-            'text_features': f"{method} {url} {str(headers)}",
-            'method': method,
-            'url_length': len(url),
-            'path_segments': len(parsed_url.path.split('/')) - 1,
-            'query_params_count': len(query_params),
-            'has_query_params': len(query_params) > 0,
-            'special_chars_ratio': len(re.findall(r'[<>"\';()&+]', url)) / max(len(url), 1),
-            'sql_injection_patterns': len(re.findall(r'(union|select|insert|update|delete|drop|exec)', url, re.I)),
-            'xss_patterns': len(re.findall(r'(<script|javascript:|onload=|onerror=)', url, re.I)),
-            'path_traversal': len(re.findall(r'(\.\./|\.\.\\)', url)),
-            'user_agent_length': len(headers.get('User-Agent', '')),
-            'has_referer': 'Referer' in headers,
-            'content_length': int(headers.get('Content-Length', 0)),
-            'header_count': len(headers),
-            'suspicious_extensions': len(re.findall(r'\.(php|asp|jsp|cgi|pl)$', parsed_url.path, re.I))
         }
         
         return features
@@ -205,30 +152,6 @@ class FeatureExtractor:
         
         return features
     
-    def _extract_smb_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract SMB-specific features"""
-        command = self._ensure_string(data.get('command', ''))
-        path = self._ensure_string(data.get('path', ''))
-        session_data = data.get('session_data', {})
-        
-        features = {
-            'text_features': f"{command} {path}",
-            'command_type': command,
-            'path_length': len(path),
-            'path_depth': path.count('\\') + path.count('/'),
-            'has_admin_share': path.startswith('\\\\') and ('admin$' in path.lower() or 'c$' in path.lower()),
-            'directory_traversal': len(re.findall(r'(\.\./|\.\.\\)', path)),
-            'executable_access': len(re.findall(r'\.(exe|bat|cmd|scr|dll)$', path, re.I)) > 0,
-            'system_directories': len(re.findall(r'\\(windows|system32|syswow64)\\', path, re.I)),
-            'read_operations': session_data.get('read_ops', 0),
-            'write_operations': session_data.get('write_ops', 0),
-            'delete_operations': session_data.get('delete_ops', 0),
-            'bytes_read': session_data.get('bytes_read', 0),
-            'bytes_written': session_data.get('bytes_written', 0),
-            'failed_operations': session_data.get('failed_ops', 0)
-        }
-        
-        return features
     
     def _extract_generic_features(self, data: Dict[str, Any]) -> Dict[str, Any]:
         """Extract generic features for unknown service types"""

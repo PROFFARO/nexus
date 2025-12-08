@@ -173,10 +173,8 @@ class MLDetector:
         
         service_keywords = {
             'ssh': ['wget', 'curl', 'chmod +x', 'sudo', 'su -', 'passwd', 'shadow', 'nc -l', 'netcat', 'nmap'],
-            'http': ['script', 'alert', 'eval', 'document.cookie', '../', 'union select', 'drop table', 'xss'],
             'ftp': ['RETR', 'STOR', '../', '..\\', 'passwd', 'shadow', 'config'],
             'mysql': ['union', 'select', 'drop', 'delete', 'insert', 'update', 'information_schema', '--', '#'],
-            'smb': ['SMB_COM', 'TRANS2', 'NT_TRANSACT', 'exploit', 'buffer', 'overflow']
         }
         
         return base_keywords + service_keywords.get(self.service_type, [])
@@ -434,14 +432,10 @@ class MLDetector:
         # Service-specific attack vector detection
         if self.service_type == 'ssh':
             attack_vectors.extend(self._detect_ssh_attack_vectors(command, ml_score))
-        elif self.service_type == 'http':
-            attack_vectors.extend(self._detect_http_attack_vectors(command, ml_score))
         elif self.service_type == 'ftp':
             attack_vectors.extend(self._detect_ftp_attack_vectors(command, ml_score))
         elif self.service_type == 'mysql':
             attack_vectors.extend(self._detect_mysql_attack_vectors(command, ml_score))
-        elif self.service_type == 'smb':
-            attack_vectors.extend(self._detect_smb_attack_vectors(command, ml_score))
         
         return attack_vectors
     
@@ -498,53 +492,6 @@ class MLDetector:
                 'mitre_id': 'T1082',
                 'confidence': min(0.7, ml_score + 0.1),
                 'description': 'System reconnaissance activity'
-            })
-        
-        return vectors
-    
-    def _detect_http_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
-        """Detect HTTP-specific attack vectors"""
-        vectors = []
-        cmd_lower = command.lower()
-        
-        # XSS
-        if any(pattern in cmd_lower for pattern in ['<script', 'alert(', 'onerror=', 'javascript:']):
-            vectors.append({
-                'type': 'xss',
-                'technique': 'Cross-Site Scripting',
-                'mitre_id': 'T1059.007',
-                'confidence': min(0.9, ml_score + 0.3),
-                'description': 'Cross-site scripting attempt'
-            })
-        
-        # SQL Injection
-        if any(pattern in cmd_lower for pattern in ['union select', "' or '1'='1", 'drop table', '--', 'information_schema']):
-            vectors.append({
-                'type': 'sql_injection',
-                'technique': 'SQL Injection',
-                'mitre_id': 'T1190',
-                'confidence': min(0.95, ml_score + 0.35),
-                'description': 'SQL injection attack detected'
-            })
-        
-        # Path traversal
-        if '../' in command or '..\\' in command:
-            vectors.append({
-                'type': 'path_traversal',
-                'technique': 'Path Traversal',
-                'mitre_id': 'T1083',
-                'confidence': min(0.85, ml_score + 0.25),
-                'description': 'Directory traversal attempt'
-            })
-        
-        # Command injection
-        if any(pattern in command for pattern in ['|', ';', '&&', '`', '$(' ]):
-            vectors.append({
-                'type': 'command_injection',
-                'technique': 'Command Injection',
-                'mitre_id': 'T1059',
-                'confidence': min(0.8, ml_score + 0.2),
-                'description': 'Command injection attempt'
             })
         
         return vectors
@@ -633,42 +580,6 @@ class MLDetector:
         
         return vectors
     
-    def _detect_smb_attack_vectors(self, command: str, ml_score: float) -> List[Dict[str, Any]]:
-        """Detect SMB-specific attack vectors"""
-        vectors = []
-        cmd_upper = command.upper()
-        
-        # EternalBlue / SMB exploits
-        if any(pattern in cmd_upper for pattern in ['SMB_COM_TRANSACTION', 'NT_TRANSACT', 'TRANS2']):
-            vectors.append({
-                'type': 'exploit',
-                'technique': 'Exploitation for Client Execution',
-                'mitre_id': 'T1203',
-                'confidence': min(0.95, ml_score + 0.4),
-                'description': 'SMB exploit attempt (potential EternalBlue)'
-            })
-        
-        # Share enumeration
-        if 'TREE_CONNECT' in cmd_upper or 'NET_SHARE_ENUM' in cmd_upper:
-            vectors.append({
-                'type': 'reconnaissance',
-                'technique': 'Network Share Discovery',
-                'mitre_id': 'T1135',
-                'confidence': min(0.75, ml_score + 0.2),
-                'description': 'SMB share enumeration'
-            })
-        
-        # Path traversal
-        if '../' in command or '..\\' in command:
-            vectors.append({
-                'type': 'path_traversal',
-                'technique': 'File and Directory Discovery',
-                'mitre_id': 'T1083',
-                'confidence': min(0.85, ml_score + 0.3),
-                'description': 'SMB path traversal attempt'
-            })
-        
-        return vectors
     
     def analyze_session(self, session_data: Dict[str, Any]) -> Dict[str, Any]:
         """Perform session-level ML analysis by aggregating command-level results"""

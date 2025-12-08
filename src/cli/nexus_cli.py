@@ -22,11 +22,6 @@ class NexusCLI:
                 'implemented': True,
                 'description': 'FTP honeypot with AI-powered responses'
             },
-            'http': {
-                'path': self.base_dir / 'service_emulators' / 'HTTP' / 'http_server.py',
-                'implemented': True,
-                'description': 'HTTP/Web honeypot with AI-powered responses'
-            },
             'mysql': {
                 'path': self.base_dir / 'service_emulators' / 'MySQL' / 'mysql_server.py',
                 'implemented': True,
@@ -48,7 +43,7 @@ class NexusCLI:
         
         # Report generation command
         report_parser = subparsers.add_parser('report', help='Generate security reports')
-        report_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'], 
+        report_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql'], 
                                  help='Service to generate report for')
         report_parser.add_argument('--output', '-o', default='reports', help='Output directory')
         report_parser.add_argument('--sessions-dir', '-s', help='Sessions directory (default: service-specific)')
@@ -76,7 +71,7 @@ class NexusCLI:
         
         # Logs command for viewing session conversations
         logs_parser = subparsers.add_parser('logs', help='View and analyze session logs')
-        logs_parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'],
+        logs_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql'],
                                help='Service to view logs for')
         logs_parser.add_argument('--session-id', '-i', help='Specific session ID to view')
         logs_parser.add_argument('--log-file', '-f', help='Log file path (default: service-specific)')
@@ -106,9 +101,6 @@ class NexusCLI:
         # FTP service parser
         ftp_parser = subparsers.add_parser('ftp', help='Start FTP honeypot')
         self._add_ftp_arguments(ftp_parser)
-        # HTTP service parser
-        http_parser = subparsers.add_parser('http', help='Start HTTP honeypot')
-        self._add_http_arguments(http_parser)
         # MySQL service parser
         mysql_parser = subparsers.add_parser('mysql', help='Start MySQL honeypot')
         self._add_mysql_arguments(mysql_parser)
@@ -119,14 +111,14 @@ class NexusCLI:
         
         # ML extract command
         extract_parser = ml_subparsers.add_parser('extract', help='Extract features from datasets')
-        extract_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
+        extract_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql', 'all'],
                                   help='Service to extract features for')
         extract_parser.add_argument('--datasets-dir', default='datasets', help='Datasets directory')
         extract_parser.add_argument('--output', '-o', help='Output file path')
         
         # ML train command
         train_parser = ml_subparsers.add_parser('train', help='Train ML models')
-        train_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
+        train_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql', 'all'],
                                 help='Service to train models for')
         train_parser.add_argument('--algorithm', choices=['isolation_forest', 'one_class_svm', 'lof', 'hdbscan', 'kmeans', 'xgboost', 'all'],
                                 default='all', help='ML algorithm to train')
@@ -135,21 +127,21 @@ class NexusCLI:
         
         # ML evaluate command
         eval_parser = ml_subparsers.add_parser('eval', help='Evaluate trained models')
-        eval_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql'],
+        eval_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql'],
                                help='Service to evaluate models for')
         eval_parser.add_argument('--test-data', help='Test data file path')
         eval_parser.add_argument('--model', help='Specific model to evaluate')
         
         # ML predict command
         predict_parser = ml_subparsers.add_parser('predict', help='Make predictions with trained models')
-        predict_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql'],
+        predict_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql'],
                                   help='Service to make predictions for')
         predict_parser.add_argument('--input', required=True, help='Input data file or single command/query')
         predict_parser.add_argument('--output', help='Output file for predictions')
         
         # ML update-models command
         update_parser = ml_subparsers.add_parser('update-models', help='Update/retrain models')
-        update_parser.add_argument('service', choices=['ssh', 'http', 'ftp', 'mysql', 'all'],
+        update_parser.add_argument('service', choices=['ssh', 'ftp', 'mysql', 'all'],
                                  help='Service to update models for')
         update_parser.add_argument('--model-path', help='Path to new model files')
         update_parser.add_argument('--force', action='store_true', help='Force model update')
@@ -177,45 +169,6 @@ class NexusCLI:
         parser.add_argument('-P', '--port', type=int, help='FTP port (default: 2121)')
         parser.add_argument('-L', '--log-file', help='Log file path')
         parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
-        
-        # LLM Configuration
-        parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
-                          help='LLM provider')
-        parser.add_argument('--model-name', help='LLM model name')
-        parser.add_argument('--temperature', type=float, help='LLM temperature (0.0-2.0)')
-        parser.add_argument('--max-tokens', type=int, help='Maximum tokens for LLM')
-        parser.add_argument('--base-url', help='Base URL for Ollama/custom providers')
-        
-        # Azure OpenAI specific
-        parser.add_argument('--azure-deployment', help='Azure OpenAI deployment name')
-        parser.add_argument('--azure-endpoint', help='Azure OpenAI endpoint')
-        parser.add_argument('--azure-api-version', help='Azure OpenAI API version')
-        
-        # AWS specific
-        parser.add_argument('--aws-region', help='AWS region')
-        parser.add_argument('--aws-profile', help='AWS credentials profile')
-        
-        # User accounts
-        parser.add_argument('-u', '--user-account', action='append',
-                          help='User account (username=password). Can be repeated')
-        
-        # Prompts
-        parser.add_argument('-p', '--prompt', help='System prompt text')
-        parser.add_argument('-f', '--prompt-file', help='System prompt file')
-
-    def _add_http_arguments(self, parser):
-        """Add HTTP-specific arguments"""
-        # Configuration
-        parser.add_argument('-c', '--config', help='Configuration file path')
-        parser.add_argument('-H', '--host', help='Host to bind to (0.0.0.0 for all interfaces, 127.0.0.1 for localhost)')
-        parser.add_argument('-P', '--port', type=int, help='HTTP port (default: 8080)')
-        parser.add_argument('-L', '--log-file', help='Log file path')
-        parser.add_argument('-S', '--sensor-name', help='Sensor name for logging')
-        
-        # SSL/HTTPS Configuration
-        parser.add_argument('--ssl', action='store_true', help='Enable SSL/HTTPS')
-        parser.add_argument('--ssl-cert', help='SSL certificate file')
-        parser.add_argument('--ssl-key', help='SSL private key file')
         
         # LLM Configuration
         parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'],
@@ -410,31 +363,6 @@ class NexusCLI:
         
         return 0
 
-    def run_http_service(self, args):
-        """Run HTTP honeypot with provided arguments"""
-        if not self.services['http']['implemented']:
-            print("Error: HTTP service not implemented")
-            return 1
-            
-        http_script = self.services['http']['path']
-        if not http_script.exists():
-            print(f"Error: HTTP script not found at {http_script}")
-            return 1
-        
-        cmd = [sys.executable, str(http_script)]
-        env = self._setup_environment(args)
-        http_dir = self.services['http']['path'].parent
-        
-        try:
-            subprocess.run(cmd, cwd=http_dir, env=env)
-        except KeyboardInterrupt:
-            print("\nHTTP honeypot stopped")
-        except Exception as e:
-            print(f"Error running HTTP honeypot: {e}")
-            return 1
-        
-        return 0
-
     def run_mysql_service(self, args):
         """Run MySQL honeypot with provided arguments"""
         if not self.services['mysql']['implemented']:
@@ -477,8 +405,6 @@ class NexusCLI:
             return self._generate_ssh_report(args)
         elif args.service == 'ftp':
             return self._generate_ftp_report(args)
-        elif args.service == 'http':
-            return self._generate_http_report(args)
         elif args.service == 'mysql':
             return self._generate_mysql_report(args)
         else:
@@ -623,85 +549,6 @@ except Exception as e:
             print(f"[INFO] Format: {args.format}")
             
             result = subprocess.run(cmd, cwd=ftp_dir, capture_output=True, text=True, encoding='utf-8')
-            
-            # Print output
-            if result.stdout:
-                print(result.stdout)
-            if result.stderr:
-                print(result.stderr, file=sys.stderr)
-            
-            if result.returncode != 0:
-                print(f"[ERROR] Report generation failed with exit code {result.returncode}")
-                return 1
-                
-        except Exception as e:
-            print(f"[ERROR] Unexpected error: {e}")
-            return 1
-        finally:
-            # Clean up temporary file
-            try:
-                os.unlink(temp_script)
-            except:
-                pass
-        
-        return 0
-    
-    def _generate_http_report(self, args):
-        """Generate HTTP-specific security report"""
-        http_dir = self.services['http']['path'].parent
-        sessions_dir = args.sessions_dir or str(http_dir / 'sessions')
-        
-        # Build command for HTTP report generator with proper path handling
-        import tempfile
-        
-        # Escape paths properly for Windows
-        http_dir_escaped = str(http_dir).replace('\\', '\\\\')
-        sessions_dir_escaped = sessions_dir.replace('\\', '\\\\')
-        output_dir_escaped = args.output.replace('\\', '\\\\')
-        
-        script_content = f'''import sys
-from pathlib import Path
-
-# Add HTTP directory to path
-sys.path.insert(0, r"{http_dir_escaped}")
-
-try:
-    from report_generator import HTTPHoneypotReportGenerator
-    
-    generator = HTTPHoneypotReportGenerator(sessions_dir=r"{sessions_dir_escaped}")
-    report_files = generator.generate_comprehensive_report(output_dir=r"{output_dir_escaped}", format_type="{args.format}")
-    
-    if "error" in report_files:
-        print(f"[ERROR] {{report_files['error']}}")
-        sys.exit(1)
-    
-    print("[SUCCESS] HTTP Security Report Generated Successfully!")
-    if "{args.format}" in ["json", "both"]:
-        print(f"[INFO] JSON Report: {{report_files.get('json', 'Not generated')}}")
-    if "{args.format}" in ["html", "both"]:
-        print(f"[INFO] HTML Report: {{report_files.get('html', 'Not generated')}}")
-    
-except Exception as e:
-    print(f"[ERROR] {{e}}")
-    import traceback
-    traceback.print_exc()
-    sys.exit(1)
-'''
-        
-        # Write script to temporary file
-        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False, encoding='utf-8') as f:
-            f.write(script_content)
-            temp_script = f.name
-        
-        cmd = [sys.executable, temp_script]
-        
-        try:
-            print(f"[INFO] Generating HTTP security report...")
-            print(f"[INFO] Sessions directory: {sessions_dir}")
-            print(f"[INFO] Output directory: {args.output}")
-            print(f"[INFO] Format: {args.format}")
-            
-            result = subprocess.run(cmd, cwd=http_dir, capture_output=True, text=True, encoding='utf-8')
             
             # Print output
             if result.stdout:
@@ -956,8 +803,6 @@ except Exception as e:
             return self.run_ssh_service(args)
         elif args.command == 'ftp':
             return self.run_ftp_service(args)
-        elif args.command == 'http':
-            return self.run_http_service(args)
         elif args.command == 'mysql':
             return self.run_mysql_service(args)
         elif args.command == 'status':
@@ -1020,8 +865,6 @@ except Exception as e:
                     port_value = parser['ssh'].getint('port', fallback=None)
                 elif service_name == 'ftp' and 'ftp' in parser:
                     port_value = parser['ftp'].getint('port', fallback=None)
-                elif service_name == 'http' and 'http' in parser:
-                    port_value = parser['http'].getint('port', fallback=None)
                 elif service_name == 'mysql' and 'mysql' in parser:
                     port_value = parser['mysql'].getint('port', fallback=None)
 
@@ -1044,7 +887,6 @@ except Exception as e:
         fallback_ports = {
             'ssh': 8022,
             'ftp': 2121,
-            'http': 8080,
             'mysql': 3307
         }
         return fallback_ports.get(service_name, 0)
@@ -1058,7 +900,7 @@ except Exception as e:
             for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
                 try:
                     cmdline = ' '.join(proc.info['cmdline'] or [])
-                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'http_server.py', 'mysql_server.py']):
+                    if any(service in cmdline for service in ['ssh_server.py', 'ftp_server.py', 'mysql_server.py']):
                         processes.append({
                             'pid': proc.info['pid'],
                             'name': proc.info['name'],
@@ -1285,7 +1127,7 @@ except Exception as e:
         processor = DataProcessor(str(datasets_dir))
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql']
+            services = ['ssh', 'ftp', 'mysql']
         else:
             services = [args.service]
         
@@ -1322,7 +1164,7 @@ except Exception as e:
         from ai.data_processor import DataProcessor
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql']
+            services = ['ssh', 'ftp', 'mysql']
         else:
             services = [args.service]
         
@@ -1479,8 +1321,6 @@ except Exception as e:
                 # Input is a single command/query
                 if args.service == 'ssh':
                     data = {'command': args.input}
-                elif args.service == 'http':
-                    data = {'request': args.input, 'method': 'GET', 'url': args.input}
                 elif args.service == 'mysql':
                     data = {'query': args.input}
                 elif args.service == 'ftp':
@@ -1513,7 +1353,7 @@ except Exception as e:
         print(f"[INFO] Updating ML models for {args.service}...")
         
         if args.service == 'all':
-            services = ['ssh', 'http', 'ftp', 'mysql']
+            services = ['ssh', 'ftp', 'mysql']
         else:
             services = [args.service]
         

@@ -150,40 +150,6 @@ class DataProcessor:
         logging.info(f"Processed {len(processed_data)} SSH data points")
         return processed_data
     
-    def process_http_data(self) -> List[Dict[str, Any]]:
-        """Process HTTP-related data for training"""
-        processed_data = []
-        
-        # Process network intrusion data for HTTP attacks
-        network_df = self.load_network_intrusion_data()
-        if not network_df.empty:
-            # Filter for web attacks
-            web_attacks = network_df[
-                network_df['Label'].str.contains('Web Attack', na=False) |
-                network_df['Label'].str.contains('SQL Injection', na=False) |
-                network_df['Label'].str.contains('XSS', na=False)
-            ]
-            
-            for _, row in web_attacks.iterrows():
-                processed_data.append({
-                    'service': 'http',
-                    'request': f"{row.get('Flow ID', '')} {row.get('Destination Port', '')}",
-                    'method': 'GET',  # Default, would need packet analysis for actual method
-                    'url': f"/{row.get('Flow ID', '')}",
-                    'headers': {},
-                    'src_ip': row.get('Source IP', ''),
-                    'dst_ip': row.get('Destination IP', ''),
-                    'timestamp': datetime.now().isoformat(),
-                    'label': self._normalize_label(row.get('Label', 'normal')),
-                    'session_data': {
-                        'request_count': 1,
-                        'bytes_transferred': row.get('Total Length of Fwd Packets', 0)
-                    }
-                })
-        
-        logging.info(f"Processed {len(processed_data)} HTTP data points")
-        return processed_data
-    
     def process_mysql_data(self) -> List[Dict[str, Any]]:
         """Process MySQL-related data for training"""
         processed_data = []
@@ -253,41 +219,6 @@ class DataProcessor:
                 })
         
         logging.info(f"Processed {len(processed_data)} FTP data points")
-        return processed_data
-    
-    def process_smb_data(self) -> List[Dict[str, Any]]:
-        """Process SMB-related data for training"""
-        processed_data = []
-        
-        # Process network data for SMB attacks
-        network_df = self.load_network_intrusion_data()
-        if not network_df.empty:
-            # Filter for SMB traffic (ports 139, 445)
-            smb_traffic = network_df[
-                network_df['Destination Port'].isin([139, 445]) |
-                network_df['Source Port'].isin([139, 445])
-            ]
-            
-            for _, row in smb_traffic.iterrows():
-                processed_data.append({
-                    'service': 'smb',
-                    'command': self._generate_smb_command(row),
-                    'path': f"\\\\{row.get('Destination IP', '')}\\share\\file.txt",
-                    'src_ip': row.get('Source IP', ''),
-                    'dst_ip': row.get('Destination IP', ''),
-                    'timestamp': datetime.now().isoformat(),
-                    'label': self._normalize_label(row.get('Label', 'normal')),
-                    'session_data': {
-                        'read_ops': 1,
-                        'write_ops': 0,
-                        'delete_ops': 0,
-                        'bytes_read': row.get('Total Length of Fwd Packets', 0),
-                        'bytes_written': 0,
-                        'failed_ops': 0
-                    }
-                })
-        
-        logging.info(f"Processed {len(processed_data)} SMB data points")
         return processed_data
     
     def _classify_ssh_command(self, command: str) -> str:
@@ -366,22 +297,13 @@ class DataProcessor:
         cmd_idx = hash(flow_id) % len(commands)
         return commands[cmd_idx]
     
-    def _generate_smb_command(self, row: pd.Series) -> str:
-        """Generate SMB command based on network flow data"""
-        commands = ['READ', 'WRITE', 'DELETE', 'CREATE', 'OPEN', 'CLOSE', 'QUERY', 'SET']
-        flow_id = str(row.get('Flow ID', ''))
-        cmd_idx = hash(flow_id) % len(commands)
-        return commands[cmd_idx]
-    
     def get_processed_data(self, service: str = None) -> Dict[str, List[Dict[str, Any]]]:
         """Get all processed data, optionally filtered by service"""
         if not self.processed_data:
             self.processed_data = {
                 'ssh': self.process_ssh_data(),
-                'http': self.process_http_data(),
                 'mysql': self.process_mysql_data(),
                 'ftp': self.process_ftp_data(),
-                'smb': self.process_smb_data()
             }
         
         if service:

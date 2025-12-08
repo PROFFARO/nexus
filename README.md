@@ -19,7 +19,7 @@ NEXUS is a next-generation honeypot platform engineered for cybersecurity profes
 **Key Differentiators:**
 - First AI-native honeypot built from ground up with LLM integration
 - Real-time ML anomaly detection with 6 advanced algorithms
-- Multi-protocol support: SSH, FTP, HTTP/HTTPS, MySQL
+- Multi-protocol support: SSH, FTP, MySQL
 - Enterprise-ready with complete MLOps pipeline
 - Production-tested with comprehensive forensic capabilities
 
@@ -34,7 +34,6 @@ NEXUS is a next-generation honeypot platform engineered for cybersecurity profes
 ### 🌐 Protocol Support
 - **SSH Honeypot**: Full protocol emulation with command execution simulation
 - **FTP Honeypot**: Directory traversal, bounce attacks, file transfer monitoring
-- **HTTP/HTTPS**: Dynamic web content generation, SQL injection/XSS detection
 - **MySQL**: Protocol-compliant database honeypot with query analysis
 
 ### 🏢 Enterprise Capabilities
@@ -71,7 +70,6 @@ NEXUS includes 6 advanced ML algorithms for comprehensive threat detection:
 ```bash
 # ML Analysis for Logs
 python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
-python src/cli/nexus_cli.py logs http --high-risk-only --anomaly-threshold 0.8
 python src/cli/nexus_cli.py logs mysql --filter anomalies --ml-analysis
 
 # ML-Enhanced Reports
@@ -81,7 +79,6 @@ python src/cli/nexus_cli.py report ftp --ml-enhanced --anomaly-threshold 0.9
 # ML Operations
 python src/cli/nexus_cli.py ml train ssh --algorithm all
 python src/cli/nexus_cli.py ml predict ssh --input "rm -rf /"
-python src/cli/nexus_cli.py ml eval http --test-data test.json
 python src/cli/nexus_cli.py ml extract ftp --datasets-dir datasets
 python src/cli/nexus_cli.py ml update-models all --force
 ```
@@ -118,7 +115,6 @@ models/
 │   ├── embeddings/        # Command embeddings
 │   └── scalers/          # Feature scalers
 ├── ftp/                   # FTP-specific ML models
-├── http/                  # HTTP-specific ML models
 └── mysql/                 # MySQL-specific ML models
 ```
 
@@ -175,31 +171,6 @@ models/
 **ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost  
 **Client Support**: Standard FTP clients, telnet, FileZilla, WinSCP, command-line tools
 
-### 🌐 HTTP/Web Honeypot
-
-**Status**: Production-ready with full AI + ML integration and dynamic content generation
-
-**Key Features**:
-- AI-powered dynamic web content generation (no static templates)
-- ML-powered real-time web attack detection (SQL injection, XSS, path traversal)
-- Dynamic threat scoring for HTTP requests and payloads
-- Professional corporate website simulation (NexusGames Studio)
-- Real-time web attack detection with ML classification
-- ML-enhanced request analysis with behavioral profiling
-- Comprehensive HTTP request/response logging and analysis
-- File upload monitoring with malware detection capabilities
-- Advanced vulnerability exploitation detection and logging
-- Realistic game development company environment simulation
-- Support for all HTTP methods (GET, POST, PUT, DELETE, etc.)
-- SSL/HTTPS support with proper certificate handling
-- Session management and user authentication simulation
-- ML insights for web attack patterns and recommendations
-
-**Location**: `src/service_emulators/HTTP/`  
-**Default Port**: 8080 (configurable)  
-**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost  
-**Protocol Support**: HTTP/1.1, HTTPS, WebSocket (planned)
 
 ### 🗄️ MySQL Database Honeypot
 
@@ -277,7 +248,6 @@ pip install -r requirements.txt
 # Copy environment template for each service
 cp src/service_emulators/SSH/.env.example src/service_emulators/SSH/.env
 cp src/service_emulators/FTP/.env.example src/service_emulators/FTP/.env
-cp src/service_emulators/HTTP/.env.example src/service_emulators/HTTP/.env
 cp src/service_emulators/MySQL/.env.example src/service_emulators/MySQL/.env
 
 # Edit .env files with your API keys
@@ -323,12 +293,10 @@ python src/cli/nexus_cli.py stop-all                # Emergency stop all service
 # Start Individual Services
 python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai
 python src/cli/nexus_cli.py ftp --port 2121 --llm-provider gemini
-python src/cli/nexus_cli.py http --port 8080 --llm-provider ollama
 python src/cli/nexus_cli.py mysql --port 3306 --llm-provider openai
 
 # ML-Enhanced Log Analysis
 python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
-python src/cli/nexus_cli.py logs http --high-risk-only --anomaly-threshold 0.8
 python src/cli/nexus_cli.py logs mysql --filter anomalies --ml-analysis
 
 # ML-Enhanced Reports
@@ -338,7 +306,6 @@ python src/cli/nexus_cli.py report ftp --ml-enhanced --anomaly-threshold 0.9
 # ML Operations
 python src/cli/nexus_cli.py ml train ssh --algorithm all
 python src/cli/nexus_cli.py ml predict ssh --input "rm -rf /"
-python src/cli/nexus_cli.py ml eval http --test-data test.json
 
 # Advanced Configuration
 python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai \
@@ -364,7 +331,6 @@ python src/cli/nexus_cli.py <command> [options]
 | `stop-all` | Stop all services | `nexus_cli.py stop-all --force` |
 | `ssh` | Start SSH honeypot | `nexus_cli.py ssh --port 8022` |
 | `ftp` | Start FTP honeypot | `nexus_cli.py ftp --port 2121` |
-| `http` | Start HTTP honeypot | `nexus_cli.py http --port 8080` |
 | `mysql` | Start MySQL honeypot | `nexus_cli.py mysql --port 3306` |
 | `report` | Generate security reports | `nexus_cli.py report ssh --output reports/` |
 | `logs` | View session logs | `nexus_cli.py logs ssh --conversation` |
@@ -479,27 +445,6 @@ python src/cli/nexus_cli.py ftp [OPTIONS]
 | `--prompt` | `-p` | str | System prompt | `-p "Custom FTP prompt"` |
 | `--prompt-file` | `-f` | str | Prompt file | `-f ftp_prompt.txt` |
 
-#### 🌐 HTTP Honeypot Flags
-
-```bash
-python src/cli/nexus_cli.py http [OPTIONS]
-```
-
-| Flag | Short | Type | Description | Example |
-|------|-------|------|-------------|---------|
-| `--config` | `-c` | str | Configuration file path | `-c custom.ini` |
-| `--port` | `-P` | int | HTTP port (default: 8080) | `-P 8081` |
-| `--ssl` | | bool | Enable SSL/HTTPS | `--ssl` |
-| `--ssl-cert` | | str | SSL certificate file | `--ssl-cert cert.pem` |
-| `--ssl-key` | | str | SSL private key file | `--ssl-key key.pem` |
-| `--log-file` | `-L` | str | Log file path | `-L http.log` |
-| `--sensor-name` | `-S` | str | Sensor name | `-S "HTTP-Sensor-01"` |
-| `--llm-provider` | `-l` | str | LLM provider | `-l ollama` |
-| `--model-name` | `-m` | str | LLM model name | `-m llama3.2` |
-| `--temperature` | `-r` | float | LLM temperature | `-r 0.4` |
-| `--max-tokens` | `-t` | int | Maximum tokens | `-t 3000` |
-| `--user-account` | `-u` | str | User account | `-u developer=devpass` |
-
 #### 🗄️ MySQL Honeypot Flags
 
 ```bash
@@ -585,7 +530,6 @@ python src/cli/nexus_cli.py stop-all [OPTIONS]
 # Generate reports for all services
 python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
-python src/cli/nexus_cli.py report http --output reports/ --format json
 python src/cli/nexus_cli.py report mysql --output reports/ --format both
 
 # Advanced filtering
@@ -667,7 +611,7 @@ max_tokens = 2000
 
 **Usage:**
 ```bash
-python src/cli/nexus_cli.py http --llm-provider ollama --model-name llama3.2 --base-url http://localhost:11434
+python src/cli/nexus_cli.py ssh --llm-provider ollama --model-name llama3.2 --base-url http://localhost:11434
 ```
 
 </details>
@@ -730,7 +674,6 @@ Each service has detailed configuration options in their respective `config.ini`
 
 - **SSH**: `src/service_emulators/SSH/config.ini`
 - **FTP**: `src/service_emulators/FTP/config.ini`
-- **HTTP**: `src/service_emulators/HTTP/config.ini`
 - **MySQL**: `src/service_emulators/MySQL/config.ini`
 
 ### 👤 Custom User Accounts
@@ -780,7 +723,6 @@ Generate comprehensive security reports:
 # Generate reports for all services
 python src/cli/nexus_cli.py report ssh --output reports/ --format both
 python src/cli/nexus_cli.py report ftp --output reports/ --format html
-python src/cli/nexus_cli.py report http --output reports/ --format json
 python src/cli/nexus_cli.py report mysql --output reports/ --format both
 
 # Advanced filtering
@@ -819,7 +761,6 @@ Switch between providers easily:
 # Use different providers for different services
 python src/cli/nexus_cli.py ssh --llm-provider openai --model-name gpt-4o
 python src/cli/nexus_cli.py ftp --llm-provider gemini --model-name gemini-2.0-flash-exp
-python src/cli/nexus_cli.py http --llm-provider ollama --model-name llama3.2
 python src/cli/nexus_cli.py mysql --llm-provider azure --model-name gpt-4o
 ```
 
@@ -835,7 +776,7 @@ python src/cli/nexus_cli.py start-all --config-dir configs/ --llm-provider opena
 python src/cli/nexus_cli.py status
 
 # Generate comprehensive reports
-for service in ssh ftp http mysql; do
+for service in ssh ftp ssh mysql; do
   python src/cli/nexus_cli.py report $service --output reports/ --format both
 done
 ```
@@ -899,8 +840,6 @@ nexus-development/
 │       │   └── config.ini     # SSH honeypot configuration
 │       ├── FTP/
 │       │   └── config.ini     # FTP honeypot configuration
-│       ├── HTTP/
-│       │   └── config.ini     # HTTP/Web honeypot configuration
 │       └── MySQL/
 │           └── config.ini     # MySQL honeypot configuration
 ├── models/
@@ -911,15 +850,12 @@ nexus-development/
 │   │   ├── embeddings/        # Command embeddings
 │   │   └── scalers/          # Feature scalers
 │   ├── ftp/
-│   ├── http/
 │   ├── mysql/
 ├── datasets/
 ├── configs/
 │   ├── ssh/
 │   │   └── config.ini
 │   ├── ftp/
-│   │   └── config.ini
-│   ├── http/
 │   │   └── config.ini
 │   └── mysql/
 │       └── config.ini
@@ -995,7 +931,6 @@ This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) f
 # Check API key configuration
 cat src/service_emulators/SSH/.env
 cat src/service_emulators/FTP/.env
-cat src/service_emulators/HTTP/.env
 cat src/service_emulators/MySQL/.env
 
 # Test API connectivity
@@ -1011,13 +946,11 @@ python -c "import openai; print('OpenAI API key valid')"
 # Check port availability
 netstat -an | grep :8022  # SSH
 netstat -an | grep :2121  # FTP
-netstat -an | grep :8080  # HTTP
 netstat -an | grep :3306  # MySQL
 
 # Use different ports
 python src/cli/nexus_cli.py ssh --port 2222
 python src/cli/nexus_cli.py ftp --port 2122
-python src/cli/nexus_cli.py http --port 8081
 python src/cli/nexus_cli.py mysql --port 3307
 ```
 
@@ -1030,7 +963,6 @@ python src/cli/nexus_cli.py mysql --port 3307
 # Check file permissions
 ls -la src/service_emulators/SSH/
 ls -la src/service_emulators/FTP/
-ls -la src/service_emulators/HTTP/
 ls -la src/service_emulators/MySQL/
 
 # Fix permissions if needed
@@ -1056,10 +988,6 @@ ssh admin@localhost -p 8022
 # Test FTP honeypot
 telnet localhost 2121
 # Or use FTP client: ftp localhost 2121
-
-# Test HTTP honeypot
-curl http://localhost:8080/
-# Or open in browser: http://localhost:8080
 
 # Test MySQL honeypot
 mysql -h localhost -P 3306 -u root -p

@@ -3,7 +3,7 @@
 NEXUS Honeypot Log Viewer - Comprehensive protocol analysis with command timelines,
 session summaries, attack detection, ML anomaly detection, and detailed protocol specifics
 
-Supports: SSH, FTP, HTTP, MySQL
+Supports: SSH, FTP, MySQL
 Features: Command/request timelines, session summaries, protocol details, attack analysis,
 ML-based anomaly detection, text and JSON output formats
 """
@@ -120,37 +120,6 @@ class FTPAnalyzer(ProtocolAnalyzer):
         cmd = pd.get('command', 'N/A')
         path = pd.get('path', '')
         return f"  FTP {cmd} {path}"
-
-
-class HTTPAnalyzer(ProtocolAnalyzer):
-    """HTTP Protocol specific analyzer"""
-    
-    def extract_protocol_details(self, log_entry: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract HTTP-specific details"""
-        details = {
-            'method': log_entry.get('method', 'GET'),
-            'path': log_entry.get('path', '/'),
-            'url': log_entry.get('url', ''),
-            'status_code': log_entry.get('status_code'),
-            'user_agent': log_entry.get('user_agent', ''),
-            'src_port': log_entry.get('src_port'),
-            'dst_port': log_entry.get('dst_port'),
-        }
-        
-        if 'attack_types' in log_entry:
-            details['attack_types'] = log_entry['attack_types']
-            details['severity'] = log_entry.get('severity', 'unknown')
-            details['indicators'] = log_entry.get('indicators', [])
-        
-        return details
-    
-    def format_command_details(self, entry: Dict[str, Any]) -> str:
-        """Format HTTP request details"""
-        pd = entry.get('protocol_details', {})
-        method = pd.get('method', 'GET')
-        path = pd.get('path', '/')
-        status = pd.get('status_code', '?')
-        return f"  {method} {path} ({status})"
 
 
 class MySQLAnalyzer(ProtocolAnalyzer):
@@ -279,7 +248,6 @@ class LogViewer:
     ANALYZERS = {
         'ssh': SSHAnalyzer,
         'ftp': FTPAnalyzer,
-        'http': HTTPAnalyzer,
         'mysql': MySQLAnalyzer,
     }
     
@@ -396,11 +364,6 @@ class LogViewer:
         """Parse FTP logs (backward compatibility)"""
         return self.parse_logs(log_file, session_id, decode, filter_type)
     
-    def parse_http_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
-                       filter_type: str = 'all') -> Dict[str, Any]:
-        """Parse HTTP logs (backward compatibility)"""
-        return self.parse_logs(log_file, session_id, decode, filter_type)
-    
     def parse_mysql_logs(self, log_file: str, session_id: str = "", decode: bool = False, 
                         filter_type: str = 'all') -> Dict[str, Any]:
         """Parse MySQL logs (backward compatibility)"""
@@ -490,9 +453,6 @@ class LogViewer:
         if self.service == 'ssh':
             cmd = pd.get('command', '')
             return {'command': cmd} if cmd else None
-        elif self.service == 'http':
-            path = pd.get('path', '/')
-            return {'method': pd.get('method', 'GET'), 'path': path} if path else None
         elif self.service == 'mysql':
             query = pd.get('query', '')
             return {'query': query} if query else None
@@ -848,7 +808,7 @@ class LogViewer:
 
 def main():
     parser = argparse.ArgumentParser(description='NEXUS Honeypot Log Viewer with ML Analysis')
-    parser.add_argument('service', choices=['ssh', 'ftp', 'http', 'mysql'],
+    parser.add_argument('service', choices=['ssh', 'ftp', 'mysql'],
                        help='Service to view logs for')
     parser.add_argument('--log-file', '-f', help='Log file path')
     parser.add_argument('--session-id', '-i', help='Specific session ID')
@@ -871,7 +831,7 @@ def main():
     
     args = parser.parse_args()
     
-    if args.service not in ['ssh', 'ftp', 'http', 'mysql']:
+    if args.service not in ['ssh', 'ftp', 'mysql']:
         print(f"Error: Log viewing for {args.service} not implemented")
         return 1
     
@@ -886,9 +846,6 @@ def main():
         elif args.service == 'ftp':
             new_log_path = base_dir / 'logs' / 'ftp_log.log'
             old_log_path = base_dir / 'service_emulators' / 'FTP' / 'ftp_log.log'
-        elif args.service == 'http':
-            new_log_path = base_dir / 'logs' / 'http_log.log'
-            old_log_path = base_dir / 'service_emulators' / 'HTTP' / 'http_log.log'
         elif args.service == 'mysql':
             new_log_path = base_dir / 'logs' / 'mysql_log.log'
             old_log_path = base_dir / 'service_emulators' / 'MySQL' / 'mysql_log.log'
@@ -909,10 +866,6 @@ def main():
             )
         elif args.service == 'ftp':
             conversations = viewer.parse_ftp_logs(
-                args.log_file, args.session_id, args.decode, args.filter
-            )
-        elif args.service == 'http':
-            conversations = viewer.parse_http_logs(
                 args.log_file, args.session_id, args.decode, args.filter
             )
         elif args.service == 'mysql':

