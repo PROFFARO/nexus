@@ -96,30 +96,233 @@ class SSHAnalyzer(ProtocolAnalyzer):
 
 
 class FTPAnalyzer(ProtocolAnalyzer):
-    """FTP Protocol specific analyzer"""
+    """FTP Protocol specific analyzer - Enhanced with comprehensive ML and attack analysis"""
+    
+    def __init__(self, service: str):
+        super().__init__(service)
+        self.session_data_cache = {}  # Cache for session data files
     
     def extract_protocol_details(self, log_entry: Dict[str, Any]) -> Dict[str, Any]:
-        """Extract FTP-specific details"""
+        """Extract comprehensive FTP-specific details including ML analysis"""
         details = {
+            # Basic connection info
             'username': log_entry.get('username', 'anonymous'),
             'command': log_entry.get('command', ''),
+            'command_args': log_entry.get('command_args', ''),
             'path': log_entry.get('path', ''),
+            'directory': log_entry.get('directory', ''),
             'src_port': log_entry.get('src_port'),
             'dst_port': log_entry.get('dst_port'),
+            'session_id': log_entry.get('session_id', ''),
+            'session_dir': log_entry.get('session_dir', ''),
+            
+            # Response details
+            'response_code': log_entry.get('response_code'),
+            'response_message': log_entry.get('response_message', ''),
+            
+            # Authentication
+            'password': log_entry.get('password', ''),
+            
+            # AI/LLM features
+            'ai_features_enabled': log_entry.get('ai_features_enabled', {}),
+            'ai_response': log_entry.get('ai_response', ''),
+            'file_monitoring_enabled': log_entry.get('file_monitoring_enabled', False),
+            'chain_of_custody_enabled': log_entry.get('chain_of_custody_enabled', False),
+            
+            # Data transfer info
+            'bytes': log_entry.get('bytes', 0),
+            'line_count': log_entry.get('line_count', 0),
+            'client_ip': log_entry.get('client_ip', ''),
+            'client_port': log_entry.get('client_port'),
         }
         
+        # Attack analysis
         if 'attack_types' in log_entry:
             details['attack_types'] = log_entry['attack_types']
             details['severity'] = log_entry.get('severity', 'unknown')
+            details['indicators'] = log_entry.get('indicators', [])
+            details['threat_score'] = log_entry.get('threat_score', 0)
+            details['alert_triggered'] = log_entry.get('alert_triggered', False)
+        
+        # Vulnerability details
+        if 'vulnerability_id' in log_entry:
+            details['vulnerability_id'] = log_entry['vulnerability_id']
+            details['vuln_name'] = log_entry.get('vuln_name', '')
+            details['vuln_description'] = log_entry.get('description', '')
+            details['pattern_matched'] = log_entry.get('pattern_matched', '')
+            details['cvss_score'] = log_entry.get('cvss_score', 0)
+            details['related_attack_types'] = log_entry.get('related_attack_types', [])
+            details['overall_severity'] = log_entry.get('overall_severity', '')
+        
+        # Session summary details
+        if 'judgement' in log_entry:
+            details['judgement'] = log_entry['judgement']
+            details['session_commands'] = log_entry.get('session_commands', 0)
+            details['attack_patterns_detected'] = log_entry.get('attack_patterns_detected', 0)
+        
+        # ML Analysis parameters (from session data if available)
+        ml_fields = [
+            'ml_anomaly_score', 'ml_labels', 'ml_cluster', 'ml_reason',
+            'ml_confidence', 'ml_risk_score', 'ml_inference_time_ms',
+            'ml_risk_level', 'ml_threat_score', 'ml_risk_color', 'attack_vectors'
+        ]
+        for field in ml_fields:
+            if field in log_entry:
+                details[field] = log_entry[field]
         
         return details
     
+    def categorize_entry(self, message: str, log_entry: Dict[str, Any]) -> str:
+        """Categorize FTP log entry (command, response, attack, llm_response, session_summary, other)"""
+        message_lower = message.lower()
+        
+        # High-threat attack patterns
+        if 'high-threat' in message_lower or log_entry.get('level') == 'CRITICAL':
+            return 'attack'
+        
+        # Attack patterns
+        if 'attack' in message_lower or 'vulnerability' in message_lower:
+            return 'attack'
+        
+        # Session summary (AI analysis)
+        if 'session summary' in message_lower:
+            return 'session_summary'
+        
+        # LLM responses
+        if 'llm ftp response' in message_lower or 'llm generated' in message_lower:
+            return 'llm_response'
+        
+        # FTP commands from attacker
+        if message_lower == 'ftp command' or log_entry.get('command'):
+            if 'response' not in message_lower:
+                return 'command'
+        
+        # FTP responses from honeypot
+        if 'ftp response' in message_lower or 'response_code' in log_entry:
+            return 'response'
+        
+        # Authentication events
+        if 'authentication' in message_lower:
+            return 'auth'
+        
+        # Connection events
+        if 'connection' in message_lower:
+            return 'connection'
+        
+        # Data transfer events
+        if 'transfer' in message_lower or 'listing' in message_lower:
+            return 'data_transfer'
+        
+        return 'other'
+    
     def format_command_details(self, entry: Dict[str, Any]) -> str:
-        """Format FTP command details"""
+        """Format FTP command details with ML indicators"""
         pd = entry.get('protocol_details', {})
         cmd = pd.get('command', 'N/A')
-        path = pd.get('path', '')
-        return f"  FTP {cmd} {path}"
+        args = pd.get('command_args', '')
+        full_cmd = f"{cmd} {args}".strip() if args else cmd
+        
+        # Add risk indicator if ML data available
+        risk_indicator = ""
+        if pd.get('ml_risk_level'):
+            risk_level = pd.get('ml_risk_level', 'unknown')
+            if risk_level == 'high':
+                risk_indicator = " [!!!]"
+            elif risk_level == 'medium':
+                risk_indicator = " [!!]"
+        elif pd.get('severity'):
+            severity = pd.get('severity', '')
+            if severity in ['critical', 'high']:
+                risk_indicator = " [!ATTACK]"
+            elif severity == 'medium':
+                risk_indicator = " [!]"
+        
+        return f"  FTP: {full_cmd}{risk_indicator}"
+    
+    def read_session_data(self, session_dir: str, base_dir: Path = None) -> Dict[str, Any]:
+        """Read detailed session data from session files"""
+        if session_dir in self.session_data_cache:
+            return self.session_data_cache[session_dir]
+        
+        if base_dir is None:
+            base_dir = Path(__file__).parent.parent
+        
+        session_data = {
+            'summary': None,
+            'replay': None,
+            'commands': [],
+            'ml_metrics': {},
+            'attack_metrics': {}
+        }
+        
+        try:
+            # Try to find the session directory
+            possible_paths = [
+                base_dir / 'service_emulators' / 'FTP' / session_dir,
+                base_dir / 'service_emulators' / 'FTP' / 'sessions' / session_dir.split('\\')[-1] if '\\' in session_dir else None,
+                Path(session_dir) if Path(session_dir).exists() else None,
+            ]
+            
+            session_path = None
+            for path in possible_paths:
+                if path and path.exists():
+                    session_path = path
+                    break
+            
+            if not session_path:
+                return session_data
+            
+            # Read session_summary.json
+            summary_file = session_path / 'session_summary.json'
+            if summary_file.exists():
+                with open(summary_file, 'r', encoding='utf-8') as f:
+                    session_data['summary'] = json.load(f)
+                    
+                    # Extract commands with ML data
+                    if 'commands' in session_data['summary']:
+                        session_data['commands'] = session_data['summary']['commands']
+                        
+                        # Aggregate ML metrics
+                        ml_scores = []
+                        risk_levels = {'low': 0, 'medium': 0, 'high': 0}
+                        attack_types_count = {}
+                        
+                        for cmd in session_data['commands']:
+                            if 'attack_analysis' in cmd:
+                                analysis = cmd['attack_analysis']
+                                if 'ml_anomaly_score' in analysis:
+                                    ml_scores.append(analysis['ml_anomaly_score'])
+                                if 'ml_risk_level' in analysis:
+                                    level = analysis['ml_risk_level']
+                                    risk_levels[level] = risk_levels.get(level, 0) + 1
+                                if 'attack_types' in analysis:
+                                    for at in analysis['attack_types']:
+                                        attack_types_count[at] = attack_types_count.get(at, 0) + 1
+                        
+                        session_data['ml_metrics'] = {
+                            'avg_anomaly_score': sum(ml_scores) / len(ml_scores) if ml_scores else 0,
+                            'max_anomaly_score': max(ml_scores) if ml_scores else 0,
+                            'min_anomaly_score': min(ml_scores) if ml_scores else 0,
+                            'total_commands_analyzed': len(ml_scores),
+                            'risk_level_distribution': risk_levels,
+                        }
+                        session_data['attack_metrics'] = {
+                            'attack_types_detected': attack_types_count,
+                            'total_attacks': sum(attack_types_count.values()),
+                        }
+            
+            # Read session_replay.json for transcript
+            replay_file = session_path / 'session_replay.json'
+            if replay_file.exists():
+                with open(replay_file, 'r', encoding='utf-8') as f:
+                    session_data['replay'] = json.load(f)
+            
+            self.session_data_cache[session_dir] = session_data
+            
+        except Exception as e:
+            pass
+        
+        return session_data
 
 
 class MySQLAnalyzer(ProtocolAnalyzer):
@@ -510,7 +713,7 @@ class LogViewer:
         
         output.append(BOX_MID)
         
-        # Session Details
+        # Session Details - FTP-specific handling
         for idx, (session_id, conv) in enumerate(conversations.items(), 1):
             # Session Header
             output.append(f"{BOX_EDGE}  SESSION {idx}/{total_sessions}: {session_id[:90]:<90}  {BOX_EDGE}")
@@ -529,7 +732,7 @@ class LogViewer:
                 for key, value in conv['protocol_details'].items():
                     if isinstance(value, (dict, list)):
                         proto_details.append(f"{key}: {...}")
-                    else:
+                    elif value:  # Only show non-empty values
                         proto_details.append(f"{key}: {value}")
                 proto_str = " | ".join(proto_details[:4])  # First 4 details
                 output.append(f"{BOX_EDGE}    Details: {proto_str[:105]:<105}  {BOX_EDGE}")
@@ -538,122 +741,12 @@ class LogViewer:
             stats = conv['statistics']
             output.append(f"{BOX_EDGE}    Stats: {stats['total_entries']} entries | {stats['total_commands']} commands | {stats['total_responses']} responses | {stats['total_attacks']} attacks{' '*30}  {BOX_EDGE}")
             
-            # Command Timeline - only show commands with actual query/command content
-            commands_with_content = [cmd for cmd in conv['commands'] 
-                                     if cmd.get('protocol_details', {}).get('query', '').strip()]
-            if commands_with_content:
-                output.append(SECTION_DIV)
-                output.append(f"{BOX_EDGE}    QUERY TIMELINE ({len(commands_with_content)} queries):{' '*70}  {BOX_EDGE}")
-                for i, cmd in enumerate(commands_with_content, 1):
-                    ts = cmd.get('timestamp', '')[:19]
-                    pd = cmd.get('protocol_details', {})
-                    query = pd.get('query', '').strip()
-                    query_type = pd.get('query_type', '')
-                    
-                    # Show query with type indicator
-                    if len(query) > 90:
-                        query = query[:87] + '...'
-                    
-                    # Detect attack indicator from ML or attack types
-                    attack_indicator = ""
-                    if pd.get('attack_types'):
-                        attack_indicator = " [!ATTACK]"
-                    elif pd.get('severity') in ['critical', 'high']:
-                        attack_indicator = " [!]"
-                    
-                    line = f"      {i:>3}. [{ts}] {query}{attack_indicator}"
-                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
-                    
-                    # Show ML analysis if present
-                    if show_full and pd.get('ml_anomaly_score'):
-                        ml_line = f"           ML Score: {pd['ml_anomaly_score']:.3f} | Labels: {', '.join(pd.get('ml_labels', []))}"
-                        output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
-            
-            # Responses - show with LLM response content
-            if conv['responses']:
-                output.append(SECTION_DIV)
-                # Filter to only show meaningful responses (LLM responses or query completed with data)
-                meaningful_responses = [r for r in conv['responses'] 
-                                        if 'llm response' in r.get('message', '').lower() 
-                                        or r.get('protocol_details', {}).get('llm_response')]
-                
-                if meaningful_responses:
-                    output.append(f"{BOX_EDGE}    LLM RESPONSES ({len(meaningful_responses)} total):{' '*70}  {BOX_EDGE}")
-                    for i, resp in enumerate(meaningful_responses, 1):
-                        ts = resp.get('timestamp', '')[:19]
-                        pd = resp.get('protocol_details', {})
-                        llm_resp = pd.get('llm_response', '')
-                        model = pd.get('model', '')
-                        query = pd.get('query', '')[:40]
-                        
-                        # First line - query and model
-                        line = f"      {i:>3}. [{ts}] Query: {query}"
-                        if model:
-                            line += f" (Model: {model})"
-                        output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
-                        
-                        # Show LLM response preview
-                        if llm_resp:
-                            resp_preview = llm_resp.replace('\n', ' ')[:100]
-                            if len(llm_resp) > 100:
-                                resp_preview += '...'
-                            line2 = f"           Response: {resp_preview}"
-                            output.append(f"{BOX_EDGE}{line2[:116]:<116}  {BOX_EDGE}")
-                else:
-                    # Show all responses if no LLM responses
-                    output.append(f"{BOX_EDGE}    RESPONSES ({len(conv['responses'])} total):{' '*77}  {BOX_EDGE}")
-                    for i, resp in enumerate(conv['responses'][:20], 1):  # Limit to 20
-                        ts = resp.get('timestamp', '')[:19]
-                        msg = resp.get('message', '')[:80]
-                        line = f"      {i:>3}. [{ts}] {msg}"
-                        output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
-                    
-                    if len(conv['responses']) > 20:
-                        output.append(f"{BOX_EDGE}           ... and {len(conv['responses']) - 20} more responses{' '*70}  {BOX_EDGE}")
-                    
-                    # Show decoded details if available and full mode enabled
-                    if show_full:
-                        for resp in conv['responses'][:5]:
-                            if resp.get('decoded_details'):
-                                decoded_lines = resp['decoded_details'][:200].split('\n')
-                                for dl in decoded_lines[:3]:
-                                    output.append(f"{BOX_EDGE}           {dl[:104]:<104}  {BOX_EDGE}")
-            
-            # Attacks (FULL with severity indicators)
-            if conv['attacks']:
-                output.append(SECTION_DIV)
-                severity_icons = {'critical': '!!!', 'high': '!! ', 'medium': '!  ', 'low': '.  ', 'unknown': '?  '}
-                output.append(f"{BOX_EDGE}    DETECTED ATTACKS ({len(conv['attacks'])} total):{' '*70}  {BOX_EDGE}")
-                for i, attack in enumerate(conv['attacks'], 1):
-                    ts = attack.get('timestamp', '')[:19]
-                    msg = attack.get('message', '')[:60]
-                    raw = attack.get('raw', {})
-                    types = raw.get('attack_types', [])
-                    severity = raw.get('severity', 'unknown')
-                    sev_icon = severity_icons.get(severity, '?  ')
-                    
-                    line = f"      {sev_icon} [{ts}] {msg}"
-                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
-                    if types:
-                        types_str = f"           Types: {', '.join(types[:5])} | Severity: {severity.upper()}"
-                        output.append(f"{BOX_EDGE}{types_str[:116]:<116}  {BOX_EDGE}")
-                    
-                    # Show indicators if available
-                    indicators = raw.get('indicators', [])
-                    if indicators:
-                        ind_str = f"           Indicators: {', '.join(str(ind) for ind in indicators[:3])}"
-                        output.append(f"{BOX_EDGE}{ind_str[:116]:<116}  {BOX_EDGE}")
-            
-            # ML Analysis for session if enabled
-            if include_ml and self.ml_detector:
-                session_ml = self.get_ml_insights({session_id: conv})
-                if session_ml.get('metrics', {}).get('anomalies_detected', 0) > 0:
-                    output.append(SECTION_DIV)
-                    output.append(f"{BOX_EDGE}    ML ANALYSIS:{' '*99}  {BOX_EDGE}")
-                    metrics = session_ml.get('metrics', {})
-                    risk = session_ml.get('risk_summary', {})
-                    ml_line = f"           Anomalies: {metrics.get('anomalies_detected', 0)} | High: {risk.get('high', 0)} | Medium: {risk.get('medium', 0)} | Low: {risk.get('low', 0)}"
-                    output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+            # FTP-specific formatting
+            if self.service == 'ftp':
+                output.extend(self._format_ftp_session_text(conv, session_id, include_ml, show_full, BOX_EDGE, SECTION_DIV))
+            else:
+                # Original generic formatting for other protocols
+                output.extend(self._format_generic_session_text(conv, session_id, include_ml, show_full, BOX_EDGE, SECTION_DIV))
             
             output.append(BOX_MID)
         
@@ -664,8 +757,332 @@ class LogViewer:
         
         return "\n".join(output)
     
+    def _format_ftp_session_text(self, conv: Dict[str, Any], session_id: str, 
+                                  include_ml: bool, show_full: bool,
+                                  BOX_EDGE: str, SECTION_DIV: str) -> List[str]:
+        """Format FTP session with comprehensive ML and attack analysis"""
+        output = []
+        
+        # Get session directory for reading detailed session data
+        session_dir = None
+        for entry in conv['entries']:
+            if entry.get('protocol_details', {}).get('session_dir'):
+                session_dir = entry['protocol_details']['session_dir']
+                break
+        
+        # Read session data if available
+        session_data = {}
+        if session_dir and hasattr(self.analyzer, 'read_session_data'):
+            session_data = self.analyzer.read_session_data(session_dir, self.base_dir)
+        
+        # AI Features Section
+        ai_features = None
+        for entry in conv['entries']:
+            ai_features = entry.get('protocol_details', {}).get('ai_features_enabled')
+            if ai_features:
+                break
+        
+        if ai_features:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    AI FEATURES ENABLED:{' '*91}  {BOX_EDGE}")
+            features_list = [k for k, v in ai_features.items() if v]
+            features_str = ", ".join(features_list[:4])
+            output.append(f"{BOX_EDGE}      {features_str[:110]:<110}  {BOX_EDGE}")
+        
+        # FTP Command Timeline with Request/Response pairs
+        ftp_commands = [cmd for cmd in conv['commands'] 
+                       if cmd.get('protocol_details', {}).get('command')]
+        if ftp_commands:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    FTP COMMAND TIMELINE ({len(ftp_commands)} commands):{' '*65}  {BOX_EDGE}")
+            
+            for i, cmd in enumerate(ftp_commands[:30], 1):  # Limit to 30
+                ts = cmd.get('timestamp', '')[:19]
+                pd = cmd.get('protocol_details', {})
+                ftp_cmd = pd.get('command', 'N/A')
+                args = pd.get('command_args', '')
+                full_cmd = f"{ftp_cmd} {args}".strip() if args else ftp_cmd
+                
+                # Risk indicator
+                risk_indicator = ""
+                severity = pd.get('severity', '')
+                if severity in ['critical', 'high']:
+                    risk_indicator = " [!ATTACK]"
+                elif severity == 'medium':
+                    risk_indicator = " [!]"
+                elif pd.get('attack_types'):
+                    risk_indicator = " [⚠]"
+                
+                line = f"      {i:>3}. [{ts}] >>> {full_cmd[:80]}{risk_indicator}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                
+                # Show attack details if present
+                if pd.get('attack_types'):
+                    attack_line = f"           Attack: {', '.join(pd['attack_types'][:3])} | Threat Score: {pd.get('threat_score', 0)}"
+                    output.append(f"{BOX_EDGE}{attack_line[:116]:<116}  {BOX_EDGE}")
+                
+                # Show ML analysis if available and show_full enabled
+                if show_full and pd.get('ml_anomaly_score'):
+                    ml_line = f"           ML: Score={pd.get('ml_anomaly_score', 0):.3f} | Risk={pd.get('ml_risk_level', 'N/A')} | Labels={', '.join(pd.get('ml_labels', []))}"
+                    output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+            
+            if len(ftp_commands) > 30:
+                output.append(f"{BOX_EDGE}           ... and {len(ftp_commands) - 30} more commands{' '*68}  {BOX_EDGE}")
+        
+        # FTP Responses with response codes
+        ftp_responses = [r for r in conv['entries'] 
+                        if r.get('protocol_details', {}).get('response_code')]
+        if ftp_responses:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    FTP RESPONSES ({len(ftp_responses)} total):{' '*77}  {BOX_EDGE}")
+            
+            # Group by response code for summary
+            response_codes = {}
+            for r in ftp_responses:
+                code = r.get('protocol_details', {}).get('response_code', 0)
+                response_codes[code] = response_codes.get(code, 0) + 1
+            
+            codes_summary = " | ".join([f"{code}: {count}" for code, count in sorted(response_codes.items())])
+            output.append(f"{BOX_EDGE}      Response Codes: {codes_summary[:94]:<94}  {BOX_EDGE}")
+            
+            # Show detailed responses if full mode
+            if show_full:
+                for i, resp in enumerate(ftp_responses[:15], 1):
+                    ts = resp.get('timestamp', '')[:19]
+                    pd = resp.get('protocol_details', {})
+                    code = pd.get('response_code', '')
+                    msg = pd.get('response_message', '')[:70]
+                    line = f"      {i:>3}. [{ts}] <<< {code} {msg}"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+        
+        # LLM/AI Responses
+        llm_responses = [r for r in conv['entries'] 
+                        if 'llm' in r.get('message', '').lower() 
+                        or r.get('protocol_details', {}).get('ai_response')]
+        if llm_responses:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    LLM/AI RESPONSES ({len(llm_responses)} total):{' '*74}  {BOX_EDGE}")
+            for i, llm in enumerate(llm_responses[:10], 1):
+                ts = llm.get('timestamp', '')[:19]
+                pd = llm.get('protocol_details', {})
+                ai_resp = pd.get('ai_response', '')[:80]
+                cmd = pd.get('command', '')[:20]
+                line = f"      {i:>3}. [{ts}] {cmd} -> {ai_resp}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+        
+        # Authentication Events
+        auth_entries = [e for e in conv['entries'] 
+                       if 'authentication' in e.get('message', '').lower()]
+        if auth_entries:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    AUTHENTICATION EVENTS:{' '*89}  {BOX_EDGE}")
+            for auth in auth_entries:
+                ts = auth.get('timestamp', '')[:19]
+                pd = auth.get('protocol_details', {})
+                user = pd.get('username', 'unknown')
+                passwd = pd.get('password', '***')[:10]
+                msg = auth.get('message', '')
+                success = "SUCCESS" if "success" in msg.lower() else "FAILED"
+                line = f"      [{ts}] User: {user} | Pass: {passwd}{'...' if len(pd.get('password', '')) > 10 else ''} | Status: {success}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+        
+        # Attacks (Enhanced with indicators and patterns)
+        if conv['attacks']:
+            output.append(SECTION_DIV)
+            severity_icons = {'critical': '!!!', 'high': '!! ', 'medium': '!  ', 'low': '.  ', 'unknown': '?  '}
+            output.append(f"{BOX_EDGE}    DETECTED ATTACKS ({len(conv['attacks'])} total):{' '*70}  {BOX_EDGE}")
+            
+            for i, attack in enumerate(conv['attacks'], 1):
+                ts = attack.get('timestamp', '')[:19]
+                msg = attack.get('message', '')[:50]
+                raw = attack.get('raw', {})
+                pd = attack.get('protocol_details', {})
+                types = raw.get('attack_types', []) or pd.get('attack_types', [])
+                severity = raw.get('severity', pd.get('severity', 'unknown'))
+                sev_icon = severity_icons.get(severity, '?  ')
+                threat_score = raw.get('threat_score', pd.get('threat_score', 0))
+                
+                line = f"      {sev_icon} [{ts}] {msg} | Score: {threat_score}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                
+                if types:
+                    types_str = f"           Types: {', '.join(types[:4])} | Severity: {severity.upper()}"
+                    output.append(f"{BOX_EDGE}{types_str[:116]:<116}  {BOX_EDGE}")
+                
+                # Show indicators
+                indicators = raw.get('indicators', []) or pd.get('indicators', [])
+                if indicators:
+                    ind_str = f"           Indicators: {', '.join(str(ind) for ind in indicators[:5])}"
+                    output.append(f"{BOX_EDGE}{ind_str[:116]:<116}  {BOX_EDGE}")
+                
+                # Show vulnerability details if present
+                if pd.get('vulnerability_id'):
+                    vuln_str = f"           Vulnerability: {pd['vulnerability_id']} | CVSS: {pd.get('cvss_score', 0)}"
+                    output.append(f"{BOX_EDGE}{vuln_str[:116]:<116}  {BOX_EDGE}")
+        
+        # ML Analysis Section (Enhanced)
+        if include_ml:
+            # Try to get ML metrics from session data
+            ml_metrics = session_data.get('ml_metrics', {})
+            if ml_metrics:
+                output.append(SECTION_DIV)
+                output.append(f"{BOX_EDGE}    ML ANALYSIS (from session data):{' '*79}  {BOX_EDGE}")
+                output.append(f"{BOX_EDGE}      Avg Anomaly Score: {ml_metrics.get('avg_anomaly_score', 0):.4f} | Max: {ml_metrics.get('max_anomaly_score', 0):.4f} | Min: {ml_metrics.get('min_anomaly_score', 0):.4f}{' '*25}  {BOX_EDGE}")
+                output.append(f"{BOX_EDGE}      Commands Analyzed: {ml_metrics.get('total_commands_analyzed', 0):<84}  {BOX_EDGE}")
+                
+                risk_dist = ml_metrics.get('risk_level_distribution', {})
+                risk_str = f"      Risk Distribution: Low: {risk_dist.get('low', 0)} | Medium: {risk_dist.get('medium', 0)} | High: {risk_dist.get('high', 0)}"
+                output.append(f"{BOX_EDGE}{risk_str:<116}  {BOX_EDGE}")
+            
+            # Show attack metrics
+            attack_metrics = session_data.get('attack_metrics', {})
+            if attack_metrics.get('attack_types_detected'):
+                attack_types_str = " | ".join([f"{k}: {v}" for k, v in attack_metrics['attack_types_detected'].items()])
+                output.append(f"{BOX_EDGE}      Attack Types: {attack_types_str[:95]:<95}  {BOX_EDGE}")
+            
+            # Fallback to real-time ML analysis
+            if self.ml_detector and not ml_metrics:
+                session_ml = self.get_ml_insights({session_id: conv})
+                if session_ml.get('metrics', {}).get('anomalies_detected', 0) > 0:
+                    output.append(SECTION_DIV)
+                    output.append(f"{BOX_EDGE}    ML ANALYSIS (real-time):{' '*87}  {BOX_EDGE}")
+                    metrics = session_ml.get('metrics', {})
+                    risk = session_ml.get('risk_summary', {})
+                    ml_line = f"      Anomalies: {metrics.get('anomalies_detected', 0)} | High: {risk.get('high', 0)} | Medium: {risk.get('medium', 0)} | Low: {risk.get('low', 0)}"
+                    output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+        
+        # Session Summary (AI Judgement)
+        session_summaries = [e for e in conv['entries'] 
+                           if 'session summary' in e.get('message', '').lower()]
+        if session_summaries:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    AI SESSION ANALYSIS:{' '*91}  {BOX_EDGE}")
+            for summary in session_summaries[:1]:  # Show only the first summary
+                pd = summary.get('protocol_details', {})
+                judgement = pd.get('judgement', 'UNKNOWN')
+                session_cmds = pd.get('session_commands', 0)
+                attacks_detected = pd.get('attack_patterns_detected', 0)
+                output.append(f"{BOX_EDGE}      Judgement: {judgement} | Commands: {session_cmds} | Attack Patterns: {attacks_detected}{' '*40}  {BOX_EDGE}")
+                
+                # Show summary details if available
+                details = summary.get('raw', {}).get('details', '')
+                if details and show_full:
+                    # Show first 200 chars of analysis
+                    preview = details.replace('\\n', ' ').replace('\n', ' ')[:180]
+                    output.append(f"{BOX_EDGE}      Analysis: {preview}...{' '*2}  {BOX_EDGE}" if len(details) > 180 else f"{BOX_EDGE}      {preview}{' '*(114-len(preview))}  {BOX_EDGE}")
+        
+        return output
+    
+    def _format_generic_session_text(self, conv: Dict[str, Any], session_id: str,
+                                     include_ml: bool, show_full: bool,
+                                     BOX_EDGE: str, SECTION_DIV: str) -> List[str]:
+        """Original generic formatting for non-FTP sessions"""
+        output = []
+        
+        # Command Timeline - only show commands with actual query/command content
+        commands_with_content = [cmd for cmd in conv['commands'] 
+                                 if cmd.get('protocol_details', {}).get('query', '').strip()]
+        if commands_with_content:
+            output.append(SECTION_DIV)
+            output.append(f"{BOX_EDGE}    QUERY TIMELINE ({len(commands_with_content)} queries):{' '*70}  {BOX_EDGE}")
+            for i, cmd in enumerate(commands_with_content, 1):
+                ts = cmd.get('timestamp', '')[:19]
+                pd = cmd.get('protocol_details', {})
+                query = pd.get('query', '').strip()
+                
+                if len(query) > 90:
+                    query = query[:87] + '...'
+                
+                attack_indicator = ""
+                if pd.get('attack_types'):
+                    attack_indicator = " [!ATTACK]"
+                elif pd.get('severity') in ['critical', 'high']:
+                    attack_indicator = " [!]"
+                
+                line = f"      {i:>3}. [{ts}] {query}{attack_indicator}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                
+                if show_full and pd.get('ml_anomaly_score'):
+                    ml_line = f"           ML Score: {pd['ml_anomaly_score']:.3f} | Labels: {', '.join(pd.get('ml_labels', []))}"
+                    output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+        
+        # Responses
+        if conv['responses']:
+            output.append(SECTION_DIV)
+            meaningful_responses = [r for r in conv['responses'] 
+                                    if 'llm response' in r.get('message', '').lower() 
+                                    or r.get('protocol_details', {}).get('llm_response')]
+            
+            if meaningful_responses:
+                output.append(f"{BOX_EDGE}    LLM RESPONSES ({len(meaningful_responses)} total):{' '*70}  {BOX_EDGE}")
+                for i, resp in enumerate(meaningful_responses, 1):
+                    ts = resp.get('timestamp', '')[:19]
+                    pd = resp.get('protocol_details', {})
+                    llm_resp = pd.get('llm_response', '')
+                    model = pd.get('model', '')
+                    query = pd.get('query', '')[:40]
+                    
+                    line = f"      {i:>3}. [{ts}] Query: {query}"
+                    if model:
+                        line += f" (Model: {model})"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                    
+                    if llm_resp:
+                        resp_preview = llm_resp.replace('\n', ' ')[:100]
+                        if len(llm_resp) > 100:
+                            resp_preview += '...'
+                        line2 = f"           Response: {resp_preview}"
+                        output.append(f"{BOX_EDGE}{line2[:116]:<116}  {BOX_EDGE}")
+            else:
+                output.append(f"{BOX_EDGE}    RESPONSES ({len(conv['responses'])} total):{' '*77}  {BOX_EDGE}")
+                for i, resp in enumerate(conv['responses'][:20], 1):
+                    ts = resp.get('timestamp', '')[:19]
+                    msg = resp.get('message', '')[:80]
+                    line = f"      {i:>3}. [{ts}] {msg}"
+                    output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                
+                if len(conv['responses']) > 20:
+                    output.append(f"{BOX_EDGE}           ... and {len(conv['responses']) - 20} more responses{' '*70}  {BOX_EDGE}")
+        
+        # Attacks
+        if conv['attacks']:
+            output.append(SECTION_DIV)
+            severity_icons = {'critical': '!!!', 'high': '!! ', 'medium': '!  ', 'low': '.  ', 'unknown': '?  '}
+            output.append(f"{BOX_EDGE}    DETECTED ATTACKS ({len(conv['attacks'])} total):{' '*70}  {BOX_EDGE}")
+            for attack in conv['attacks']:
+                ts = attack.get('timestamp', '')[:19]
+                msg = attack.get('message', '')[:60]
+                raw = attack.get('raw', {})
+                types = raw.get('attack_types', [])
+                severity = raw.get('severity', 'unknown')
+                sev_icon = severity_icons.get(severity, '?  ')
+                
+                line = f"      {sev_icon} [{ts}] {msg}"
+                output.append(f"{BOX_EDGE}{line[:116]:<116}  {BOX_EDGE}")
+                if types:
+                    types_str = f"           Types: {', '.join(types[:5])} | Severity: {severity.upper()}"
+                    output.append(f"{BOX_EDGE}{types_str[:116]:<116}  {BOX_EDGE}")
+                
+                indicators = raw.get('indicators', [])
+                if indicators:
+                    ind_str = f"           Indicators: {', '.join(str(ind) for ind in indicators[:3])}"
+                    output.append(f"{BOX_EDGE}{ind_str[:116]:<116}  {BOX_EDGE}")
+        
+        # ML Analysis for session if enabled
+        if include_ml and self.ml_detector:
+            session_ml = self.get_ml_insights({session_id: conv})
+            if session_ml.get('metrics', {}).get('anomalies_detected', 0) > 0:
+                output.append(SECTION_DIV)
+                output.append(f"{BOX_EDGE}    ML ANALYSIS:{' '*99}  {BOX_EDGE}")
+                metrics = session_ml.get('metrics', {})
+                risk = session_ml.get('risk_summary', {})
+                ml_line = f"           Anomalies: {metrics.get('anomalies_detected', 0)} | High: {risk.get('high', 0)} | Medium: {risk.get('medium', 0)} | Low: {risk.get('low', 0)}"
+                output.append(f"{BOX_EDGE}{ml_line[:116]:<116}  {BOX_EDGE}")
+        
+        return output
+    
     def format_json(self, conversations: Dict[str, Any], include_ml: bool = False) -> str:
-        """Format as JSON"""
+        """Format as JSON with comprehensive FTP-specific data"""
         data = {
             'service': self.service,
             'timestamp': datetime.datetime.now().isoformat(),
@@ -680,6 +1097,7 @@ class LogViewer:
         }
         
         for session_id, conv in conversations.items():
+            # Base session data
             session_data = {
                 'session_id': session_id,
                 'source': {
@@ -692,53 +1110,13 @@ class LogViewer:
                 },
                 'protocol_details': conv['protocol_details'],
                 'statistics': conv['statistics'],
-                'entries': [
-                    {
-                        'timestamp': e['timestamp'],
-                        'message': e['message'],
-                        'level': e['level'],
-                        'protocol_details': e['protocol_details'],
-                        'decoded_details': e.get('decoded_details'),
-                    }
-                    for e in conv['entries']
-                ],
-                'commands': [
-                    {
-                        'timestamp': c.get('timestamp'),
-                        'query': c.get('protocol_details', {}).get('query', ''),
-                        'query_type': c.get('protocol_details', {}).get('query_type', ''),
-                        'username': c.get('protocol_details', {}).get('username', ''),
-                    }
-                    for c in conv['commands']
-                ],
-                'responses': [
-                    {
-                        'timestamp': r.get('timestamp'),
-                        'message': r.get('message', ''),
-                        'llm_response': r.get('protocol_details', {}).get('llm_response', ''),
-                        'model': r.get('protocol_details', {}).get('model', ''),
-                    }
-                    for r in conv['responses']
-                ],
-                'attacks': [
-                    {
-                        'timestamp': a.get('timestamp'),
-                        'message': a.get('message'),
-                        'query': a.get('protocol_details', {}).get('query', ''),
-                        'attack_types': a.get('raw', {}).get('attack_types', []),
-                        'severity': a.get('raw', {}).get('severity'),
-                        'threat_score': a.get('raw', {}).get('threat_score', 0),
-                        'indicators': a.get('raw', {}).get('indicators', []),
-                        'vulnerability_id': a.get('protocol_details', {}).get('vulnerability_id', ''),
-                        'cvss_score': a.get('protocol_details', {}).get('cvss_score', 0),
-                    }
-                    for a in conv['attacks']
-                ]
             }
             
-            if include_ml:
-                ml_insights = self.get_ml_insights({session_id: conv})
-                session_data['ml_insights'] = ml_insights
+            # FTP-specific enhanced formatting
+            if self.service == 'ftp':
+                session_data.update(self._format_ftp_session_json(conv, session_id, include_ml))
+            else:
+                session_data.update(self._format_generic_session_json(conv, session_id, include_ml))
             
             data['sessions'][session_id] = session_data
         
@@ -746,6 +1124,212 @@ class LogViewer:
             data['ml_summary'] = self.get_ml_insights(conversations)
         
         return json.dumps(data, indent=2, default=str)
+    
+    def _format_ftp_session_json(self, conv: Dict[str, Any], session_id: str, 
+                                  include_ml: bool) -> Dict[str, Any]:
+        """Format FTP session data as JSON with comprehensive ML and attack analysis"""
+        result = {}
+        
+        # Get session directory for reading detailed session data
+        session_dir = None
+        for entry in conv['entries']:
+            if entry.get('protocol_details', {}).get('session_dir'):
+                session_dir = entry['protocol_details']['session_dir']
+                break
+        
+        # Read session data if available
+        session_data = {}
+        if session_dir and hasattr(self.analyzer, 'read_session_data'):
+            session_data = self.analyzer.read_session_data(session_dir, self.base_dir)
+        
+        # AI Features
+        ai_features = None
+        for entry in conv['entries']:
+            ai_features = entry.get('protocol_details', {}).get('ai_features_enabled')
+            if ai_features:
+                break
+        if ai_features:
+            result['ai_features_enabled'] = ai_features
+        
+        # FTP Commands with full details
+        result['ftp_commands'] = []
+        for cmd in conv['commands']:
+            pd = cmd.get('protocol_details', {})
+            cmd_data = {
+                'timestamp': cmd.get('timestamp'),
+                'command': pd.get('command', ''),
+                'command_args': pd.get('command_args', ''),
+                'full_command': f"{pd.get('command', '')} {pd.get('command_args', '')}".strip(),
+                'username': pd.get('username', ''),
+                'severity': pd.get('severity', 'low'),
+                'attack_types': pd.get('attack_types', []),
+                'indicators': pd.get('indicators', []),
+                'threat_score': pd.get('threat_score', 0),
+            }
+            
+            # Add ML data if present
+            if pd.get('ml_anomaly_score') is not None:
+                cmd_data['ml_analysis'] = {
+                    'anomaly_score': pd.get('ml_anomaly_score'),
+                    'labels': pd.get('ml_labels', []),
+                    'cluster': pd.get('ml_cluster'),
+                    'reason': pd.get('ml_reason', ''),
+                    'confidence': pd.get('ml_confidence'),
+                    'risk_score': pd.get('ml_risk_score'),
+                    'inference_time_ms': pd.get('ml_inference_time_ms'),
+                    'risk_level': pd.get('ml_risk_level', 'unknown'),
+                    'threat_score': pd.get('ml_threat_score'),
+                    'risk_color': pd.get('ml_risk_color', ''),
+                    'attack_vectors': pd.get('attack_vectors', []),
+                }
+            
+            result['ftp_commands'].append(cmd_data)
+        
+        # FTP Responses with codes
+        result['ftp_responses'] = []
+        for entry in conv['entries']:
+            pd = entry.get('protocol_details', {})
+            if pd.get('response_code'):
+                result['ftp_responses'].append({
+                    'timestamp': entry.get('timestamp'),
+                    'response_code': pd.get('response_code'),
+                    'response_message': pd.get('response_message', ''),
+                    'ai_response': pd.get('ai_response', ''),
+                })
+        
+        # Authentication events
+        result['authentication_events'] = []
+        for entry in conv['entries']:
+            if 'authentication' in entry.get('message', '').lower():
+                pd = entry.get('protocol_details', {})
+                result['authentication_events'].append({
+                    'timestamp': entry.get('timestamp'),
+                    'username': pd.get('username', ''),
+                    'password': pd.get('password', ''),
+                    'success': 'success' in entry.get('message', '').lower(),
+                    'message': entry.get('message', ''),
+                })
+        
+        # Attacks with full details
+        result['attacks'] = []
+        for attack in conv['attacks']:
+            raw = attack.get('raw', {})
+            pd = attack.get('protocol_details', {})
+            attack_data = {
+                'timestamp': attack.get('timestamp'),
+                'message': attack.get('message', ''),
+                'attack_types': raw.get('attack_types', []) or pd.get('attack_types', []),
+                'severity': raw.get('severity', pd.get('severity', 'unknown')),
+                'threat_score': raw.get('threat_score', pd.get('threat_score', 0)),
+                'indicators': raw.get('indicators', []) or pd.get('indicators', []),
+                'command': pd.get('command', raw.get('command', '')),
+            }
+            
+            # Add vulnerability details if present
+            if pd.get('vulnerability_id'):
+                attack_data['vulnerability'] = {
+                    'id': pd.get('vulnerability_id', ''),
+                    'name': pd.get('vuln_name', ''),
+                    'description': pd.get('vuln_description', ''),
+                    'pattern_matched': pd.get('pattern_matched', ''),
+                    'cvss_score': pd.get('cvss_score', 0),
+                    'related_attack_types': pd.get('related_attack_types', []),
+                }
+            
+            result['attacks'].append(attack_data)
+        
+        # Session summary
+        for entry in conv['entries']:
+            if 'session summary' in entry.get('message', '').lower():
+                pd = entry.get('protocol_details', {})
+                result['session_summary'] = {
+                    'judgement': pd.get('judgement', 'UNKNOWN'),
+                    'session_commands': pd.get('session_commands', 0),
+                    'attack_patterns_detected': pd.get('attack_patterns_detected', 0),
+                    'details': entry.get('raw', {}).get('details', ''),
+                }
+                break
+        
+        # ML metrics from session data
+        if session_data.get('ml_metrics'):
+            result['ml_session_metrics'] = session_data['ml_metrics']
+        if session_data.get('attack_metrics'):
+            result['attack_session_metrics'] = session_data['attack_metrics']
+        
+        # Session transcript from replay
+        if session_data.get('replay'):
+            replay = session_data['replay']
+            result['session_transcript'] = {
+                'session_id': replay.get('session_id', ''),
+                'start_time': replay.get('start_time', ''),
+                'end_time': replay.get('end_time', ''),
+                'transcript': replay.get('transcript', [])[:50],  # Limit to 50 entries
+            }
+        
+        # Commands with ML analysis from session data
+        if session_data.get('commands'):
+            result['commands_with_ml_analysis'] = session_data['commands'][:30]  # Limit to 30
+        
+        # ML insights if requested
+        if include_ml:
+            ml_insights = self.get_ml_insights({session_id: conv})
+            result['ml_insights'] = ml_insights
+        
+        return result
+    
+    def _format_generic_session_json(self, conv: Dict[str, Any], session_id: str,
+                                      include_ml: bool) -> Dict[str, Any]:
+        """Format generic session data as JSON"""
+        result = {
+            'entries': [
+                {
+                    'timestamp': e['timestamp'],
+                    'message': e['message'],
+                    'level': e['level'],
+                    'protocol_details': e['protocol_details'],
+                    'decoded_details': e.get('decoded_details'),
+                }
+                for e in conv['entries']
+            ],
+            'commands': [
+                {
+                    'timestamp': c.get('timestamp'),
+                    'query': c.get('protocol_details', {}).get('query', ''),
+                    'query_type': c.get('protocol_details', {}).get('query_type', ''),
+                    'username': c.get('protocol_details', {}).get('username', ''),
+                }
+                for c in conv['commands']
+            ],
+            'responses': [
+                {
+                    'timestamp': r.get('timestamp'),
+                    'message': r.get('message', ''),
+                    'llm_response': r.get('protocol_details', {}).get('llm_response', ''),
+                    'model': r.get('protocol_details', {}).get('model', ''),
+                }
+                for r in conv['responses']
+            ],
+            'attacks': [
+                {
+                    'timestamp': a.get('timestamp'),
+                    'message': a.get('message'),
+                    'query': a.get('protocol_details', {}).get('query', ''),
+                    'attack_types': a.get('raw', {}).get('attack_types', []),
+                    'severity': a.get('raw', {}).get('severity'),
+                    'threat_score': a.get('raw', {}).get('threat_score', 0),
+                    'indicators': a.get('raw', {}).get('indicators', []),
+                    'vulnerability_id': a.get('protocol_details', {}).get('vulnerability_id', ''),
+                    'cvss_score': a.get('protocol_details', {}).get('cvss_score', 0),
+                }
+                for a in conv['attacks']
+            ]
+        }
+        
+        if include_ml:
+            ml_insights = self.get_ml_insights({session_id: conv})
+            result['ml_insights'] = ml_insights
+        
+        return result
     
     def format_conversation(self, conversations: Dict[str, Any], format_type: str = 'text',
                           show_full: bool = False, include_ml: bool = False) -> str:
