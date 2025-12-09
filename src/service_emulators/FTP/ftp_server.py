@@ -54,6 +54,23 @@ ML_AVAILABLE = False
 MLDetector = None
 MLConfig = None
 
+# Import FTP honeypot modules
+try:
+    from virtual_filesystem import VirtualFilesystem, FileNode
+    from command_executor import FTPCommandExecutor
+    from llm_guard import LLMGuard
+    VFS_AVAILABLE = True
+except ImportError:
+    try:
+        from .virtual_filesystem import VirtualFilesystem, FileNode
+        from .command_executor import FTPCommandExecutor
+        from .llm_guard import LLMGuard
+        VFS_AVAILABLE = True
+    except ImportError as e:
+        VFS_AVAILABLE = False
+        if __name__ == "__main__":
+            print(f"Warning: VFS modules not available: {e}")
+
 try:
     # Try relative imports first
     from ...ai.config import MLConfig
@@ -788,7 +805,12 @@ class FTPSession:
             "start_time": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         }
 
-        # Initialize seed filesystem if configured
+        # Initialize virtual filesystem (VFS) for hybrid honeypot mode
+        self.filesystem = None
+        self.command_executor = None
+        self.llm_guard = None
+        
+        # Legacy seed filesystem for fallback
         self.seed_fs = self._load_seed_filesystem()
 
         # Initialize session recording if enabled
@@ -823,7 +845,7 @@ class FTPSession:
             return {}
 
     def _initialize_components(self, server):
-        """Initialize integrated components"""
+        """Initialize integrated components including VFS and command execution"""
         try:
             self.attack_analyzer = AttackAnalyzer()
             self.file_handler = (
@@ -837,12 +859,38 @@ class FTPSession:
                 if config["forensics"].getboolean("chain_of_custody", True)
                 else None
             )
+            
+            # Initialize VFS-based hybrid honeypot components
+            if VFS_AVAILABLE:
+                try:
+                    self.filesystem = VirtualFilesystem(username="ftp")
+                    self.command_executor = FTPCommandExecutor(self.filesystem)
+                    self.llm_guard = LLMGuard()
+                    
+                    # Try to load persisted VFS state
+                    vfs_state_path = str(server.session_dir / "filesystem_state.json")
+                    if os.path.exists(vfs_state_path):
+                        self.filesystem.load_state(vfs_state_path)
+                        logger.info(f"Loaded VFS state from {vfs_state_path}")
+                    
+                    logger.info("Hybrid honeypot VFS initialized successfully")
+                except Exception as ve:
+                    logger.error(f"Failed to initialize VFS components: {ve}")
+                    self.filesystem = None
+                    self.command_executor = None
+                    self.llm_guard = None
+            else:
+                logger.warning("VFS modules not available, using LLM-only mode")
+                
         except Exception as e:
             logger.error(f"Failed to initialize FTP session components: {e}")
             self.attack_analyzer = None
             self.file_handler = None
             self.vuln_logger = None
             self.forensic_logger = None
+            self.filesystem = None
+            self.command_executor = None
+            self.llm_guard = None
 
     async def send_response(self, code: int, message: str):
         """Send FTP response to client"""
@@ -1051,11 +1099,14 @@ class FTPSession:
     async def handle_ftp_command(
         self, command: str, args: str, attack_analysis: Dict[str, Any]
     ):
-        """Handle FTP commands with AI-enhanced responses like SSH server"""
+        """Handle FTP commands with 3-layer dispatch: VFS, error simulation, LLM fallback"""
 
-        # Handle authentication commands manually (no LLM needed)
+        # ===== Authentication commands (handled manually, not by dispatcher) =====
         if command == "USER":
             self.username = args
+            # Set filesystem user context if available
+            if self.filesystem:
+                self.filesystem.set_user(args if args else "ftp")
             await self.send_response(331, f"Password required for {args}")
             return True
         elif command == "PASS":
@@ -1066,6 +1117,23 @@ class FTPSession:
                 args == accounts[self.username] or accounts[self.username] == "*"
             ):
                 self.authenticated = True
+                # Set filesystem user context on successful auth
+                if self.filesystem:
+                    self.filesystem.set_user(self.username)
+                    
+                    # Load per-user VFS state for persistence
+                    sessions_dir = Path(config["honeypot"].get("sessions_dir", "sessions"))
+                    user_state_dir = sessions_dir / "user_states" / self.username
+                    user_state_dir.mkdir(parents=True, exist_ok=True)
+                    user_state_path = user_state_dir / "filesystem_state.json"
+                    
+                    if user_state_path.exists():
+                        if self.filesystem.load_state(str(user_state_path)):
+                            logger.info(f"Loaded persisted VFS state for user {self.username}")
+                    
+                    # Set initial directory based on user
+                    self.current_directory = "/var/ftp/pub"
+                    
                 await self.send_response(230, f"User {self.username} logged in")
                 logger.info(
                     "FTP authentication success",
@@ -1079,6 +1147,18 @@ class FTPSession:
                 )
             return True
         elif command == "QUIT":
+            # Save VFS state to per-user location before quitting
+            if self.filesystem and self.username:
+                try:
+                    sessions_dir = Path(config["honeypot"].get("sessions_dir", "sessions"))
+                    user_state_dir = sessions_dir / "user_states" / self.username
+                    user_state_dir.mkdir(parents=True, exist_ok=True)
+                    user_state_path = user_state_dir / "filesystem_state.json"
+                    
+                    self.filesystem.save_state(str(user_state_path))
+                    logger.info(f"Saved VFS state for user {self.username} to {user_state_path}")
+                except Exception as e:
+                    logger.error(f"Failed to save VFS state: {e}")
             await self.send_response(221, "Goodbye")
             return False
         elif command == "PORT":
@@ -1088,37 +1168,233 @@ class FTPSession:
             await self.handle_passive_mode()
             return True
 
-        # Check if user needs to be authenticated for file operations
+        # ===== 3-Layer Dispatch using CommandExecutor =====
+        if self.command_executor:
+            # Use the hybrid honeypot dispatch system
+            result = self.command_executor.execute(
+                command=command,
+                args=args,
+                current_dir=self.current_directory,
+                username=self.username or "anonymous",
+                authenticated=self.authenticated,
+            )
+            
+            route = result.get("route")
+            
+            # Layer 1 & 2: VFS execution or error response
+            if route in ("vfs", "error"):
+                code = result.get("code", 500)
+                message = result.get("message", "Error")
+                
+                # Handle directory change commands
+                if result.get("new_dir"):
+                    self.current_directory = result["new_dir"]
+                
+                # Handle transfer type changes
+                if result.get("transfer_type"):
+                    self.transfer_mode = result["transfer_type"]
+                
+                # Handle data transfer commands (LIST, RETR, MLSD)
+                if result.get("data") is not None:
+                    await self.send_response(code, message)
+                    
+                    # Send data via data connection or control connection
+                    data = result["data"]
+                    if hasattr(self, "data_writer") and self.data_writer:
+                        try:
+                            if isinstance(data, str):
+                                self.data_writer.write(data.encode() + b"\r\n")
+                            else:
+                                self.data_writer.write(data)
+                            await self.data_writer.drain()
+                            self.data_writer.close()
+                            await self.data_writer.wait_closed()
+                            self.data_writer = None
+                        except Exception as e:
+                            logger.error(f"Data connection error: {e}")
+                            # Fall back to control connection
+                            for line in str(data).split("\n"):
+                                if line.strip():
+                                    self.writer.write(f"{line}\r\n".encode())
+                                    await self.writer.drain()
+                    else:
+                        # Send via control connection for telnet clients
+                        for line in str(data).split("\n"):
+                            if line.strip():
+                                self.writer.write(f"{line}\r\n".encode())
+                                await self.writer.drain()
+                    
+                    # Send completion message if provided
+                    if result.get("data_complete_code"):
+                        await asyncio.sleep(0.1)  # Simulate transfer delay
+                        await self.send_response(
+                            result["data_complete_code"],
+                            result.get("data_complete_message", "Transfer complete")
+                        )
+                    
+                    # Log the data transfer
+                    logger.info(
+                        "FTP data transfer",
+                        extra={
+                            "command": command,
+                            "directory": self.current_directory,
+                            "bytes": len(str(data)),
+                        },
+                    )
+                
+                # Handle STOR command (file upload)
+                elif result.get("stor_path"):
+                    await self.send_response(code, message)
+                    
+                    # Read data from data connection
+                    uploaded_content = b""
+                    if hasattr(self, "data_reader") and self.data_reader:
+                        try:
+                            uploaded_content = await asyncio.wait_for(
+                                self.data_reader.read(10 * 1024 * 1024),  # Max 10MB
+                                timeout=30.0
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("File upload timed out")
+                        except Exception as e:
+                            logger.error(f"Error reading upload data: {e}")
+                    
+                    # Store the file in VFS
+                    if uploaded_content:
+                        if result.get("append"):
+                            success = self.command_executor.complete_appe(
+                                result["stor_path"],
+                                uploaded_content.decode('utf-8', errors='replace'),
+                                result.get("stor_username", self.username or "ftp")
+                            )
+                        else:
+                            success = self.command_executor.complete_stor(
+                                result["stor_path"],
+                                uploaded_content.decode('utf-8', errors='replace'),
+                                result.get("stor_username", self.username or "ftp")
+                            )
+                        
+                        if success:
+                            await self.send_response(226, "Transfer complete")
+                            # Track upload in session
+                            if self.file_handler:
+                                upload_info = self.file_handler.handle_upload(
+                                    result["stor_path"].split("/")[-1],
+                                    uploaded_content
+                                )
+                                self.session_data["files_uploaded"].append(upload_info)
+                        else:
+                            await self.send_response(550, "Upload failed")
+                    else:
+                        await self.send_response(226, "Transfer complete (empty file)")
+                
+                # Standard response (no data connection)
+                else:
+                    await self.send_response(code, message)
+                
+                return True
+            
+            # Layer 3: LLM fallback
+            elif route == "llm":
+                return await self._handle_llm_fallback(command, args, attack_analysis, result)
+        
+        # ===== Legacy LLM-only mode (if VFS not available) =====
+        else:
+            return await self._handle_llm_legacy(command, args, attack_analysis)
+
+        return True
+
+    async def _handle_llm_fallback(
+        self, command: str, args: str, attack_analysis: Dict[str, Any], dispatch_result: Dict
+    ):
+        """Handle commands via LLM with context injection"""
+        full_command = f"{command} {args}".strip()
+        
+        # Build enhanced prompt with VFS context
+        if self.llm_guard and self.filesystem:
+            ai_prompt = self.llm_guard.enhance_prompt(
+                command, args, self.filesystem, self.current_directory, self.username or "anonymous"
+            )
+        else:
+            ai_prompt = dispatch_result.get("llm_prompt", f"FTP Command: {full_command}")
+        
+        # Add attack context
+        if config["ai_features"].getboolean("dynamic_responses", True) and attack_analysis.get("attack_types"):
+            ai_prompt += f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
+        
+        try:
+            # Get AI response with timeout
+            llm_response = await asyncio.wait_for(
+                with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=ai_prompt)],
+                        "username": self.username or "anonymous",
+                        "interactive": True,
+                    },
+                    config={"configurable": {"session_id": self.llm_session_id}},
+                ),
+                timeout=30.0,
+            )
+            
+            ai_output = llm_response.content.strip() if llm_response else ""
+            
+            # Validate LLM output
+            if self.llm_guard:
+                validation = self.llm_guard.validate_output(
+                    ai_output, command, args, self.filesystem, self.current_directory
+                )
+                
+                if not validation["is_valid"]:
+                    logger.warning(f"LLM output validation failed: {validation['reason']}")
+                    fallback = self.llm_guard.get_fallback_response(command, validation["reason"])
+                    await self.send_response(fallback["code"], fallback["message"])
+                    return True
+                
+                # Use validated/cleaned response
+                code = validation.get("code", 200)
+                message = validation.get("message", "OK")
+                await self.send_response(code, message)
+            else:
+                # Parse response without validation
+                if ai_output and len(ai_output) >= 3 and ai_output[:3].isdigit():
+                    code = int(ai_output[:3])
+                    message = ai_output[4:] if len(ai_output) > 4 else "OK"
+                    await self.send_response(code, message)
+                else:
+                    await self.send_response(200, ai_output if ai_output else "OK")
+            
+            logger.info(
+                "LLM FTP response",
+                extra={"command": full_command, "ai_response": ai_output, "username": self.username},
+            )
+            
+        except asyncio.TimeoutError:
+            logger.warning(f"LLM command processing timed out for '{full_command}'")
+            await self.send_response(200, "Command okay")
+        except Exception as e:
+            logger.error(f"LLM command processing failed for '{full_command}': {e}", exc_info=True)
+            await self.send_response(502, f"Command not implemented: {command}")
+        
+        return True
+
+    async def _handle_llm_legacy(self, command: str, args: str, attack_analysis: Dict[str, Any]):
+        """Legacy LLM-only handling when VFS is not available"""
+        # Check authentication for protected commands
         if (
-            command
-            in [
-                "LIST",
-                "NLST",
-                "RETR",
-                "STOR",
-                "CWD",
-                "PWD",
-                "CDUP",
-                "MKD",
-                "RMD",
-                "DELE",
-                "SIZE",
-                "MDTM",
-            ]
+            command in ["LIST", "NLST", "RETR", "STOR", "CWD", "PWD", "CDUP", 
+                        "MKD", "RMD", "DELE", "SIZE", "MDTM"]
             and not self.authenticated
         ):
             await self.send_response(530, "Please login with USER and PASS")
             return True
 
-        # Handle LIST/NLST commands with data connection
+        # Use legacy LIST handler
         if command == "LIST" or command == "NLST":
             await self.handle_list_command(command, args, attack_analysis)
             return True
 
-        # Let LLM handle ALL other commands dynamically
+        # Let LLM handle other commands
         full_command = f"{command} {args}".strip()
-
-        # Create detailed AI prompt with FTP context
         ai_prompt = f"""FTP Command: {full_command}
 Current Directory: {self.current_directory}
 Username: {self.username}
@@ -1134,25 +1410,7 @@ Examples:
 
 Important: Start your response with a 3-digit FTP code."""
 
-        # Apply dynamic responses if enabled
-        if config["ai_features"].getboolean(
-            "dynamic_responses", True
-        ) and attack_analysis.get("attack_types"):
-            ai_prompt += (
-                f"\n[ATTACK_DETECTED: {', '.join(attack_analysis['attack_types'])}]"
-            )
-
-        # Apply deception techniques if enabled
-        if config["ai_features"].getboolean("deception_techniques", True):
-            if "reconnaissance" in attack_analysis.get("attack_types", []):
-                ai_prompt += (
-                    "\n[DECEPTION: Show realistic but controlled system information]"
-                )
-            elif "privilege_escalation" in attack_analysis.get("attack_types", []):
-                ai_prompt += "\n[DECEPTION: Simulate security resistance]"
-
         try:
-            # Get AI response for the command with session persistence
             llm_response = await asyncio.wait_for(
                 with_message_history.ainvoke(
                     {
@@ -1162,87 +1420,34 @@ Important: Start your response with a 3-digit FTP code."""
                     },
                     config={"configurable": {"session_id": self.llm_session_id}},
                 ),
-                timeout=30.0,  # Generous timeout for LLM response
+                timeout=30.0,
             )
 
             ai_output = llm_response.content.strip() if llm_response else ""
-
+            
             if not ai_output:
-                # If LLM returns empty, use minimal fallback
-                logger.warning(f"LLM returned empty response for: {full_command}")
                 await self.send_response(502, "Command not implemented")
                 return True
 
-            logger.info(
-                "LLM FTP response",
-                extra={
-                    "command": full_command,
-                    "ai_response": ai_output,
-                    "username": self.username,
-                },
-            )
-
-            # Parse AI response for proper FTP formatting
+            # Parse FTP response
             lines = ai_output.strip().split("\n")
             first_line = lines[0].strip()
 
-            # Try to parse FTP code from first line
-            ftp_code = None
-            ftp_message = first_line
-
-            # Check if first line starts with 3-digit code
-            if len(first_line) >= 3:
-                potential_code = first_line[:3]
-                if potential_code.isdigit():
-                    ftp_code = int(potential_code)
-                    # Extract message after code (skip space if present)
-                    if len(first_line) > 3:
-                        ftp_message = (
-                            first_line[4:] if first_line[3] == " " else first_line[3:]
-                        )
-                    else:
-                        ftp_message = "OK"
-
-            if ftp_code:
-                # Send proper FTP response
+            if len(first_line) >= 3 and first_line[:3].isdigit():
+                ftp_code = int(first_line[:3])
+                ftp_message = first_line[4:] if len(first_line) > 4 else "OK"
                 await self.send_response(ftp_code, ftp_message)
-
-                # Send additional lines if present
-                for line in lines[1:]:
-                    if line.strip():
-                        response = f"{line.strip()}\r\n"
-                        self.writer.write(response.encode())
-                        await self.writer.drain()
             else:
-                # LLM didn't provide FTP code, wrap it in a generic 200 response
-                logger.warning(
-                    f"LLM response missing FTP code for: {full_command}, wrapping in 200"
-                )
                 await self.send_response(200, first_line)
 
-                # Send remaining lines
-                for line in lines[1:]:
-                    if line.strip():
-                        response = f"{line.strip()}\r\n"
-                        self.writer.write(response.encode())
-                        await self.writer.drain()
-
         except asyncio.TimeoutError:
-            logger.warning(
-                f"LLM command processing timed out for '{full_command}'",
-                extra={"command": full_command, "username": self.username},
-            )
-            # Use default FTP response on timeout
             await self.send_response(200, "Command okay")
         except Exception as e:
-            logger.error(
-                f"LLM command processing failed for '{full_command}': {e}",
-                exc_info=True,
-            )
-            # Minimal fallback only on exception
+            logger.error(f"LLM command processing failed: {e}")
             await self.send_response(502, f"Command not implemented: {command}")
 
         return True
+
 
     async def handle_list_command(
         self, command: str, args: str, attack_analysis: Dict[str, Any]
@@ -1566,63 +1771,163 @@ class MyFTPServer:
         self.session_dir.mkdir(parents=True, exist_ok=True)
 
     async def generate_session_summary(self, session):
-        """Generate AI-powered session summary like SSH server"""
+        """Generate AI-powered session summary with comprehensive analysis"""
         try:
-            prompt = f'''Analyze this FTP session for malicious activity:
-- Commands: {[cmd["command"] for cmd in session.session_data.get("commands", [])]}
-- Attack patterns: {[analysis["attack_types"] for analysis in session.session_data.get("attack_analysis", []) if analysis.get("attack_types")]}
-- Vulnerabilities: {[vuln["vulnerability_id"] for vuln in session.session_data.get("vulnerabilities", [])]}
-- Files downloaded: {[file["filename"] for file in session.session_data.get("files_downloaded", [])]}
-- Files uploaded: {[file["filename"] for file in session.session_data.get("files_uploaded", [])]}
-- Duration: {session.session_data.get("duration", "unknown")}
-- Username: {session.username}
+            # Collect session data
+            commands = session.session_data.get("commands", [])
+            command_list = [cmd.get("command", "") for cmd in commands][:50]  # Limit to 50 for prompt size
+            
+            attack_patterns = []
+            for analysis in session.session_data.get("attack_analysis", []):
+                if analysis.get("attack_types"):
+                    attack_patterns.extend(analysis["attack_types"])
+            attack_patterns = list(set(attack_patterns))  # Unique patterns
+            
+            vulnerabilities = [vuln.get("vulnerability_id", "") for vuln in session.session_data.get("vulnerabilities", [])]
+            files_downloaded = [file.get("filename", "") for file in session.session_data.get("files_downloaded", [])]
+            files_uploaded = [file.get("filename", "") for file in session.session_data.get("files_uploaded", [])]
+            
+            duration = session.session_data.get("duration", "unknown")
+            username = session.username or "anonymous"
+            
+            # Build comprehensive analysis prompt
+            prompt = f"""[SECURITY ANALYST MODE]
+You are a cybersecurity analyst reviewing an FTP honeypot session. Analyze the following session data and provide a detailed security assessment.
 
-Provide analysis covering:
-1. Attack stage identification
-2. Primary objectives
-3. Threat level assessment
+=== SESSION DATA ===
+Username: {username}
+Duration: {duration}
+Total Commands: {len(commands)}
+Commands Executed: {', '.join(command_list[:30])}{'...' if len(command_list) > 30 else ''}
 
-End with "Judgement: [BENIGN/SUSPICIOUS/MALICIOUS]"'''
+Attack Patterns Detected: {', '.join(attack_patterns) if attack_patterns else 'None'}
+Vulnerability Exploits Attempted: {', '.join(vulnerabilities) if vulnerabilities else 'None'}
 
-            llm_response = await with_message_history.ainvoke(
-                {
-                    "messages": [HumanMessage(content=prompt)],
-                    "username": session.username,
-                    "interactive": True,
-                },
-                config={
-                    "configurable": {
-                        "session_id": f"ftp-summary-{uuid.uuid4().hex[:8]}"
-                    }
-                },
+Files Downloaded: {', '.join(files_downloaded) if files_downloaded else 'None'}
+Files Uploaded: {', '.join(files_uploaded) if files_uploaded else 'None'}
+
+=== ANALYSIS REQUIRED ===
+Provide a structured analysis with the following sections:
+
+1. **Attack Stage Identification**
+   - Reconnaissance, Initial Access, Execution, Persistence, Lateral Movement, Exfiltration, etc.
+
+2. **Attacker Objectives**
+   - What was the attacker trying to achieve based on the command patterns?
+
+3. **Threat Level Assessment**
+   - Severity rating with justification
+
+4. **Key Indicators of Compromise (IOCs)**
+   - List specific commands or patterns that indicate malicious intent
+
+5. **Recommended Actions**
+   - What security measures should be taken based on this session?
+
+=== FINAL JUDGEMENT ===
+End your analysis with exactly one of these judgements on a new line:
+Judgement: BENIGN
+Judgement: SUSPICIOUS  
+Judgement: MALICIOUS
+
+Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. Provide security analysis only."""
+
+            # Use a dedicated session ID for summaries (separate from command responses)
+            summary_session_id = f"ftp-analysis-{uuid.uuid4().hex[:12]}"
+            
+            # Query LLM with timeout
+            llm_response = await asyncio.wait_for(
+                with_message_history.ainvoke(
+                    {
+                        "messages": [HumanMessage(content=prompt)],
+                        "username": "security_analyst",
+                        "interactive": False,  # Not interactive command mode
+                    },
+                    config={"configurable": {"session_id": summary_session_id}},
+                ),
+                timeout=60.0,  # Longer timeout for analysis
             )
 
+            if not llm_response or not llm_response.content:
+                logger.warning("LLM returned empty response for session summary")
+                self._log_fallback_summary(session, "LLM returned empty response")
+                return
+
+            analysis_content = llm_response.content.strip()
+            
+            # Validate response looks like an analysis, not an FTP command
+            if analysis_content.startswith(("220", "221", "230", "331", "500", "550")):
+                logger.warning("LLM returned FTP response instead of analysis, using fallback")
+                self._log_fallback_summary(session, "LLM broke character")
+                return
+
+            # Parse judgement from response
             judgement = "UNKNOWN"
-            if "Judgement: BENIGN" in llm_response.content:
+            if "Judgement: BENIGN" in analysis_content or "JUDGEMENT: BENIGN" in analysis_content.upper():
                 judgement = "BENIGN"
-            elif "Judgement: SUSPICIOUS" in llm_response.content:
+            elif "Judgement: SUSPICIOUS" in analysis_content or "JUDGEMENT: SUSPICIOUS" in analysis_content.upper():
                 judgement = "SUSPICIOUS"
-            elif "Judgement: MALICIOUS" in llm_response.content:
+            elif "Judgement: MALICIOUS" in analysis_content or "JUDGEMENT: MALICIOUS" in analysis_content.upper():
                 judgement = "MALICIOUS"
 
+            # Log the full analysis
             logger.info(
-                "FTP session summary",
+                "FTP session analysis complete",
                 extra={
-                    "details": llm_response.content,
+                    "analysis": analysis_content,
                     "judgement": judgement,
-                    "session_commands": len(session.session_data.get("commands", [])),
-                    "attack_patterns_detected": len(
-                        [
-                            a
-                            for a in session.session_data.get("attack_analysis", [])
-                            if a.get("attack_types")
-                        ]
-                    ),
+                    "session_commands": len(commands),
+                    "attack_patterns_detected": len(attack_patterns),
+                    "vulnerabilities_detected": len(vulnerabilities),
+                    "files_downloaded": len(files_downloaded),
+                    "files_uploaded": len(files_uploaded),
+                    "username": username,
+                    "duration": str(duration),
                 },
             )
+            
+            # Also save analysis to session data
+            session.session_data["ai_analysis"] = {
+                "content": analysis_content,
+                "judgement": judgement,
+                "generated_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+            }
 
+        except asyncio.TimeoutError:
+            logger.warning("Session summary generation timed out after 60 seconds")
+            self._log_fallback_summary(session, "Analysis timed out")
         except Exception as e:
-            logger.error(f"Session summary generation failed: {e}")
+            logger.error(f"Session summary generation failed: {e}", exc_info=True)
+            self._log_fallback_summary(session, str(e))
+
+    def _log_fallback_summary(self, session, reason: str):
+        """Log a fallback summary when AI analysis fails"""
+        commands = session.session_data.get("commands", [])
+        attack_patterns = []
+        for analysis in session.session_data.get("attack_analysis", []):
+            if analysis.get("attack_types"):
+                attack_patterns.extend(analysis["attack_types"])
+        
+        # Simple rule-based judgement as fallback
+        judgement = "UNKNOWN"
+        if len(attack_patterns) > 5:
+            judgement = "MALICIOUS"
+        elif len(attack_patterns) > 0:
+            judgement = "SUSPICIOUS"
+        elif len(commands) < 5:
+            judgement = "BENIGN"
+
+        logger.info(
+            "FTP session summary (fallback)",
+            extra={
+                "analysis": f"Fallback analysis - {reason}",
+                "judgement": judgement,
+                "session_commands": len(commands),
+                "attack_patterns_detected": len(attack_patterns),
+                "username": session.username or "anonymous",
+            },
+        )
+
 
     async def handle_client(self, reader, writer):
         """Handle FTP client connection"""
