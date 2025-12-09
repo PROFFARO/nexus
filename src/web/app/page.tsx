@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect } from "react";
 import { Sidebar } from "@/components/ui/sidebar";
 import { Header } from "@/components/ui/header";
 import { motion } from "framer-motion";
@@ -162,6 +163,18 @@ function StatCard({ title, value, change, icon: Icon, iconColor }: StatCardProps
 }
 
 export default function Home() {
+  // Sync user with MongoDB on first access
+  useEffect(() => {
+    fetch("/api/auth/sync")
+      .then((res) => res.json())
+      .then((data) => {
+        if (data.success) {
+          console.log("[User Sync] Synced:", data.user.email, "Role:", data.user.role);
+        }
+      })
+      .catch((err) => console.error("[User Sync] Error:", err));
+  }, []);
+
   return (
     <div className="min-h-screen bg-background" suppressHydrationWarning>
       {/* Animated gradient background */}
@@ -171,6 +184,7 @@ export default function Home() {
 
       <div className="flex min-h-screen flex-col" style={{ marginLeft: 256 }}>
         <Header />
+
 
         <main className="flex-1 p-6">
           <div className="space-y-6">
