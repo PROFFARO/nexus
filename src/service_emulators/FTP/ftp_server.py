@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import os
+import random
 import re
 import shutil
 import socket
@@ -98,6 +99,138 @@ except ImportError:
             print(f"Warning: ML components not available: {e}")
 
 
+class ConnectionRateLimiter:
+    """
+    Rate limiter for FTP connections.
+    Tracks connections per IP and blocks excessive connection attempts.
+    Also manages IP blocklist for automated_blocking feature.
+    """
+    
+    def __init__(self):
+        self.connections_per_ip: Dict[str, int] = {}
+        self.connection_times: Dict[str, List[float]] = {}  # Track connection timestamps
+        self.blocked_ips: Dict[str, float] = {}  # IP -> block expiry time
+        self.high_threat_ips: Dict[str, int] = {}  # IP -> cumulative threat score
+        self.last_cleanup = time.time()
+        self.cleanup_interval = 60  # Cleanup every 60 seconds
+        self.total_connections = 0  # Track total active connections
+    
+    def _cleanup_old_entries(self):
+        """Remove stale entries periodically"""
+        current_time = time.time()
+        if current_time - self.last_cleanup < self.cleanup_interval:
+            return
+        
+        self.last_cleanup = current_time
+        
+        # Remove expired blocks
+        expired_blocks = [ip for ip, expiry in self.blocked_ips.items() if current_time > expiry]
+        for ip in expired_blocks:
+            del self.blocked_ips[ip]
+            logger.info(f"IP block expired: {ip}")
+        
+        # Remove old connection times (older than 1 hour)
+        cutoff = current_time - 3600
+        for ip, times in list(self.connection_times.items()):
+            self.connection_times[ip] = [t for t in times if t > cutoff]
+            if not self.connection_times[ip]:
+                del self.connection_times[ip]
+    
+    def check_rate_limit(self, ip: str) -> tuple:
+        """
+        Check if connection should be allowed.
+        
+        Returns:
+            Tuple of (allowed: bool, reason: str)
+        """
+        self._cleanup_old_entries()
+        
+        # Check if rate limiting is enabled
+        if not config["security"].getboolean("rate_limiting", True):
+            return (True, "rate_limiting_disabled")
+        
+        # Check if IP is blocked
+        if ip in self.blocked_ips:
+            if time.time() < self.blocked_ips[ip]:
+                return (False, "ip_blocked")
+            else:
+                del self.blocked_ips[ip]
+        
+        # Get max connections setting
+        max_conn = config["security"].getint("max_connections_per_ip", 5)
+        
+        # Count current connections
+        current = self.connections_per_ip.get(ip, 0)
+        
+        if current >= max_conn:
+            logger.warning(f"Rate limit exceeded for IP: {ip} (current: {current}, max: {max_conn})")
+            return (False, "rate_limit_exceeded")
+        
+        return (True, "allowed")
+    
+    def check_max_connections(self) -> tuple:
+        """
+        Check if max total connections limit is reached.
+        
+        Returns:
+            Tuple of (allowed: bool, reason: str)
+        """
+        max_total = config["ftp"].getint("max_connections", 50)
+        if self.total_connections >= max_total:
+            logger.warning(f"Max connections limit reached: {self.total_connections}/{max_total}")
+            return (False, "max_connections_reached")
+        return (True, "allowed")
+    
+    def register_connection(self, ip: str):
+        """Register a new connection from an IP"""
+        self.connections_per_ip[ip] = self.connections_per_ip.get(ip, 0) + 1
+        self.total_connections += 1
+        
+        if ip not in self.connection_times:
+            self.connection_times[ip] = []
+        self.connection_times[ip].append(time.time())
+    
+    def unregister_connection(self, ip: str):
+        """Unregister a connection when it closes"""
+        if ip in self.connections_per_ip:
+            self.connections_per_ip[ip] = max(0, self.connections_per_ip[ip] - 1)
+            if self.connections_per_ip[ip] == 0:
+                del self.connections_per_ip[ip]
+        self.total_connections = max(0, self.total_connections - 1)
+    
+    def report_threat(self, ip: str, threat_score: int):
+        """
+        Report a threat from an IP. If automated_blocking is enabled and
+        cumulative threat score exceeds threshold, block the IP.
+        """
+        if not config["security"].getboolean("automated_blocking", False):
+            return
+        
+        # Accumulate threat score for this IP
+        self.high_threat_ips[ip] = self.high_threat_ips.get(ip, 0) + threat_score
+        
+        # Check if score exceeds threshold (3x alert_threshold = auto-block)
+        alert_threshold = config["attack_detection"].getint("alert_threshold", 70)
+        block_threshold = alert_threshold * 3  # Need significant threat to auto-block
+        
+        if self.high_threat_ips[ip] >= block_threshold:
+            # Block IP for 1 hour
+            self.blocked_ips[ip] = time.time() + 3600
+            logger.critical(f"Automated blocking: IP {ip} blocked for 1 hour (threat score: {self.high_threat_ips[ip]})")
+    
+    def is_blocked(self, ip: str) -> bool:
+        """Check if an IP is currently blocked"""
+        if ip not in self.blocked_ips:
+            return False
+        if time.time() > self.blocked_ips[ip]:
+            del self.blocked_ips[ip]
+            return False
+        return True
+
+
+# Global rate limiter instance
+connection_rate_limiter = ConnectionRateLimiter()
+
 class AttackAnalyzer:
     """AI-based attack behavior analyzer with integrated JSON patterns and ML detection"""
 
@@ -107,9 +240,16 @@ class AttackAnalyzer:
         # Load vulnerability signatures from JSON file
         self.vulnerability_signatures = self._load_vulnerability_signatures()
 
-        # Initialize ML detector if available
+        # Initialize ML detector if available and enabled in config
         self.ml_detector = None
-        if ML_AVAILABLE:
+        # Check if ML is enabled in config (need to access config safely since it may not be loaded yet)
+        ml_enabled = True  # Default to enabled
+        try:
+            ml_enabled = config["ml"].getboolean("enabled", True) if "ml" in config else True
+        except (NameError, KeyError):
+            pass  # Config not loaded yet, default to enabled
+            
+        if ML_AVAILABLE and ml_enabled:
             try:
                 ml_config = MLConfig("ftp")
                 if ml_config.is_enabled():
@@ -118,6 +258,8 @@ class AttackAnalyzer:
             except Exception as e:
                 logging.warning(f"Failed to initialize ML detector: {e}")
                 self.ml_detector = None
+        elif not ml_enabled:
+            logging.info("ML detector disabled by config [ml] enabled=false")
 
     def _load_attack_patterns(self) -> Dict[str, Any]:
         """Load attack patterns from JSON configuration"""
@@ -786,12 +928,15 @@ class FTPSession:
         self.authenticated = False
         self.username = None
         self.current_directory = "/home/ftp"
-        self.transfer_mode = "ASCII"
+        # Use default transfer mode from config
+        self.transfer_mode = config["ftp"].get("default_transfer_mode", "BINARY").upper()
         self.data_connection = None
         self.data_writer = None
         self.data_reader = None
         self.passive_mode = False
         self.active_mode_address = None
+        # Track client IP for rate limiting
+        self.client_ip = None
 
         # Create unique LLM session ID for this FTP session
         self.llm_session_id = f"ftp-{uuid.uuid4().hex[:12]}"
@@ -892,8 +1037,19 @@ class FTPSession:
             self.command_executor = None
             self.llm_guard = None
 
+    async def _apply_latency(self):
+        """Apply artificial latency to simulate real server behavior"""
+        if config["honeypot"].getboolean("latency_enable", False):
+            min_ms = config["honeypot"].getint("latency_min_ms", 20)
+            max_ms = config["honeypot"].getint("latency_max_ms", 250)
+            delay = random.randint(min_ms, max_ms) / 1000.0
+            await asyncio.sleep(delay)
+
     async def send_response(self, code: int, message: str):
-        """Send FTP response to client"""
+        """Send FTP response to client with optional latency simulation"""
+        # Apply latency before sending response
+        await self._apply_latency()
+        
         response = f"{code} {message}\r\n"
         self.writer.write(response.encode())
         await self.writer.drain()
@@ -992,7 +1148,7 @@ class FTPSession:
             },
         )
 
-        # Analyze command for attacks if real-time analysis is enabled
+        # Analyze command for attacks if real-time analysis and intrusion detection are enabled
         attack_analysis = {
             "command": command_line,
             "attack_types": [],
@@ -1000,7 +1156,10 @@ class FTPSession:
         }
         vulnerabilities = []
 
-        if self.attack_analyzer and config["ai_features"].getboolean(
+        # Check if intrusion detection is enabled (gates all security analysis)
+        intrusion_detection_enabled = config["security"].getboolean("intrusion_detection", True)
+
+        if intrusion_detection_enabled and self.attack_analyzer and config["ai_features"].getboolean(
             "real_time_analysis", True
         ):
             try:
@@ -1009,7 +1168,7 @@ class FTPSession:
             except Exception as e:
                 logger.error(f"Attack analysis failed: {e}")
 
-        if self.vuln_logger and config["ai_features"].getboolean(
+        if intrusion_detection_enabled and self.vuln_logger and config["ai_features"].getboolean(
             "vulnerability_detection", True
         ):
             try:
@@ -1104,6 +1263,11 @@ class FTPSession:
         # ===== Authentication commands (handled manually, not by dispatcher) =====
         if command == "USER":
             self.username = args
+            # Check if anonymous login is allowed
+            if args.lower() in ["anonymous", "ftp"] and not config["ftp"].getboolean("allow_anonymous", False):
+                await self.send_response(530, "Anonymous login not allowed")
+                logger.info("Anonymous login rejected - allow_anonymous disabled")
+                return True
             # Set filesystem user context if available
             if self.filesystem:
                 self.filesystem.set_user(args if args else "ftp")
@@ -1113,6 +1277,28 @@ class FTPSession:
             if not self.username:
                 await self.send_response(503, "Login with USER first")
                 return True
+            
+            # Handle anonymous login
+            is_anonymous = self.username.lower() in ["anonymous", "ftp"]
+            if is_anonymous:
+                if not config["ftp"].getboolean("allow_anonymous", False):
+                    await self.send_response(530, "Anonymous login not allowed")
+                    logger.info("Anonymous login rejected - allow_anonymous disabled")
+                    return True
+                # Anonymous users can use any password (including empty)
+                self.authenticated = True
+                anonymous_root = config["ftp"].get("anonymous_root", "/var/ftp/pub")
+                self.current_directory = anonymous_root
+                if self.filesystem:
+                    self.filesystem.set_user("anonymous")
+                await self.send_response(230, f"Anonymous access granted")
+                logger.info(
+                    "FTP anonymous authentication success",
+                    extra={"username": self.username, "anonymous_root": anonymous_root},
+                )
+                return True
+            
+            # Regular user authentication
             if self.username in accounts and (
                 args == accounts[self.username] or accounts[self.username] == "*"
             ):
@@ -1641,17 +1827,33 @@ ONLY output the directory listing lines, one per line."""
             await self.send_response(550, "Upload failed")
 
     async def handle_passive_mode(self):
-        """Handle PASV command"""
-        # Generate fake passive mode response
+        """Handle PASV command with config-based toggle"""
+        # Check if passive mode is enabled
+        if not config["ftp"].getboolean("passive_mode", True):
+            await self.send_response(502, "PASV command disabled")
+            logger.info("PASV command rejected - passive_mode disabled in config")
+            return
+        
+        # Generate passive mode response with configured port range
         ip_parts = "192,168,1,100"  # Fake IP
-        port_high = 20
-        port_low = 21
+        port_min = config["ftp"].getint("passive_port_min", 50000)
+        port_max = config["ftp"].getint("passive_port_max", 50100)
+        # Select random port in range
+        selected_port = random.randint(port_min, port_max)
+        port_high = selected_port // 256
+        port_low = selected_port % 256
         await self.send_response(
             227, f"Entering Passive Mode ({ip_parts},{port_high},{port_low})"
         )
 
     async def handle_active_mode(self, args: str):
-        """Handle PORT command with proper data connection setup"""
+        """Handle PORT command with proper data connection setup and config toggle"""
+        # Check if active mode is enabled
+        if not config["ftp"].getboolean("active_mode", True):
+            await self.send_response(502, "PORT command disabled")
+            logger.info("PORT command rejected - active_mode disabled in config")
+            return
+        
         try:
             # Parse PORT command arguments
             parts = args.split(",")
@@ -1946,6 +2148,40 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
         else:
             dst_ip, dst_port = "-", "-"
 
+        # Rate limiting and max connections check
+        if src_ip != "-":
+            # Check if IP is blocked
+            if connection_rate_limiter.is_blocked(src_ip):
+                logger.warning(f"Blocked IP attempted connection: {src_ip}")
+                writer.write(b"421 Service not available, your IP is blocked\r\n")
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+            
+            # Check max total connections
+            allowed, reason = connection_rate_limiter.check_max_connections()
+            if not allowed:
+                logger.warning(f"Max connections reached, rejecting: {src_ip} - {reason}")
+                writer.write(b"421 Service not available, too many connections\r\n")
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+            
+            # Check per-IP rate limit
+            allowed, reason = connection_rate_limiter.check_rate_limit(src_ip)
+            if not allowed:
+                logger.warning(f"Rate limit exceeded for {src_ip}: {reason}")
+                writer.write(b"421 Too many connections from your IP\r\n")
+                await writer.drain()
+                writer.close()
+                await writer.wait_closed()
+                return
+            
+            # Register this connection
+            connection_rate_limiter.register_connection(src_ip)
+
         # Store connection details in thread-local storage
         thread_local.src_ip = src_ip
         thread_local.src_port = src_port
@@ -1954,6 +2190,7 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
 
         # Create session
         session = FTPSession(reader, writer, self)
+        session.client_ip = src_ip  # Store client IP for threat reporting
         task_uuid = f"ftp-session-{uuid.uuid4()}"
 
         # Set task name for logging
@@ -2008,6 +2245,9 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
             except Exception as e:
                 logger.error(f"Forensic logging failed: {e}")
 
+        # Get connection timeout from config
+        connection_timeout = config["ftp"].getint("connection_timeout", 300)
+
         try:
             # Send welcome message with adaptive banner if enabled
             banner_message = "NexusGames Studio FTP Server Ready"
@@ -2020,10 +2260,14 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
 
             await session.send_response(220, banner_message)
 
-            # Handle commands
+            # Handle commands with timeout
             while True:
                 try:
-                    data = await reader.readline()
+                    # Apply connection timeout to readline
+                    data = await asyncio.wait_for(
+                        reader.readline(),
+                        timeout=connection_timeout
+                    )
                     if not data:
                         break
 
@@ -2041,6 +2285,10 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
                         await session.send_response(500, "Internal server error")
                         continue
 
+                except asyncio.TimeoutError:
+                    logger.info(f"Connection timeout for {src_ip} after {connection_timeout}s")
+                    await session.send_response(421, "Connection timeout, closing")
+                    break
                 except asyncio.IncompleteReadError:
                     break
                 except Exception as e:
@@ -2050,6 +2298,18 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
         except Exception as e:
             logger.error(f"FTP session error: {e}")
         finally:
+            # Unregister connection from rate limiter
+            if src_ip != "-":
+                connection_rate_limiter.unregister_connection(src_ip)
+                
+                # Report accumulated threats for automated blocking
+                total_threat_score = 0
+                for analysis in session.session_data.get("attack_analysis", []):
+                    threat_score = analysis.get("threat_score", 0)
+                    total_threat_score += threat_score
+                if total_threat_score > 0:
+                    connection_rate_limiter.report_threat(src_ip, total_threat_score)
+            
             # Save session summary
             session.session_data["end_time"] = datetime.datetime.now(
                 datetime.timezone.utc
