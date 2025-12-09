@@ -115,6 +115,11 @@ class NexusCLI:
                                   help='Service to extract features for')
         extract_parser.add_argument('--datasets-dir', default='datasets', help='Datasets directory')
         extract_parser.add_argument('--output', '-o', help='Output file path')
+        # Verbosity options for extract
+        extract_parser.add_argument('-v', '--verbose', action='count', default=0,
+                                  help='Increase verbosity level (-v, -vv, -vvv for levels 1-3)')
+        extract_parser.add_argument('--verbose-level', type=int, default=None, choices=[0, 1, 2, 3],
+                                  help='Set verbosity level directly (0=minimal, 1=normal, 2=verbose, 3=debug)')
         
         # ML train command
         train_parser = ml_subparsers.add_parser('train', help='Train ML models')
@@ -124,6 +129,12 @@ class NexusCLI:
                                 default='all', help='ML algorithm to train')
         train_parser.add_argument('--data', help='Training data file path')
         train_parser.add_argument('--test-size', type=float, default=0.2, help='Test set size (0.0-1.0)')
+        # Verbosity options for train
+        train_parser.add_argument('-v', '--verbose', action='count', default=0,
+                                help='Increase verbosity level (-v, -vv, -vvv for levels 1-3)')
+        train_parser.add_argument('--verbose-level', type=int, default=None, choices=[0, 1, 2, 3],
+                                help='Set verbosity level directly (0=minimal, 1=normal, 2=verbose, 3=debug)')
+
         
         # ML evaluate command
         eval_parser = ml_subparsers.add_parser('eval', help='Evaluate trained models')
@@ -131,6 +142,11 @@ class NexusCLI:
                                help='Service to evaluate models for')
         eval_parser.add_argument('--test-data', help='Test data file path')
         eval_parser.add_argument('--model', help='Specific model to evaluate')
+        # Verbosity options for eval
+        eval_parser.add_argument('-v', '--verbose', action='count', default=0,
+                               help='Increase verbosity level (-v, -vv, -vvv for levels 1-3)')
+        eval_parser.add_argument('--verbose-level', type=int, default=None, choices=[0, 1, 2, 3],
+                               help='Set verbosity level directly (0=minimal, 1=normal, 2=verbose, 3=debug)')
         
         # ML predict command
         predict_parser = ml_subparsers.add_parser('predict', help='Make predictions with trained models')
@@ -138,6 +154,11 @@ class NexusCLI:
                                   help='Service to make predictions for')
         predict_parser.add_argument('--input', required=True, help='Input data file or single command/query')
         predict_parser.add_argument('--output', help='Output file for predictions')
+        # Verbosity options for predict
+        predict_parser.add_argument('-v', '--verbose', action='count', default=0,
+                                  help='Increase verbosity level (-v, -vv, -vvv for levels 1-3)')
+        predict_parser.add_argument('--verbose-level', type=int, default=None, choices=[0, 1, 2, 3],
+                                  help='Set verbosity level directly (0=minimal, 1=normal, 2=verbose, 3=debug)')
         
         # ML update-models command
         update_parser = ml_subparsers.add_parser('update-models', help='Update/retrain models')
@@ -145,6 +166,12 @@ class NexusCLI:
                                  help='Service to update models for')
         update_parser.add_argument('--model-path', help='Path to new model files')
         update_parser.add_argument('--force', action='store_true', help='Force model update')
+        # Verbosity options for update-models
+        update_parser.add_argument('-v', '--verbose', action='count', default=0,
+                                 help='Increase verbosity level (-v, -vv, -vvv for levels 1-3)')
+        update_parser.add_argument('--verbose-level', type=int, default=None, choices=[0, 1, 2, 3],
+                                 help='Set verbosity level directly (0=minimal, 1=normal, 2=verbose, 3=debug)')
+
         
         # Management commands
         status_parser = subparsers.add_parser('status', help='Check service status')
@@ -1115,53 +1142,147 @@ except Exception as e:
             return 1
     
     def _ml_extract_features(self, args):
-        """Extract features from datasets"""
-        print(f"[INFO] Extracting features for {args.service}...")
+        """Extract features from datasets with verbose logging"""
+        import time
+        import json
+        
+        from ai.data_processor import DataProcessor
+        from ai.ml_logger import get_ml_logger, VerbosityLevel
+        
+        # Determine verbosity level
+        if args.verbose_level is not None:
+            verbosity = args.verbose_level
+        elif args.verbose:
+            verbosity = min(args.verbose, 3)
+        else:
+            verbosity = VerbosityLevel.NORMAL
+        
+        ml_logger = get_ml_logger(verbosity)
+        
+        # Print banner
+        config = {
+            'service': args.service,
+            'datasets_dir': args.datasets_dir,
+            'output': args.output if args.output else 'console',
+            'verbosity': verbosity
+        }
+        ml_logger.print_banner("NEXUS Feature Extraction", config)
+        
+        ml_logger.start_operation("Feature Extraction")
+        extract_start = time.time()
         
         datasets_dir = Path(args.datasets_dir)
         if not datasets_dir.exists():
-            print(f"Error: Datasets directory not found: {datasets_dir}")
+            ml_logger.log_error(f"Datasets directory not found: {datasets_dir}")
             return 1
         
-        from ai.data_processor import DataProcessor
         processor = DataProcessor(str(datasets_dir))
+        processor.set_verbosity(verbosity)
         
         if args.service == 'all':
             services = ['ssh', 'ftp', 'mysql']
         else:
             services = [args.service]
         
-        for service in services:
-            print(f"\n[INFO] Processing {service.upper()} data...")
+        all_stats = {}
+        
+        for service_idx, service in enumerate(services):
+            ml_logger.start_phase(f"{service.upper()} Extraction", len(services), service_idx + 1)
+            service_start = time.time()
+            
             try:
+                ml_logger.log_step(f"Processing {service.upper()} datasets...", level="info")
+                
                 data = processor.get_processed_data(service)
                 service_data = data.get(service, [])
                 
                 if service_data:
-                    print(f"[INFO] Extracted {len(service_data)} samples for {service}")
+                    service_time = time.time() - service_start
+                    
+                    ml_logger.log_step(
+                        f"Extracted {len(service_data):,} samples ({service_time:.2f}s)", 
+                        level="success", indent=2
+                    )
+                    
+                    # Show label distribution in verbose mode
+                    if verbosity >= VerbosityLevel.VERBOSE:
+                        labels = [item.get('label', 'unknown') for item in service_data]
+                        ml_logger.log_label_distribution(labels, f"{service.upper()} Labels")
+                    
+                    all_stats[service] = {
+                        'samples': len(service_data),
+                        'time': service_time
+                    }
                     
                     if args.output:
                         output_file = Path(args.output) / f"{service}_features.json"
                         output_file.parent.mkdir(parents=True, exist_ok=True)
                         
-                        import json
+                        save_start = time.time()
                         with open(output_file, 'w') as f:
                             json.dump(service_data, f, indent=2)
-                        print(f"[INFO] Saved to {output_file}")
+                        
+                        file_size = output_file.stat().st_size
+                        ml_logger.log_step(
+                            f"Saved to {output_file.name} ({file_size/1024:.1f} KB, {time.time() - save_start:.2f}s)",
+                            level="success", indent=2
+                        )
                 else:
-                    print(f"[INFO] No data found for {service}")
+                    ml_logger.log_step(f"No data found for {service}", level="warning")
+                    all_stats[service] = {'samples': 0, 'time': 0}
+                
+                ml_logger.end_phase(f"{service.upper()} Extraction", success=True)
                     
             except Exception as e:
-                print(f"[ERROR] Error processing {service}: {e}")
+                ml_logger.log_error(f"Error processing {service}", exception=e)
+                ml_logger.end_phase(f"{service.upper()} Extraction", success=False)
+        
+        total_time = time.time() - extract_start
+        ml_logger.end_operation("Feature Extraction", success=True, duration=total_time)
+        
+        # Print summary
+        total_samples = sum(s.get('samples', 0) for s in all_stats.values())
+        ml_logger.log_step(f"\nTotal: {total_samples:,} samples extracted in {total_time:.2f}s", level="success")
         
         return 0
+
     
     def _ml_train_models(self, args):
-        """Train ML models"""
-        print(f"[INFO] Training ML models for {args.service}...")
+        """Train ML models with comprehensive verbose logging"""
+        import time
+        import json
+        import numpy as np
         
         from ai.training import ModelTrainer
         from ai.data_processor import DataProcessor
+        from ai.ml_logger import get_ml_logger, VerbosityLevel
+        
+        # Determine verbosity level
+        if args.verbose_level is not None:
+            verbosity = args.verbose_level
+        elif args.verbose:
+            verbosity = min(args.verbose, 3)  # Cap at DEBUG level (3)
+        else:
+            verbosity = VerbosityLevel.NORMAL
+        
+        # Initialize ML Logger
+        ml_logger = get_ml_logger(verbosity)
+        
+        # Configuration for banner
+        config = {
+            'service': args.service,
+            'algorithm': args.algorithm,
+            'test_size': args.test_size,
+            'data_source': args.data if args.data else 'datasets',
+            'verbosity': verbosity
+        }
+        
+        # Print startup banner
+        ml_logger.print_banner("NEXUS ML Training", config)
+        
+        # Start main training operation
+        ml_logger.start_operation("ML Model Training")
+        training_start = time.time()
         
         if args.service == 'all':
             services = ['ssh', 'ftp', 'mysql']
@@ -1169,156 +1290,314 @@ except Exception as e:
             services = [args.service]
         
         processor = DataProcessor()
+        processor.set_verbosity(verbosity)
         
-        for service in services:
-            print(f"\n[INFO] Training models for {service.upper()}...")
+        all_results = {}
+        
+        for service_idx, service in enumerate(services):
+            # Start service phase
+            ml_logger.start_phase(f"{service.upper()} Training", len(services), service_idx + 1)
+            service_start = time.time()
             
             try:
                 trainer = ModelTrainer(service)
+                trainer.set_verbosity(verbosity)
                 
                 # Get training data
+                ml_logger.log_step(f"Loading training data for {service}...", level="info")
+                
                 if args.data:
                     # Load from file
-                    import json
-                    import numpy as np
+                    data_start = time.time()
                     with open(args.data, 'r') as f:
                         all_data = json.load(f)
-                        # Split data
-                        np.random.shuffle(all_data)
-                        split_idx = int(len(all_data) * (1 - args.test_size))
-                        train_data = all_data[:split_idx]
-                        test_data = all_data[split_idx:]
+                    
+                    # Split data
+                    np.random.shuffle(all_data)
+                    split_idx = int(len(all_data) * (1 - args.test_size))
+                    train_data = all_data[:split_idx]
+                    test_data = all_data[split_idx:]
+                    
+                    if verbosity >= VerbosityLevel.VERBOSE:
+                        ml_logger.log_step(
+                            f"Loaded {len(all_data):,} samples from file ({time.time() - data_start:.2f}s)",
+                            level="data", indent=2
+                        )
                 else:
                     # Use processed datasets and split
                     train_data, test_data = processor.get_training_data(service, args.test_size)
-
-                if not train_data:
-                    print(f"[INFO] No training data available for {service}")
-                    continue
-
-                print(f"[INFO] Training with {len(train_data)} samples...")
                 
+                if not train_data:
+                    ml_logger.log_step(f"No training data available for {service}", level="warning")
+                    ml_logger.end_phase(f"{service.upper()} Training", success=False)
+                    continue
+                
+                # Log data statistics
+                if verbosity >= VerbosityLevel.VERBOSE:
+                    ml_logger.log_step(f"Training samples: {len(train_data):,}", level="data", indent=2)
+                    ml_logger.log_step(f"Test samples: {len(test_data):,}", level="data", indent=2)
+                    
+                    # Label distribution
+                    labels = [item.get('label', 'unknown') for item in train_data]
+                    label_counts = {}
+                    for label in labels:
+                        label_counts[label] = label_counts.get(label, 0) + 1
+                    ml_logger.log_label_distribution(labels, f"{service.upper()} Training Labels")
+                
+                # Determine algorithms to train
                 if args.algorithm == 'all':
-                    results = trainer.train_all_models(train_data)
+                    algorithms = ['isolation_forest', 'one_class_svm', 'xgboost', 'hdbscan']
                 else:
-                    if args.algorithm in ['isolation_forest', 'one_class_svm', 'lof']:
-                        results = {args.algorithm: trainer.train_anomaly_detector(train_data, args.algorithm)}
-                    elif args.algorithm == 'xgboost':
-                        results = {args.algorithm: trainer.train_supervised_classifier(train_data)}
-                    elif args.algorithm in ['hdbscan', 'kmeans']:
-                        results = {args.algorithm: trainer.train_clustering_model(train_data, args.algorithm)}
-                    else:
-                        print(f"[ERROR] Unknown algorithm: {args.algorithm}")
-                        continue
+                    algorithms = [args.algorithm]
+                
+                results = {}
+                
+                for algo_idx, algorithm in enumerate(algorithms):
+                    algo_start = time.time()
+                    ml_logger.log_algorithm_start(algorithm, len(train_data))
+                    
+                    try:
+                        if algorithm in ['isolation_forest', 'one_class_svm', 'lof']:
+                            result = trainer.train_anomaly_detector(train_data, algorithm)
+                        elif algorithm == 'xgboost':
+                            result = trainer.train_supervised_classifier(train_data)
+                        elif algorithm in ['hdbscan', 'kmeans']:
+                            result = trainer.train_clustering_model(train_data, algorithm)
+                        else:
+                            ml_logger.log_error(f"Unknown algorithm: {algorithm}")
+                            continue
+                        
+                        algo_time = time.time() - algo_start
+                        results[algorithm] = result
+                        
+                        # Log algorithm completion with metrics
+                        ml_logger.log_algorithm_end(algorithm, algo_time, result)
+                        
+                    except Exception as e:
+                        ml_logger.log_error(f"Failed to train {algorithm}", exception=e)
                 
                 # Save models
+                if verbosity >= VerbosityLevel.VERBOSE:
+                    ml_logger.log_step("Saving trained models...", level="info", indent=2)
+                
+                save_start = time.time()
                 trainer.save_models()
                 
-                # Print results
-                for algo, result in results.items():
-                    accuracy = result.get('accuracy', 'N/A')
-                    if isinstance(accuracy, (int, float)):
-                        print(f"[INFO] {algo}: {accuracy:.3f} accuracy")
-                    else:
-                        print(f"[INFO] {algo}: {accuracy} accuracy")
+                if verbosity >= VerbosityLevel.DEBUG:
+                    ml_logger.log_step(f"Models saved ({time.time() - save_start:.2f}s)", level="success", indent=2)
+                
+                all_results[service] = results
+                
+                # End service phase
+                service_time = time.time() - service_start
+                ml_logger.end_phase(f"{service.upper()} Training", success=True, duration=service_time)
                 
             except Exception as e:
-                print(f"[ERROR] Error training {service}: {e}")
-                import traceback
-                traceback.print_exc()
+                ml_logger.log_error(f"Error training {service}", exception=e)
+                ml_logger.end_phase(f"{service.upper()} Training", success=False)
+                if verbosity >= VerbosityLevel.DEBUG:
+                    import traceback
+                    traceback.print_exc()
+        
+        # End main operation
+        total_time = time.time() - training_start
+        ml_logger.end_operation("ML Model Training", success=True, duration=total_time)
+        
+        # Print training summary
+        ml_logger.print_training_summary(all_results, total_time)
         
         return 0
+
     
     def _ml_evaluate_models(self, args):
-        """Evaluate trained models"""
-        print(f"[INFO] Evaluating ML models for {args.service}...")
+        """Evaluate trained models with verbose logging"""
+        import time
+        import json
         
         from ai.training import ModelTrainer
         from ai.data_processor import DataProcessor
+        from ai.ml_logger import get_ml_logger, VerbosityLevel
+        
+        # Determine verbosity level
+        if args.verbose_level is not None:
+            verbosity = args.verbose_level
+        elif args.verbose:
+            verbosity = min(args.verbose, 3)
+        else:
+            verbosity = VerbosityLevel.NORMAL
+        
+        ml_logger = get_ml_logger(verbosity)
+        
+        # Print banner
+        config = {
+            'service': args.service,
+            'model': args.model if args.model else 'all',
+            'test_data': args.test_data if args.test_data else 'auto',
+            'verbosity': verbosity
+        }
+        ml_logger.print_banner("NEXUS Model Evaluation", config)
+        
+        ml_logger.start_operation("Model Evaluation")
+        eval_start = time.time()
         
         try:
             trainer = ModelTrainer(args.service)
+            trainer.set_verbosity(verbosity)
             processor = DataProcessor()
+            processor.set_verbosity(verbosity)
             
             # Get test data
+            ml_logger.log_step("Loading test data...", level="info")
+            
             if args.test_data:
-                import json
+                data_start = time.time()
                 with open(args.test_data, 'r') as f:
                     test_data = json.load(f)
+                if verbosity >= VerbosityLevel.VERBOSE:
+                    ml_logger.log_step(
+                        f"Loaded {len(test_data):,} samples from file ({time.time() - data_start:.2f}s)",
+                        level="data", indent=2
+                    )
             else:
                 _, test_data = processor.get_training_data(args.service, 0.2)
             
             if not test_data:
-                print(f"[INFO] No test data available for {args.service}")
+                ml_logger.log_step(f"No test data available for {args.service}", level="warning")
                 return 1
             
-            print(f"[INFO] Evaluating with {len(test_data)} test samples...")
+            ml_logger.log_step(f"Test samples: {len(test_data):,}", level="data", indent=2)
             
             # Evaluate models
             if args.model:
-                results = trainer.evaluate_model(args.model, test_data)
-                print(f"[INFO] {args.model} Results:")
-                for metric, value in results.items():
-                    if isinstance(value, float):
-                        print(f"[INFO]  {metric}: {value:.3f}")
-                    else:
-                        print(f"[INFO]  {metric}: {value}")
+                models_to_eval = [args.model]
             else:
-                # Evaluate all available models
-                for model_name in trainer.models.keys():
-                    try:
-                        results = trainer.evaluate_model(model_name, test_data)
-                        print(f"[INFO] {model_name} Results:")
-                        for metric, value in results.items():
-                            if isinstance(value, float):
-                                print(f"[INFO]  {metric}: {value:.3f}")
-                            else:
-                                print(f"[INFO]  {metric}: {value}")
-                        print()
-                    except Exception as e:
-                        print(f"[ERROR] Error evaluating {model_name}: {e}")
+                models_to_eval = list(trainer.models.keys()) if trainer.models else []
+            
+            if not models_to_eval:
+                ml_logger.log_step("No trained models found", level="warning")
+                return 1
+            
+            all_results = {}
+            
+            for model_idx, model_name in enumerate(models_to_eval):
+                ml_logger.start_phase(f"Evaluating {model_name}", len(models_to_eval), model_idx + 1)
+                model_start = time.time()
+                
+                try:
+                    results = trainer.evaluate_model(model_name, test_data)
+                    model_time = time.time() - model_start
+                    
+                    all_results[model_name] = results
+                    
+                    # Display metrics
+                    ml_logger.log_metrics({
+                        k: v for k, v in results.items() 
+                        if isinstance(v, (int, float)) and k != 'test_samples'
+                    }, title=f"{model_name} Results", indent=2)
+                    
+                    if verbosity >= VerbosityLevel.DEBUG:
+                        ml_logger.log_step(f"Evaluation time: {model_time:.2f}s", level="debug", indent=2)
+                    
+                    ml_logger.end_phase(f"Evaluating {model_name}", success=True)
+                    
+                except Exception as e:
+                    ml_logger.log_error(f"Error evaluating {model_name}", exception=e)
+                    ml_logger.end_phase(f"Evaluating {model_name}", success=False)
+            
+            total_time = time.time() - eval_start
+            ml_logger.end_operation("Model Evaluation", success=True, duration=total_time)
+            
+            # Summary
+            ml_logger.log_step(
+                f"\nEvaluated {len(all_results)} models in {total_time:.2f}s",
+                level="success"
+            )
             
         except Exception as e:
-            print(f"[ERROR] Error during evaluation: {e}")
+            ml_logger.log_error("Error during evaluation", exception=e)
             return 1
         
         return 0
     
     def _ml_predict(self, args):
-        """Make predictions with trained models"""
-        print(f"[INFO] Making predictions for {args.service}...")
+        """Make predictions with trained models with verbose logging"""
+        import time
+        import json
         
         from ai.detectors import MLDetector
         from ai.config import MLConfig
+        from ai.ml_logger import get_ml_logger, VerbosityLevel
+        
+        # Determine verbosity level
+        if args.verbose_level is not None:
+            verbosity = args.verbose_level
+        elif args.verbose:
+            verbosity = min(args.verbose, 3)
+        else:
+            verbosity = VerbosityLevel.NORMAL
+        
+        ml_logger = get_ml_logger(verbosity)
+        
+        # Print banner
+        config_info = {
+            'service': args.service,
+            'input': args.input[:50] + '...' if len(args.input) > 50 else args.input,
+            'output': args.output if args.output else 'console',
+            'verbosity': verbosity
+        }
+        ml_logger.print_banner("NEXUS ML Prediction", config_info)
+        
+        ml_logger.start_operation("ML Prediction")
+        predict_start = time.time()
         
         try:
+            ml_logger.log_step("Loading ML detector...", level="info")
+            
             config = MLConfig(args.service)
             detector = MLDetector(args.service, config)
             
             if not detector.is_trained:
-                print(f" No trained models found for {args.service}")
-                print("Please train models first using: nexus_cli.py ml train")
+                ml_logger.log_step(f"No trained models found for {args.service}", level="error")
+                ml_logger.log_step("Please train models first using: nexus_cli.py ml train", level="info")
                 return 1
             
+            if verbosity >= VerbosityLevel.VERBOSE:
+                ml_logger.log_step(f"Detector loaded for {args.service}", level="success", indent=2)
+            
             # Prepare input data
+            predictions = []
+            
             if Path(args.input).exists():
                 # Input is a file
-                import json
+                ml_logger.log_step(f"Loading input from file: {args.input}", level="info")
+                
+                load_start = time.time()
                 with open(args.input, 'r') as f:
                     input_data = json.load(f)
                 
                 if isinstance(input_data, list):
-                    predictions = []
-                    for item in input_data:
+                    ml_logger.log_step(f"Processing {len(input_data):,} samples...", level="info", indent=2)
+                    
+                    for idx, item in enumerate(input_data):
                         result = detector.score(item)
                         predictions.append(result)
-                        print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}")
+                        
+                        if verbosity >= VerbosityLevel.VERBOSE:
+                            ml_logger.log_step(
+                                f"[{idx+1}/{len(input_data)}] Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}",
+                                level="data", indent=3
+                            )
                 else:
                     result = detector.score(input_data)
                     predictions = [result]
-                    print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}")
+                    ml_logger.log_step(
+                        f"Anomaly Score: {result['ml_anomaly_score']:.3f}, Labels: {result['ml_labels']}",
+                        level="data", indent=2
+                    )
             else:
                 # Input is a single command/query
+                ml_logger.log_step("Processing single input...", level="info")
+                
                 if args.service == 'ssh':
                     data = {'command': args.input}
                 elif args.service == 'mysql':
@@ -1330,35 +1609,75 @@ except Exception as e:
                 
                 result = detector.score(data)
                 predictions = [result]
-                print(f" Input: {args.input}")
-                print(f" Anomaly Score: {result['ml_anomaly_score']:.3f}")
-                print(f" Labels: {result['ml_labels']}")
-                print(f" Reason: {result['ml_reason']}")
+                
+                # Display detailed result
+                ml_logger.log_step(f"Input: {args.input}", level="info", indent=2)
+                ml_logger.log_metrics({
+                    'Anomaly Score': result['ml_anomaly_score'],
+                    'Labels': ', '.join(result['ml_labels']) if result['ml_labels'] else 'None',
+                    'Reason': result['ml_reason']
+                }, title="Prediction Result", indent=2)
             
             # Save predictions if output specified
             if args.output:
-                import json
+                save_start = time.time()
                 with open(args.output, 'w') as f:
                     json.dump(predictions, f, indent=2)
-                print(f" Predictions saved to {args.output}")
+                ml_logger.log_step(
+                    f"Predictions saved to {args.output} ({time.time() - save_start:.2f}s)",
+                    level="success", indent=2
+                )
+            
+            total_time = time.time() - predict_start
+            ml_logger.end_operation("ML Prediction", success=True, duration=total_time)
+            
+            ml_logger.log_step(f"\nProcessed {len(predictions)} predictions in {total_time:.2f}s", level="success")
             
         except Exception as e:
-            print(f" Error during prediction: {e}")
+            ml_logger.log_error("Error during prediction", exception=e)
             return 1
         
         return 0
     
     def _ml_update_models(self, args):
-        """Update/retrain models"""
-        print(f"[INFO] Updating ML models for {args.service}...")
+        """Update/retrain models with verbose logging"""
+        import time
+        import shutil
+        
+        from ai.ml_logger import get_ml_logger, VerbosityLevel
+        
+        # Determine verbosity level
+        if args.verbose_level is not None:
+            verbosity = args.verbose_level
+        elif args.verbose:
+            verbosity = min(args.verbose, 3)
+        else:
+            verbosity = VerbosityLevel.NORMAL
+        
+        ml_logger = get_ml_logger(verbosity)
+        
+        # Print banner
+        config = {
+            'service': args.service,
+            'model_path': args.model_path if args.model_path else 'retrain',
+            'force': args.force,
+            'verbosity': verbosity
+        }
+        ml_logger.print_banner("NEXUS Model Update", config)
+        
+        ml_logger.start_operation("Model Update")
+        update_start = time.time()
         
         if args.service == 'all':
             services = ['ssh', 'ftp', 'mysql']
         else:
             services = [args.service]
         
-        for service in services:
-            print(f"\n Updating models for {service.upper()}...")
+        updated_count = 0
+        
+        for service_idx, service in enumerate(services):
+            ml_logger.start_phase(f"{service.upper()} Update", len(services), service_idx + 1)
+            service_start = time.time()
             
             try:
                 from ai.config import MLConfig
@@ -1366,39 +1685,77 @@ except Exception as e:
                 
                 if args.model_path:
                     # Copy new models from specified path
-                    import shutil
+                    ml_logger.log_step(f"Copying models from {args.model_path}...", level="info")
+                    
                     source_path = Path(args.model_path) / service
                     target_path = config.models_dir / service
                     
                     if source_path.exists():
                         if args.force or input(f"Replace existing models for {service}? (y/N): ").lower() == 'y':
+                            copy_start = time.time()
                             shutil.copytree(source_path, target_path, dirs_exist_ok=True)
-                            print(f" Models updated for {service}")
+                            
+                            ml_logger.log_step(
+                                f"Models copied ({time.time() - copy_start:.2f}s)",
+                                level="success", indent=2
+                            )
+                            updated_count += 1
                         else:
-                            print(f"  Skipped {service}")
+                            ml_logger.log_step(f"Skipped {service}", level="warning", indent=2)
                     else:
-                        print(f" Model path not found: {source_path}")
+                        ml_logger.log_step(f"Model path not found: {source_path}", level="error", indent=2)
                 else:
                     # Retrain models
+                    ml_logger.log_step("Retraining models...", level="info")
+                    
                     from ai.training import ModelTrainer
                     from ai.data_processor import DataProcessor
                     
                     trainer = ModelTrainer(service)
+                    trainer.set_verbosity(verbosity)
                     processor = DataProcessor()
+                    processor.set_verbosity(verbosity)
                     
                     data = processor.get_processed_data(service)
                     training_data = data.get(service, [])
                     
                     if training_data:
+                        ml_logger.log_step(f"Training with {len(training_data):,} samples...", level="data", indent=2)
+                        
                         train_data, _ = processor.get_training_data(service, 0.2)
+                        
+                        train_start = time.time()
                         results = trainer.train_all_models(train_data)
+                        train_time = time.time() - train_start
+                        
                         trainer.save_models()
-                        print(f" Retrained models for {service}")
+                        
+                        ml_logger.log_step(
+                            f"Models retrained ({train_time:.2f}s) - {len(results)} algorithms",
+                            level="success", indent=2
+                        )
+                        
+                        if verbosity >= VerbosityLevel.VERBOSE:
+                            for algo, result in results.items():
+                                accuracy = result.get('accuracy', 'N/A')
+                                if isinstance(accuracy, (int, float)):
+                                    ml_logger.log_step(f"{algo}: {accuracy:.3f} accuracy", level="data", indent=3)
+                        
+                        updated_count += 1
                     else:
-                        print(f"  No training data available for {service}")
+                        ml_logger.log_step(f"No training data available for {service}", level="warning", indent=2)
+                
+                service_time = time.time() - service_start
+                ml_logger.end_phase(f"{service.upper()} Update", success=True, duration=service_time)
                 
             except Exception as e:
-                print(f" Error updating {service}: {e}")
+                ml_logger.log_error(f"Error updating {service}", exception=e)
+                ml_logger.end_phase(f"{service.upper()} Update", success=False)
+        
+        total_time = time.time() - update_start
+        ml_logger.end_operation("Model Update", success=True, duration=total_time)
+        
+        ml_logger.log_step(f"\nUpdated {updated_count}/{len(services)} services in {total_time:.2f}s", level="success")
         
         return 0
 

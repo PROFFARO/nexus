@@ -1,11 +1,13 @@
 """
 Model Training for NEXUS AI - Train and evaluate ML models for threat detection
+With comprehensive logging and verbose output for ML operations.
 """
 
 import numpy as np
 import pandas as pd
 import joblib
 import logging
+import time
 from typing import Dict, List, Any, Tuple, Optional
 from pathlib import Path
 from sklearn.model_selection import train_test_split, cross_val_score, GridSearchCV
@@ -28,6 +30,7 @@ from .features import FeatureExtractor
 from .detectors import MLDetector, AnomalyDetector
 from .embeddings import EmbeddingManager
 from .data_processor import DataProcessor
+from .ml_logger import get_ml_logger, VerbosityLevel
 
 class ModelTrainer:
     """Trains ML models for threat detection and anomaly identification"""
@@ -43,17 +46,48 @@ class ModelTrainer:
         self.training_results = {}
         self.models = {}
         
+        # Verbosity and logging
+        self.verbosity = VerbosityLevel.NORMAL
+        self.ml_logger = None
+        
+    def set_verbosity(self, level: int):
+        """Set verbosity level for training operations"""
+        self.verbosity = level
+        self.ml_logger = get_ml_logger(level, self.service_type)
+        
+    def _get_logger(self):
+        """Get ML logger instance"""
+        if self.ml_logger is None:
+            self.ml_logger = get_ml_logger(self.verbosity, self.service_type)
+        return self.ml_logger
+        
     def prepare_training_data(self, data: List[Dict[str, Any]]) -> Tuple[np.ndarray, np.ndarray, List[str]]:
         """Prepare data for training"""
+        logger = self._get_logger()
+        prep_start = time.time()
+        
         if not data:
             raise ValueError("No training data provided")
         
         # Extract labels
         labels = [item.get('label', 'normal') for item in data]
         
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Preparing {len(data):,} samples for training...", level="debug")
+        
         try:
             # Extract features using batch processing
+            if self.verbosity >= VerbosityLevel.DEBUG:
+                logger.log_step("Extracting text and numerical features...", level="debug", indent=2)
+            
+            extract_start = time.time()
             text_vectors, numerical_scaled = self.feature_extractor.extract_batch_features(data)
+            extract_time = time.time() - extract_start
+            
+            if self.verbosity >= VerbosityLevel.DEBUG:
+                logger.log_step(f"Text vectors: {text_vectors.shape if hasattr(text_vectors, 'shape') else 'N/A'}", level="debug", indent=2)
+                logger.log_step(f"Numerical features: {numerical_scaled.shape if hasattr(numerical_scaled, 'shape') else 'N/A'}", level="debug", indent=2)
+            
             combined_features = self.feature_extractor.combine_features(text_vectors, numerical_scaled)
             
             # Validate combined features
@@ -80,19 +114,36 @@ class ModelTrainer:
                 features = self.feature_extractor.extract_features(item)
                 text_features.append(str(features.get('text_features', '')))
             
+            prep_time = time.time() - prep_start
+            
+            if self.verbosity >= VerbosityLevel.VERBOSE:
+                logger.log_step(
+                    f"Prepared: {combined_features.shape} features, {len(labels)} labels ({prep_time:.2f}s)",
+                    level="data"
+                )
+            
             logging.info(f"Prepared training data: {combined_features.shape} features, {len(labels)} labels")
             return combined_features, np.array(labels), text_features
             
         except Exception as e:
+            logger.log_error(f"Error preparing training data", exception=e)
             logging.error(f"Error preparing training data: {e}")
             # Fallback: create minimal feature matrix
             fallback_features = np.zeros((len(data), 1))
             text_features = [str(item.get('text_features', '')) for item in data]
             return fallback_features, np.array(labels), text_features
+
     
     def train_anomaly_detector(self, data: List[Dict[str, Any]], algorithm: str = 'isolation_forest') -> Dict[str, Any]:
         """Train anomaly detection model"""
+        logger = self._get_logger()
+        train_start = time.time()
+        
         logging.info(f"Training {algorithm} anomaly detector for {self.service_type}")
+        
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Initializing {algorithm} training...", level="info")
+            logger.log_step(f"Input samples: {len(data):,}", level="data", indent=2)
         
         # Prepare data
         X, y, texts = self.prepare_training_data(data)
@@ -158,6 +209,11 @@ class ModelTrainer:
         logging.info(f"Training {algorithm} with data shape: {X_normal.shape}, dtype: {X_normal.dtype}")
         
         # Train model
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Training {algorithm} model...", level="info", indent=2)
+            
+        model_train_start = time.time()
+        
         if algorithm == 'isolation_forest':
             model = self._train_isolation_forest(X_normal)
         elif algorithm == 'one_class_svm':
@@ -167,7 +223,15 @@ class ModelTrainer:
         else:
             raise ValueError(f"Unknown algorithm: {algorithm}")
         
+        model_train_time = time.time() - model_train_start
+        
+        if self.verbosity >= VerbosityLevel.DEBUG:
+            logger.log_step(f"Model trained in {model_train_time:.2f}s", level="debug", indent=2)
+        
         # Evaluate on full dataset
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step("Evaluating on full dataset...", level="info", indent=2)
+            
         predictions = model.predict(X)
         scores = model.decision_function(X) if hasattr(model, 'decision_function') else predictions
         
@@ -184,11 +248,25 @@ class ModelTrainer:
             'f1_score': float(self._calculate_f1(y_binary, pred_binary)),
             'normal_samples': int(len(X_normal)),
             'total_samples': int(len(X)),
-            'anomaly_rate': float(np.mean(pred_binary))
+            'anomaly_rate': float(np.mean(pred_binary)),
+            'training_time': model_train_time
         }
         
         self.models[f'{algorithm}_anomaly'] = model
         self.training_results[f'{algorithm}_anomaly'] = results
+        
+        total_train_time = time.time() - train_start
+        
+        # Display verbose metrics
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_metrics({
+                'Accuracy': results['accuracy'],
+                'Precision': results['precision'],
+                'Recall': results['recall'],
+                'F1 Score': results['f1_score'],
+                'Anomaly Rate': results['anomaly_rate']
+            }, title=f"{algorithm} Metrics", indent=2)
+            logger.log_step(f"Total training time: {total_train_time:.2f}s", level="timing" if hasattr(logger, 'log_step') else "info", indent=2)
         
         logging.info(f"Anomaly detector trained - Accuracy: {results['accuracy']:.3f}, F1: {results['f1_score']:.3f}")
         
@@ -196,7 +274,14 @@ class ModelTrainer:
     
     def train_supervised_classifier(self, data: List[Dict[str, Any]]) -> Dict[str, Any]:
         """Train supervised classifier for threat severity"""
+        logger = self._get_logger()
+        train_start = time.time()
+        
         logging.info(f"Training supervised classifier for {self.service_type}")
+        
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Initializing XGBoost classifier training...", level="info")
+            logger.log_step(f"Input samples: {len(data):,}", level="data", indent=2)
         
         # Prepare data
         X, y, texts = self.prepare_training_data(data)
@@ -205,10 +290,16 @@ class ModelTrainer:
         label_encoder = LabelEncoder()
         y_encoded = label_encoder.fit_transform(y)
         
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Classes found: {len(label_encoder.classes_)} - {list(label_encoder.classes_)}", level="data", indent=2)
+        
         # Split data
         X_train, X_test, y_train, y_test = train_test_split(
             X, y_encoded, test_size=0.2, random_state=42, stratify=y_encoded
         )
+        
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Train/test split: {len(X_train):,} / {len(X_test):,}", level="data", indent=2)
         
         # Train XGBoost classifier
         # Set default parameters
@@ -218,12 +309,24 @@ class ModelTrainer:
             'learning_rate': 0.1,
             'random_state': 42
         }
+        
+        if self.verbosity >= VerbosityLevel.DEBUG:
+            logger.log_model_params("XGBClassifier", default_params)
+        
         model = xgb.XGBClassifier(
             **default_params,
             eval_metric='mlogloss'
         )
         
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step("Training XGBoost classifier...", level="info", indent=2)
+        
+        model_train_start = time.time()
         model.fit(X_train, y_train)
+        model_train_time = time.time() - model_train_start
+        
+        if self.verbosity >= VerbosityLevel.DEBUG:
+            logger.log_step(f"Model trained in {model_train_time:.2f}s", level="debug", indent=2)
         
         # Evaluate
         y_pred = model.predict(X_test)
@@ -246,12 +349,26 @@ class ModelTrainer:
             'classes': label_encoder.classes_.tolist(),
             'feature_importance': model.feature_importances_.tolist() if hasattr(model, 'feature_importances_') else [],
             'train_samples': int(len(X_train)),
-            'test_samples': int(len(X_test))
+            'test_samples': int(len(X_test)),
+            'training_time': model_train_time
         }
         
         self.models['supervised_classifier'] = model
         self.models['label_encoder'] = label_encoder
         self.training_results['supervised_classifier'] = results
+        
+        total_train_time = time.time() - train_start
+        
+        # Display verbose metrics
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_metrics({
+                'Accuracy': results['accuracy'],
+                'AUC Score': results['auc_score'],
+                'Classes': len(results['classes']),
+                'Train Samples': results['train_samples'],
+                'Test Samples': results['test_samples']
+            }, title="XGBoost Metrics", indent=2)
+            logger.log_step(f"Total training time: {total_train_time:.2f}s", level="info", indent=2)
         
         logging.info(f"Supervised classifier trained - Accuracy: {accuracy:.3f}, AUC: {auc_score:.3f}")
         
@@ -259,12 +376,24 @@ class ModelTrainer:
     
     def train_clustering_model(self, data: List[Dict[str, Any]], algorithm: str = 'hdbscan') -> Dict[str, Any]:
         """Train clustering model for behavior grouping"""
+        logger = self._get_logger()
+        train_start = time.time()
+        
         logging.info(f"Training {algorithm} clustering model for {self.service_type}")
+        
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Initializing {algorithm} clustering...", level="info")
+            logger.log_step(f"Input samples: {len(data):,}", level="data", indent=2)
         
         # Prepare data
         X, y, texts = self.prepare_training_data(data)
         
         # Train clustering model
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Training {algorithm} model...", level="info", indent=2)
+        
+        model_train_start = time.time()
+        
         if algorithm == 'hdbscan' and HDBSCAN_AVAILABLE:
             model = self._train_hdbscan(X)
         elif algorithm == 'dbscan':
@@ -273,6 +402,11 @@ class ModelTrainer:
             model = self._train_kmeans(X)
         else:
             raise ValueError(f"Unknown or unavailable algorithm: {algorithm}")
+        
+        model_train_time = time.time() - model_train_start
+        
+        if self.verbosity >= VerbosityLevel.DEBUG:
+            logger.log_step(f"Model trained in {model_train_time:.2f}s", level="debug", indent=2)
         
         # Get cluster labels
         if hasattr(model, 'labels_'):
@@ -307,11 +441,27 @@ class ModelTrainer:
             'n_clusters': int(len(unique_clusters) - (1 if -1 in unique_clusters else 0)),
             'n_noise': int(np.sum(cluster_labels == -1)),
             'cluster_info': cluster_info,
-            'silhouette_score': float(self._calculate_silhouette_score(X, cluster_labels))
+            'silhouette_score': float(self._calculate_silhouette_score(X, cluster_labels)),
+            'training_time': model_train_time
         }
         
         self.models[f'{algorithm}_clustering'] = model
         self.training_results[f'{algorithm}_clustering'] = results
+        
+        total_train_time = time.time() - train_start
+        
+        # Display verbose metrics
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_metrics({
+                'Clusters': results['n_clusters'],
+                'Noise Points': results['n_noise'],
+                'Silhouette Score': results['silhouette_score']
+            }, title=f"{algorithm} Clustering Metrics", indent=2)
+            
+            if self.verbosity >= VerbosityLevel.DEBUG and cluster_info:
+                logger.log_step("Cluster sizes:", level="debug", indent=2)
+                for cid, info in list(cluster_info.items())[:5]:  # Show first 5 clusters
+                    logger.log_step(f"  Cluster {cid}: {info['size']} samples", level="debug", indent=3)
         
         logging.info(f"Clustering model trained - Clusters: {results['n_clusters']}, Noise: {results['n_noise']}")
         

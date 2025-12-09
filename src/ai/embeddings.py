@@ -1,5 +1,6 @@
 """
 Embedding Manager for NEXUS AI - Semantic similarity and clustering
+With comprehensive logging for embedding generation and FAISS operations.
 """
 
 import numpy as np
@@ -25,6 +26,7 @@ except ImportError:
     logging.warning("FAISS not available. Install with: pip install faiss-cpu")
 
 from .config import MLConfig
+from .ml_logger import get_ml_logger, VerbosityLevel
 
 class EmbeddingManager:
     """Manages text embeddings for similarity detection and clustering"""
@@ -38,6 +40,12 @@ class EmbeddingManager:
         self.id_to_text = {}
         self.next_id = 0
         
+        # Verbosity and logging
+        self.verbosity = VerbosityLevel.NORMAL
+        self.ml_logger = None
+        self._cache_hits = 0
+        self._cache_misses = 0
+        
         # Initialize embedding model
         if SENTENCE_TRANSFORMERS_AVAILABLE and self.config.is_enabled():
             self._load_embedding_model()
@@ -45,6 +53,17 @@ class EmbeddingManager:
         # Load existing cache and index
         self._load_cache()
         self._load_faiss_index()
+    
+    def set_verbosity(self, level: int):
+        """Set verbosity level for logging"""
+        self.verbosity = level
+        self.ml_logger = get_ml_logger(level)
+        
+    def _get_logger(self):
+        """Get ML logger instance"""
+        if self.ml_logger is None:
+            self.ml_logger = get_ml_logger(self.verbosity)
+        return self.ml_logger
     
     def _load_embedding_model(self):
         """Load the sentence transformer model"""
@@ -240,6 +259,9 @@ class EmbeddingManager:
     
     def build_faiss_index(self, texts: List[str], force_rebuild: bool = False):
         """Build FAISS index for fast similarity search"""
+        logger = self._get_logger()
+        build_start = time.time()
+        
         if not FAISS_AVAILABLE:
             logging.warning("FAISS not available, cannot build index")
             return
@@ -252,11 +274,24 @@ class EmbeddingManager:
             logging.info("FAISS index already exists, use force_rebuild=True to rebuild")
             return
         
+        if self.verbosity >= VerbosityLevel.VERBOSE:
+            logger.log_step(f"Building FAISS index with {len(texts):,} texts...", level="info")
+        
         try:
             # Generate embeddings
+            if self.verbosity >= VerbosityLevel.VERBOSE:
+                logger.log_step("Generating embeddings...", level="info", indent=2)
+            
+            encode_start = time.time()
             embeddings = self.encode_batch(texts)
+            encode_time = time.time() - encode_start
+            
+            if self.verbosity >= VerbosityLevel.DEBUG:
+                logger.log_step(f"Embeddings generated in {encode_time:.2f}s", level="debug", indent=2)
+            
             valid_embeddings = []
             valid_texts = []
+            invalid_count = 0
             
             for i, (text, embedding) in enumerate(zip(texts, embeddings)):
                 if embedding is not None and isinstance(embedding, np.ndarray) and embedding.size > 0:
@@ -268,13 +303,26 @@ class EmbeddingManager:
                         self.id_to_text[self.next_id] = text
                         self.next_id += 1
                     else:
+                        invalid_count += 1
                         logging.warning(f"Non-finite embedding at index {i}")
+                else:
+                    invalid_count += 1
+            
+            if self.verbosity >= VerbosityLevel.VERBOSE:
+                logger.log_step(
+                    f"Valid embeddings: {len(valid_embeddings):,} / {len(texts):,} ({invalid_count} invalid)",
+                    level="data", indent=2
+                )
             
             if not valid_embeddings:
                 logging.error("No valid embeddings generated for FAISS index")
                 return
             
             # Build FAISS index
+            if self.verbosity >= VerbosityLevel.VERBOSE:
+                logger.log_step("Building FAISS index structure...", level="info", indent=2)
+            
+            index_start = time.time()
             embeddings_array = np.array(valid_embeddings, dtype=np.float32)
             
             # Validate embeddings array
@@ -300,6 +348,13 @@ class EmbeddingManager:
                 return
             
             self.faiss_index.add(embeddings_array)
+            index_time = time.time() - index_start
+            
+            total_time = time.time() - build_start
+            
+            if self.verbosity >= VerbosityLevel.VERBOSE:
+                logger.log_faiss_stats(len(valid_embeddings), dimension, index_time)
+                logger.log_step(f"Total build time: {total_time:.2f}s", level="success", indent=2)
             
             logging.info(f"Built FAISS index with {len(valid_embeddings)} vectors")
             
@@ -308,6 +363,7 @@ class EmbeddingManager:
             self._save_cache()
             
         except Exception as e:
+            logger.log_error("Failed to build FAISS index", exception=e)
             logging.error(f"Failed to build FAISS index: {e}")
             self.faiss_index = None
     
