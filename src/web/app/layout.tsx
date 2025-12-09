@@ -22,7 +22,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "NEXUS SIEM Dashboard",
+  title: "NEXUS Honeypot Platform",
   description: "Real-time Security Information and Event Management Dashboard for NEXUS Honeypot Platform",
   keywords: ["SIEM", "security", "dashboard", "honeypot", "threat detection", "ML", "anomaly detection"],
   authors: [{ name: "NEXUS Security Team" }],

@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSignUp } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import {
     Mail,
     Eye,
@@ -459,8 +460,14 @@ export default function SignUpPage() {
                             animate={{ opacity: 1, y: 0 }}
                             className="flex items-center gap-3 mb-16"
                         >
-                            <div className="p-2.5 rounded-xl bg-white/10 backdrop-blur-sm">
-                                <Shield className="h-7 w-7 text-white" />
+                            <div className="relative w-10 h-10">
+                                <Image
+                                    src="/assets/nexus_logo.png"
+                                    alt="NEXUS Logo"
+                                    fill
+                                    className="object-contain"
+                                    priority
+                                />
                             </div>
                             <span className="text-2xl font-bold text-white">NEXUS</span>
                         </motion.div>
@@ -488,21 +495,21 @@ export default function SignUpPage() {
                             <BenefitItem
                                 icon={Server}
                                 title="Multi-Protocol Support"
-                                description="SSH, FTP, and MySQL honeypot monitoring"
+                                description="SSH, FTP, and MySQL honeypot monitoring and analysis"
                                 delay={0.4}
                                 color="bg-blue-500/20 text-blue-400"
                             />
                             <BenefitItem
                                 icon={Sparkles}
                                 title="AI-Powered Insights"
-                                description="Machine learning threat detection"
+                                description="Multi LLM configuration facilities"
                                 delay={0.5}
                                 color="bg-purple-500/20 text-purple-400"
                             />
                             <BenefitItem
                                 icon={Globe2}
-                                title="Global Intelligence"
-                                description="Crowdsourced attack signatures"
+                                title="Real time logging"
+                                description="Real time logging and analysis"
                                 delay={0.6}
                                 color="bg-teal-500/20 text-teal-400"
                             />
@@ -519,8 +526,14 @@ export default function SignUpPage() {
                             animate={{ opacity: 1, scale: 1 }}
                             className="flex items-center gap-3 mb-12 lg:hidden"
                         >
-                            <div className="p-2.5 rounded-xl bg-[var(--primary)] text-white">
-                                <Shield className="h-6 w-6" />
+                            <div className="relative w-10 h-10">
+                                <Image
+                                    src="/assets/nexus_logo.png"
+                                    alt="NEXUS Logo"
+                                    fill
+                                    className="object-contain"
+                                    priority
+                                />
                             </div>
                             <span className="text-2xl font-bold text-[var(--foreground)]">NEXUS</span>
                         </motion.div>

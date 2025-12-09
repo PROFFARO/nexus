@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSignIn } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
+import Image from "next/image";
 import {
     Mail,
     Eye,
@@ -212,8 +213,14 @@ export default function SignInPage() {
                             animate={{ opacity: 1, scale: 1 }}
                             className="flex items-center gap-3 mb-12"
                         >
-                            <div className="p-2.5 rounded-xl bg-[var(--primary)] text-white">
-                                <Shield className="h-6 w-6" />
+                            <div className="relative w-10 h-10">
+                                <Image
+                                    src="/assets/nexus_logo.png"
+                                    alt="NEXUS Logo"
+                                    fill
+                                    className="object-contain"
+                                    priority
+                                />
                             </div>
                             <span className="text-2xl font-bold text-[var(--foreground)]">NEXUS</span>
                         </motion.div>
@@ -429,14 +436,14 @@ export default function SignInPage() {
                             <FeatureCard
                                 icon={Shield}
                                 title="Real-time Protection"
-                                description="24/7 monitoring of SSH, FTP, and MySQL honeypots"
+                                description="Monitoring of SSH, FTP, and MySQL honeypots"
                                 delay={0.5}
                                 color="bg-teal-500/20 text-teal-400"
                             />
                             <FeatureCard
                                 icon={Activity}
                                 title="ML-Powered Analysis"
-                                description="Anomaly detection with 98.7% accuracy"
+                                description="Anomaly detection | Risk assessment | vulnerability assessment"
                                 delay={0.6}
                                 color="bg-purple-500/20 text-purple-400"
                             />
