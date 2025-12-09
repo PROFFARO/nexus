@@ -2,17 +2,18 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
+import { UserButton } from "@clerk/nextjs";
 import {
     Search,
     Bell,
     Settings,
-    User,
     Calendar,
     RefreshCw,
     AlertTriangle,
     Check,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 interface Notification {
     id: string;
@@ -58,7 +59,7 @@ export function Header() {
     const unreadCount = mockNotifications.filter((n) => !n.read).length;
 
     return (
-        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--glass-border)] bg-[var(--background)]/80 px-6 backdrop-blur-xl">
+        <header className="sticky top-0 z-30 flex h-16 items-center justify-between border-b border-[var(--border)] bg-[var(--background)]/80 px-6 backdrop-blur-xl transition-all duration-300">
             {/* Left section - Breadcrumb / Page Title */}
             <div className="flex items-center gap-4">
                 <div>
@@ -82,9 +83,9 @@ export function Header() {
                         placeholder="Search sessions, IPs, commands..."
                         onFocus={() => setSearchOpen(true)}
                         onBlur={() => setSearchOpen(false)}
-                        className="h-10 w-full rounded-lg border border-[var(--glass-border)] bg-[var(--glass-bg)] pl-10 pr-4 text-sm outline-none transition-all placeholder:text-[var(--muted)] focus:border-[var(--primary)]/50 focus:ring-2 focus:ring-[var(--primary)]/20"
+                        className="h-10 w-full rounded-xl border border-[var(--input-border)] bg-[var(--input)] pl-10 pr-4 text-sm outline-none transition-all placeholder:text-[var(--muted-foreground)] focus:border-[var(--primary)] focus:ring-2 focus:ring-[var(--ring)]"
                     />
-                    <kbd className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded bg-white/5 px-1.5 py-0.5 text-xs text-[var(--muted-foreground)] sm:block">
+                    <kbd className="absolute right-3 top-1/2 hidden -translate-y-1/2 rounded bg-[var(--card)] border border-[var(--border)] px-1.5 py-0.5 text-xs text-[var(--muted-foreground)] sm:block shadow-sm">
                         ⌘K
                     </kbd>
                 </motion.div>
@@ -187,15 +188,24 @@ export function Header() {
                     </AnimatePresence>
                 </div>
 
+                {/* Theme Toggle */}
+                <ThemeToggle />
+
                 {/* Settings */}
-                <button className="rounded-lg p-2 text-[var(--muted-foreground)] transition-colors hover:bg-white/5 hover:text-[var(--foreground)]">
+                <button className="rounded-lg p-2 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]">
                     <Settings className="h-5 w-5" />
                 </button>
 
-                {/* User Avatar */}
-                <button className="ml-2 flex h-9 w-9 items-center justify-center rounded-full bg-gradient-to-br from-[var(--primary)] to-[var(--accent)]">
-                    <User className="h-5 w-5 text-white" />
-                </button>
+                {/* User Avatar (Clerk) */}
+                <div className="ml-2">
+                    <UserButton
+                        appearance={{
+                            elements: {
+                                avatarBox: "h-9 w-9",
+                            },
+                        }}
+                    />
+                </div>
             </div>
         </header>
     );
