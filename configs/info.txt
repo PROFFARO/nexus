@@ -1,8 +1,8 @@
-- These configs are global configs which are intended for all services to run parallelly specifically using the start-all action and use to manage the ml models and settings for all services so don't tweak these configurations.
+- These configs are global configs which are intended for all services to run parallelly specifically using the `start-all` action and use to manage the ml models and settings for all services so don't tweak these configurations.
 
 - Don't edit these configs unless you know what you are doing.
 
-- If you want to edit the configs for a specific service, create the file in the specific service directory and name it as <service_name>_config.ini and provide the path to the config file.
+- If you want to edit the configs for a specific service, create the file in the specific service directory and name it as `<service_name>_config.ini` and provide the path to the config file.
 
-- For example, if you want to edit the configs for the ssh service, create the file in the ssh directory and name it as ssh_config.ini and provide the path to the config file.
+- For example, if you want to edit the configs for the ssh service, create the file in the ssh directory and name it as `ssh_config.ini` and provide the path to the config file.
 
