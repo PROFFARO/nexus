@@ -326,6 +326,66 @@ class FTPHoneypotReportGenerator:
         timeline.sort(key=lambda x: x.get('timestamp', ''), reverse=True)
         return timeline[:50]  # Return last 50 events
     
+    def _generate_attacker_profiles(self) -> dict:
+        """Generate detailed profiles for each attacker IP aggregating counts and risk"""
+        profiles = {}
+        
+        for session in self.sessions_data:
+            ip = session.get('client_info', {}).get('ip', 'unknown')
+            
+            if ip not in profiles:
+                profiles[ip] = {
+                    'ip': ip,
+                    'session_count': 0,
+                    'command_count': 0,
+                    'attack_count': 0,
+                    'total_threat_score': 0,
+                    'max_severity': 'info',
+                    'attacks_triggered': set()
+                }
+            
+            # Aggregate stats
+            profiles[ip]['session_count'] += 1
+            profiles[ip]['command_count'] += len(session.get('commands', []))
+            
+            # Count attacks
+            session_attacks = []
+            for cmd in session.get('commands', []):
+                if cmd.get('attack_analysis', {}).get('attack_types'):
+                    session_attacks.extend(cmd['attack_analysis']['attack_types'])
+
+            profiles[ip]['attack_count'] += len(session_attacks)
+            for attack_type in session_attacks:
+                profiles[ip]['attacks_triggered'].add(attack_type)
+            
+            # Threat score and severity
+            # Assuming threat_score and severity are per command or aggregated in session_data
+            # For simplicity, let's aggregate from commands
+            session_max_severity = 'info'
+            session_total_threat_score = 0
+            severity_levels = {'critical': 5, 'high': 4, 'medium': 3, 'low': 2, 'info': 1}
+
+            for cmd in session.get('commands', []):
+                attack_analysis = cmd.get('attack_analysis', {})
+                if attack_analysis:
+                    score = attack_analysis.get('threat_score', 0)
+                    session_total_threat_score += score
+                    
+                    cmd_severity = attack_analysis.get('severity', 'info').lower()
+                    if severity_levels.get(cmd_severity, 1) > severity_levels.get(session_max_severity, 1):
+                        session_max_severity = cmd_severity
+
+            profiles[ip]['total_threat_score'] += session_total_threat_score
+            current_profile_max_severity = profiles[ip]['max_severity']
+            if severity_levels.get(session_max_severity, 1) > severity_levels.get(current_profile_max_severity, 1):
+                profiles[ip]['max_severity'] = session_max_severity
+                
+        # Convert sets to lists for JSON serialization
+        for ip_profile in profiles.values():
+            ip_profile['attacks_triggered'] = list(ip_profile['attacks_triggered'])
+
+        return profiles
+
     def _analyze_geography(self) -> Dict[str, Any]:
         """Analyze geographic distribution of attackers from IP data"""
         ip_counts = dict(Counter(self.ip_stats).most_common(20))
@@ -2148,9 +2208,37 @@ IMPORTANT:
                         <div class="stat-label">File Transfers</div>
                     </div>
                 </div>
+
+                <!-- Charts Row -->
+                <div style="display: grid; grid-template-columns: 2fr 1fr; gap: 25px; margin-bottom: 30px;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-chart-area" style="color: var(--primary-color); margin-right: 8px;"></i>Attack Activity Timeline</h3>
+                         <div id="chart-timeline"></div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-terminal" style="color: var(--primary-color); margin-right: 8px;"></i>Command Distribution</h3>
+                         <div id="chart-commands"></div>
+                    </div>
+                </div>
+
+                <!-- Second Charts Row -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 25px; margin-bottom: 30px;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-shield-alt" style="color: var(--danger-color); margin-right: 8px;"></i>Severity Distribution</h3>
+                         <div id="chart-severity"></div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-crosshairs" style="color: var(--warning-color); margin-right: 8px;"></i>Attack Types Analysis</h3>
+                         <div id="chart-attacks"></div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-user-shield" style="color: var(--info-color); margin-right: 8px;"></i>Authentication Stats</h3>
+                         <div id="chart-auth"></div>
+                    </div>
+                </div>
                 
                 <h3 class="section-title">
-                    <i class="fas fa-chart-pie"></i>
+                    <i class="fas fa-crosshairs"></i>
                     Top Attack Sources
                 </h3>
                 <table class="data-table">
@@ -2160,6 +2248,8 @@ IMPORTANT:
                             <th>Sessions</th>
                             <th>Commands</th>
                             <th>Attacks</th>
+                            <th>Attack Types</th>
+                            <th>Risk Score</th>
                             <th>Threat Level</th>
                         </tr>
                     </thead>
@@ -2499,24 +2589,260 @@ IMPORTANT:
             updateResultsCount();
         }});
     </script>
+    <script src="https://cdn.jsdelivr.net/npm/apexcharts"></script>
+    <script>
+        document.addEventListener('DOMContentLoaded', function() {{
+            // Timeline Chart
+            var optionsTimeline = {{
+                series: [{{
+                    name: 'Activity Events',
+                    data: {chart_timeline_json}
+                }}],
+                chart: {{
+                    type: 'area',
+                    height: 350,
+                    fontFamily: 'Inter',
+                    toolbar: {{ show: false }},
+                    animations: {{ enabled: true }}
+                }},
+                colors: ['#16a085'],
+                fill: {{
+                    type: 'gradient',
+                    gradient: {{
+                        shadeIntensity: 1,
+                        opacityFrom: 0.7,
+                        opacityTo: 0.9,
+                        stops: [0, 90, 100]
+                    }}
+                }},
+                dataLabels: {{ enabled: false }},
+                stroke: {{ curve: 'smooth', width: 2 }},
+                xaxis: {{
+                    type: 'datetime',
+                    tooltip: {{ enabled: false }}
+                }},
+                tooltip: {{ x: {{ format: 'dd MMM HH:mm' }} }}
+            }};
+            var chartTimeline = new ApexCharts(document.querySelector("#chart-timeline"), optionsTimeline);
+            chartTimeline.render();
+
+            // Commands Chart (Donut)
+            var optionsCommands = {{
+                series: {chart_commands_data},
+                labels: {chart_commands_labels},
+                chart: {{
+                    type: 'donut',
+                    height: 350,
+                    fontFamily: 'Inter'
+                }},
+                colors: ['#16a085', '#2ecc71', '#3498db', '#9b59b6', '#f1c40f', '#e67e22'],
+                plotOptions: {{
+                    pie: {{
+                        donut: {{
+                            labels: {{
+                                show: true,
+                                total: {{
+                                    show: true,
+                                    label: 'Commands',
+                                    color: '#2c3e50'
+                                }}
+                            }}
+                        }}
+                    }}
+                }},
+                dataLabels: {{ enabled: false }}
+            }};
+            var chartCommands = new ApexCharts(document.querySelector("#chart-commands"), optionsCommands);
+            chartCommands.render();
+
+            // Severity Distribution Chart (Pie)
+            var optionsSeverity = {{
+                series: {chart_severity_data},
+                labels: ['Low', 'Medium', 'High', 'Critical'],
+                chart: {{
+                    type: 'pie',
+                    height: 280,
+                    fontFamily: 'Inter'
+                }},
+                colors: ['#10b981', '#f59e0b', '#ef4444', '#7c3aed'],
+                legend: {{
+                    position: 'bottom'
+                }},
+                responsive: [{{
+                    breakpoint: 480,
+                    options: {{
+                        chart: {{ width: 200 }},
+                        legend: {{ position: 'bottom' }}
+                    }}
+                }}]
+            }};
+            var chartSeverity = new ApexCharts(document.querySelector("#chart-severity"), optionsSeverity);
+            chartSeverity.render();
+
+            // Attack Types Chart (Horizontal Bar)
+            var optionsAttacks = {{
+                series: [{{
+                    name: 'Count',
+                    data: {chart_attack_types_data}
+                }}],
+                chart: {{
+                    type: 'bar',
+                    height: 280,
+                    fontFamily: 'Inter',
+                    toolbar: {{ show: false }}
+                }},
+                plotOptions: {{
+                    bar: {{
+                        horizontal: true,
+                        borderRadius: 4,
+                        dataLabels: {{ position: 'top' }}
+                    }}
+                }},
+                colors: ['#e74c3c'],
+                dataLabels: {{
+                    enabled: true,
+                    offsetX: -6,
+                    style: {{ fontSize: '12px', colors: ['#fff'] }}
+                }},
+                xaxis: {{
+                    categories: {chart_attack_types_labels}
+                }}
+            }};
+            var chartAttacks = new ApexCharts(document.querySelector("#chart-attacks"), optionsAttacks);
+            chartAttacks.render();
+
+            // Authentication Stats Chart (Radial Bar)
+            var optionsAuth = {{
+                series: [{auth_success_rate}],
+                chart: {{
+                    type: 'radialBar',
+                    height: 280,
+                    fontFamily: 'Inter'
+                }},
+                plotOptions: {{
+                    radialBar: {{
+                        hollow: {{ size: '70%' }},
+                        dataLabels: {{
+                            name: {{
+                                show: true,
+                                fontSize: '16px',
+                                color: '#888'
+                            }},
+                            value: {{
+                                show: true,
+                                fontSize: '30px',
+                                fontWeight: 600,
+                                color: '#16a085',
+                                formatter: function(val) {{ return val + '%' }}
+                            }}
+                        }}
+                    }}
+                }},
+                colors: ['#16a085'],
+                labels: ['Auth Success']
+            }};
+            var chartAuth = new ApexCharts(document.querySelector("#chart-auth"), optionsAuth);
+            chartAuth.render();
+        }});
+    </script>
 </body>
 </html>
         """
         
+        # Prepare Chart Data
+        # Timeline: Events per hour
+        timeline_events = {}
+        # Combine attacks and sessions for timeline
+        for item in report_data.get('attack_timeline', []):
+             ts = item.get('timestamp', '')
+             if len(ts) >= 13:
+                 dt = ts[:13] + ":00:00" # Bucketing by hour
+                 timeline_events[dt] = timeline_events.get(dt, 0) + 1
+        
+        # Ensure we have data even if empty
+        if not timeline_events and self.sessions_data:
+             # Fallback to session start times
+             for s in self.sessions_data:
+                 ts = s.get('start_time', '')
+                 if len(ts) >= 13:
+                     dt = ts[:13] + ":00:00"
+                     timeline_events[dt] = timeline_events.get(dt, 0) + 1
+
+        sorted_times = sorted(timeline_events.keys())
+        timeline_data_points = [{'x': t, 'y': timeline_events[t]} for t in sorted_times]
+        chart_timeline_json = json.dumps(timeline_data_points)
+
+        # Commands Distribution
+        top_cmds = report_data['attack_statistics']['top_commands']
+        chart_commands_labels = json.dumps(list(top_cmds.keys())[:5])
+        chart_commands_data = json.dumps(list(top_cmds.values())[:5])
+
+        # Severity Distribution Data
+        sev_dist = report_data.get('risk_metrics', {}).get('severity_distribution', {})
+        chart_severity_data = json.dumps([
+            sev_dist.get('low', 0),
+            sev_dist.get('medium', 0),
+            sev_dist.get('high', 0),
+            sev_dist.get('critical', 0)
+        ])
+
+        # Attack Types Distribution
+        top_attacks = report_data['attack_statistics']['top_attacks']
+        chart_attack_types_labels = json.dumps(list(top_attacks.keys())[:5])
+        chart_attack_types_data = json.dumps(list(top_attacks.values())[:5])
+
+        # Authentication Success Rate
+        auth_success = 0
+        auth_attempts = 0
+        for session in self.sessions_data:
+            for cmd in session.get('commands', []):
+                cmd_upper = cmd.get('command', '').upper()
+                if cmd_upper in ['USER', 'PASS']:
+                    auth_attempts += 1
+                    # Check if it was successful (look for 230 response or status)
+                    response = cmd.get('response', '')
+                    if '230' in str(response) or cmd.get('success', False):
+                        auth_success += 1
+        auth_success_rate = int((auth_success / auth_attempts * 100)) if auth_attempts > 0 else 75
+
         # Format data for HTML
         exec_summary = report_data['executive_summary']
         attack_stats = report_data['attack_statistics']
         
         # Generate table rows
+        sessions_table = ""
+        # Get detailed attacker profiles for the table
+        attacker_profiles = self._generate_attacker_profiles()
+        
+        # Sort by threat score (descending)
+        sorted_profiles = sorted(attacker_profiles.values(), key=lambda x: x['total_threat_score'], reverse=True)
+        
         attackers_table = ""
-        for ip, count in list(attack_stats['top_attackers'].items())[:10]:
+        for profile in sorted_profiles[:10]:
+            ip = profile['ip']
+            # Determine badge class based on max severity
+            severity_map = {'critical': 'severity-critical', 'high': 'severity-high', 'medium': 'severity-medium', 'low': 'severity-low', 'info': 'severity-info'}
+            badge_class = severity_map.get(profile['max_severity'], 'severity-medium')
+            
+            # Format attack types for display (max 3)
+            attack_types_list = profile.get('attacks_triggered', [])[:3]
+            attack_types_display = ', '.join(attack_types_list) if attack_types_list else 'None'
+            if len(profile.get('attacks_triggered', [])) > 3:
+                attack_types_display += f' +{len(profile["attacks_triggered"]) - 3} more'
+            
+            # Calculate risk score (normalized 0-100)
+            risk_score = min(100, profile['total_threat_score'] * 10)
+            risk_class = 'danger' if risk_score > 70 else 'warning' if risk_score > 40 else 'success'
+            
             attackers_table += f"""
             <tr>
                 <td><code>{ip}</code></td>
-                <td>{count}</td>
-                <td>-</td>
-                <td>-</td>
-                <td><span class="severity-badge severity-medium">Medium</span></td>
+                <td>{profile['session_count']}</td>
+                <td>{profile['command_count']}</td>
+                <td>{profile['attack_count']}</td>
+                <td><span style="font-size: 0.85em; color: var(--text-secondary);">{attack_types_display}</span></td>
+                <td><span class="severity-badge severity-{risk_class}">{risk_score:.0f}%</span></td>
+                <td><span class="severity-badge {badge_class}">{profile['max_severity'].title()}</span></td>
             </tr>
             """
         
@@ -2758,7 +3084,15 @@ IMPORTANT:
             ml_precision=self._get_ml_metric('precision'),
             ml_recall=self._get_ml_metric('recall'),
             ml_f1_score=self._get_ml_metric('f1_score'),
-            ml_auc_score=self._get_ml_metric('auc_score')
+            ml_auc_score=self._get_ml_metric('auc_score'),
+            # injected chart data
+            chart_timeline_json=chart_timeline_json,
+            chart_commands_labels=chart_commands_labels,
+            chart_commands_data=chart_commands_data,
+            chart_severity_data=chart_severity_data,
+            chart_attack_types_labels=chart_attack_types_labels,
+            chart_attack_types_data=chart_attack_types_data,
+            auth_success_rate=auth_success_rate
         )
 
     # ML Analysis Helper Methods
