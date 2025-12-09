@@ -41,15 +41,22 @@ function OAuthButton({
             type="button"
             onClick={onClick}
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay, duration: 0.4 }}
+            animate={{
+                opacity: 1,
+                y: 0,
+                transition: { delay, duration: 0.4 }
+            }}
             whileHover={{
                 scale: 1.02,
                 backgroundColor: "var(--secondary)",
                 borderColor: "var(--primary)",
+                transition: { duration: 0.2, delay: 0 }
             }}
-            whileTap={{ scale: 0.98 }}
-            className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-none border-2 border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] font-medium transition-all"
+            whileTap={{
+                scale: 0.98,
+                transition: { duration: 0.1 }
+            }}
+            className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-none border-2 border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] font-medium transition-colors cursor-pointer"
         >
             {icon}
             <span>{label}</span>

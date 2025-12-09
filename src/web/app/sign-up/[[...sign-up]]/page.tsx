@@ -44,15 +44,22 @@ function OAuthButton({
             type="button"
             onClick={onClick}
             initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay, duration: 0.4 }}
+            animate={{
+                opacity: 1,
+                y: 0,
+                transition: { delay, duration: 0.4 }
+            }}
             whileHover={{
                 scale: 1.02,
                 backgroundColor: "var(--secondary)",
                 borderColor: "var(--primary)",
+                transition: { duration: 0.2, delay: 0 }
             }}
-            whileTap={{ scale: 0.98 }}
-            className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-none border-2 border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] font-medium transition-all"
+            whileTap={{
+                scale: 0.98,
+                transition: { duration: 0.1 }
+            }}
+            className="flex items-center justify-center gap-3 w-full py-3.5 px-4 rounded-none border-2 border-[var(--border)] bg-[var(--card)] text-[var(--foreground)] font-medium transition-colors cursor-pointer"
         >
             {icon}
             <span>{label}</span>
@@ -271,9 +278,9 @@ export default function SignUpPage() {
                                     initial={{ scale: 0, rotate: -180 }}
                                     animate={{ scale: 1, rotate: 0 }}
                                     transition={{ type: "spring", stiffness: 200, damping: 15, delay: 0.1 }}
-                                    className="relative mx-auto mb-6"
+                                    className="relative mx-auto mb-6 w-20 h-20"
                                 >
-                                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]/60 flex items-center justify-center shadow-lg shadow-[var(--primary)]/30">
+                                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[var(--primary)] to-[var(--primary)]/60 flex items-center justify-center shadow-lg shadow-[var(--primary)]/30 mx-auto">
                                         <Mail className="h-10 w-10 text-white" />
                                     </div>
                                     {/* Pulse ring */}
@@ -368,7 +375,7 @@ export default function SignUpPage() {
                                 >
                                     <StatefulButton
                                         type="submit"
-                                        className="w-full h-12 rounded-lg bg-[var(--primary)] hover:ring-[var(--primary)] text-base font-semibold"
+                                        className="w-full h-12 rounded-none bg-[var(--primary)] hover:ring-[var(--primary)] text-base font-semibold"
                                         disabled={code.length !== 6}
                                     >
                                         <span className="flex items-center gap-2">
@@ -391,7 +398,7 @@ export default function SignUpPage() {
                                     <button
                                         type="button"
                                         onClick={() => signUp?.prepareEmailAddressVerification({ strategy: "email_code" })}
-                                        className="text-[var(--primary)] font-medium hover:underline text-sm inline-flex items-center gap-1.5 transition-colors"
+                                        className="text-[var(--primary)] font-medium hover:underline text-sm inline-flex items-center gap-1.5 transition-colors cursor-pointer"
                                     >
                                         <Mail className="h-4 w-4" />
                                         Resend verification code
@@ -407,7 +414,7 @@ export default function SignUpPage() {
                                     <button
                                         type="button"
                                         onClick={() => setPendingVerification(false)}
-                                        className="w-full text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+                                        className="w-full text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors cursor-pointer"
                                     >
                                         ← Back to sign up
                                     </button>
