@@ -2236,6 +2236,22 @@ IMPORTANT:
                          <div id="chart-auth"></div>
                     </div>
                 </div>
+
+                <!-- Third Charts Row -->
+                <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 25px; margin-bottom: 30px;">
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-clock" style="color: var(--success-color); margin-right: 8px;"></i>Session Duration (sec)</h3>
+                         <div id="chart-duration"></div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-folder-open" style="color: var(--primary-color); margin-right: 8px;"></i>File Operations</h3>
+                         <div id="chart-fileops"></div>
+                    </div>
+                    <div style="background: white; padding: 25px; border-radius: 12px; box-shadow: var(--shadow-md);">
+                         <h3 style="font-size: 1.1rem; color: var(--text-secondary); margin-bottom: 20px; font-weight: 600;"><i class="fas fa-key" style="color: var(--warning-color); margin-right: 8px;"></i>Auth Success/Fail</h3>
+                         <div id="chart-auth-breakdown"></div>
+                    </div>
+                </div>
                 
                 <h3 class="section-title">
                     <i class="fas fa-crosshairs"></i>
@@ -2743,6 +2759,80 @@ IMPORTANT:
             }};
             var chartAuth = new ApexCharts(document.querySelector("#chart-auth"), optionsAuth);
             chartAuth.render();
+
+            // Session Duration Chart (Bar)
+            var optionsDuration = {{
+                series: [{{
+                    name: 'Duration (sec)',
+                    data: {session_duration_data}
+                }}],
+                chart: {{
+                    type: 'bar',
+                    height: 280,
+                    fontFamily: 'Inter',
+                    toolbar: {{ show: false }}
+                }},
+                plotOptions: {{
+                    bar: {{
+                        borderRadius: 4,
+                        horizontal: false,
+                    }}
+                }},
+                colors: ['#3498db'],
+                dataLabels: {{ enabled: false }},
+                xaxis: {{
+                    categories: {session_duration_labels},
+                    labels: {{ style: {{ fontSize: '10px' }} }}
+                }}
+            }};
+            var chartDuration = new ApexCharts(document.querySelector("#chart-duration"), optionsDuration);
+            chartDuration.render();
+
+            // File Operations Chart (Polar Area)
+            var optionsFileOps = {{
+                series: {file_ops_data},
+                labels: {file_ops_labels},
+                chart: {{
+                    type: 'polarArea',
+                    height: 280,
+                    fontFamily: 'Inter'
+                }},
+                colors: ['#e74c3c', '#3498db', '#2ecc71', '#9b59b6'],
+                fill: {{ opacity: 0.8 }},
+                stroke: {{ width: 1 }},
+                responsive: [{{ breakpoint: 480, options: {{ legend: {{ position: 'bottom' }} }} }}]
+            }};
+            var chartFileOps = new ApexCharts(document.querySelector("#chart-fileops"), optionsFileOps);
+            chartFileOps.render();
+
+            // Auth Success/Fail Breakdown (Donut)
+            var optionsAuthBreakdown = {{
+                series: [{auth_success_count}, {auth_failed_count}],
+                labels: ['Success', 'Failed'],
+                chart: {{
+                    type: 'donut',
+                    height: 280,
+                    fontFamily: 'Inter'
+                }},
+                colors: ['#10b981', '#ef4444'],
+                plotOptions: {{
+                    pie: {{
+                        donut: {{
+                            labels: {{
+                                show: true,
+                                total: {{
+                                    show: true,
+                                    label: 'Total Auth',
+                                    color: '#2c3e50'
+                                }}
+                            }}
+                        }}
+                    }}
+                }},
+                dataLabels: {{ enabled: true }}
+            }};
+            var chartAuthBreakdown = new ApexCharts(document.querySelector("#chart-auth-breakdown"), optionsAuthBreakdown);
+            chartAuthBreakdown.render();
         }});
     </script>
 </body>
@@ -2791,19 +2881,71 @@ IMPORTANT:
         chart_attack_types_labels = json.dumps(list(top_attacks.keys())[:5])
         chart_attack_types_data = json.dumps(list(top_attacks.values())[:5])
 
-        # Authentication Success Rate
+        # Authentication Success Rate - Read from log file for accurate data
         auth_success = 0
-        auth_attempts = 0
+        auth_failed = 0
+        
+        # Try to read from the FTP log file
+        possible_paths = [
+            Path("src/logs/ftp_log.log"),
+            Path("../../../logs/ftp_log.log"),
+            Path(__file__).parent.parent.parent / "logs" / "ftp_log.log"
+        ]
+        
+        log_file = None
+        for path in possible_paths:
+            if path.exists():
+                log_file = path
+                break
+        
+        if log_file:
+            try:
+                with open(log_file, 'r', encoding='utf-8') as f:
+                    for line in f:
+                        try:
+                            log_entry = json.loads(line.strip())
+                            msg = log_entry.get('message', '')
+                            if msg == 'FTP authentication success':
+                                auth_success += 1
+                            elif msg == 'FTP authentication failed':
+                                auth_failed += 1
+                        except (json.JSONDecodeError, KeyError):
+                            continue
+            except Exception:
+                pass
+        
+        auth_attempts = auth_success + auth_failed
+        auth_success_rate = int((auth_success / auth_attempts * 100)) if auth_attempts > 0 else 0
+        
+        # Session Duration Data (for additional chart)
+        session_durations = []
+        for session in self.sessions_data:
+            duration_seconds = self._get_duration_seconds(session)
+            if duration_seconds > 0:
+                session_durations.append({
+                    'session': session.get('session_id', 'unknown')[:8],
+                    'duration': duration_seconds
+                })
+        # Sort and take top 10
+        session_durations_sorted = sorted(session_durations, key=lambda x: x['duration'], reverse=True)[:10]
+        session_duration_labels = json.dumps([s['session'] for s in session_durations_sorted])
+        session_duration_data = json.dumps([s['duration'] for s in session_durations_sorted])
+        
+        # File Operations Data (for additional chart)
+        file_ops = {'uploads': 0, 'downloads': 0, 'listings': 0, 'deletions': 0}
         for session in self.sessions_data:
             for cmd in session.get('commands', []):
                 cmd_upper = cmd.get('command', '').upper()
-                if cmd_upper in ['USER', 'PASS']:
-                    auth_attempts += 1
-                    # Check if it was successful (look for 230 response or status)
-                    response = cmd.get('response', '')
-                    if '230' in str(response) or cmd.get('success', False):
-                        auth_success += 1
-        auth_success_rate = int((auth_success / auth_attempts * 100)) if auth_attempts > 0 else 75
+                if cmd_upper in ['STOR', 'PUT', 'MPUT', 'APPE']:
+                    file_ops['uploads'] += 1
+                elif cmd_upper in ['RETR', 'GET', 'MGET']:
+                    file_ops['downloads'] += 1
+                elif cmd_upper in ['LIST', 'NLST', 'MLSD', 'STAT']:
+                    file_ops['listings'] += 1
+                elif cmd_upper in ['DELE', 'RMD', 'XRMD']:
+                    file_ops['deletions'] += 1
+        file_ops_labels = json.dumps(list(file_ops.keys()))
+        file_ops_data = json.dumps(list(file_ops.values()))
 
         # Format data for HTML
         exec_summary = report_data['executive_summary']
@@ -3092,7 +3234,14 @@ IMPORTANT:
             chart_severity_data=chart_severity_data,
             chart_attack_types_labels=chart_attack_types_labels,
             chart_attack_types_data=chart_attack_types_data,
-            auth_success_rate=auth_success_rate
+            auth_success_rate=auth_success_rate,
+            # New chart data
+            session_duration_labels=session_duration_labels,
+            session_duration_data=session_duration_data,
+            file_ops_labels=file_ops_labels,
+            file_ops_data=file_ops_data,
+            auth_success_count=auth_success,
+            auth_failed_count=auth_failed
         )
 
     # ML Analysis Helper Methods
@@ -3101,6 +3250,22 @@ IMPORTANT:
         if hasattr(self, 'ml_detector') and self.ml_detector:
              return '<span style="color: #10b981;">✓ Active</span>'
         return '<span style="color: #ef4444;">✗ Disabled</span>'
+    
+    def _get_duration_seconds(self, session: dict) -> float:
+        """Calculate session duration in seconds"""
+        try:
+            start = session.get('start_time', '')
+            end = session.get('end_time', '')
+            if not start or not end:
+                return 0
+            # Parse ISO format timestamps
+            from datetime import datetime as dt
+            start_dt = dt.fromisoformat(start.replace('Z', '+00:00').replace('+00:00', ''))
+            end_dt = dt.fromisoformat(end.replace('Z', '+00:00').replace('+00:00', ''))
+            duration = (end_dt - start_dt).total_seconds()
+            return max(0, duration)
+        except Exception:
+            return 0
     
     def _get_ml_last_update(self) -> str:
         """Get ML model last update time"""
