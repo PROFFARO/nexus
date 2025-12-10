@@ -174,7 +174,13 @@ export async function GET(request: NextRequest) {
         stats.avg_anomaly_score = attackCount > 0 ? totalMLScore / attackCount : 0;
         stats.avg_inference_time_ms = inferenceCount > 0 ? totalInferenceTime / inferenceCount : 0;
 
-        return NextResponse.json(stats);
+        return NextResponse.json(stats, {
+            headers: {
+                'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+            },
+        });
     } catch (error) {
         console.error('ML stats error:', error);
         return NextResponse.json(

@@ -41,7 +41,7 @@ interface MLMetricsChartsProps {
     refreshInterval?: number;
 }
 
-export function MLMetricsCharts({ service, refreshInterval = 10000 }: MLMetricsChartsProps) {
+export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsChartsProps) {
     const [stats, setStats] = useState<MLStats | null>(null);
     const [loading, setLoading] = useState(true);
 
@@ -65,8 +65,8 @@ export function MLMetricsCharts({ service, refreshInterval = 10000 }: MLMetricsC
     if (loading) {
         return (
             <div className="grid gap-6 lg:grid-cols-2">
-                <div className="h-80 animate-pulse rounded-xl border border-border/50 bg-muted/30" />
-                <div className="h-80 animate-pulse rounded-xl border border-border/50 bg-muted/30" />
+                <div className="h-80 animate-pulse border border-border/50 bg-muted/30" />
+                <div className="h-80 animate-pulse border border-border/50 bg-muted/30" />
             </div>
         );
     }
@@ -93,13 +93,9 @@ export function MLMetricsCharts({ service, refreshInterval = 10000 }: MLMetricsC
     return (
         <div className="grid gap-6 lg:grid-cols-2">
             {/* Risk Distribution Pie Chart */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6"
-            >
+            <div className="border border-border/50 bg-card/50 p-6">
                 <div className="flex items-center gap-2 mb-6">
-                    <IconChartPie className="h-5 w-5 text-primary" />
+                    <IconChartPie className="h-5 w-5 text-muted-foreground" />
                     <h3 className="font-semibold">Risk Level Distribution</h3>
                 </div>
 
@@ -137,17 +133,12 @@ export function MLMetricsCharts({ service, refreshInterval = 10000 }: MLMetricsC
                         </PieChart>
                     </ResponsiveContainer>
                 )}
-            </motion.div>
+            </div>
 
             {/* Attack Types Bar Chart */}
-            <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.1 }}
-                className="rounded-xl border border-border/50 bg-card/50 backdrop-blur-sm p-6"
-            >
+            <div className="border border-border/50 bg-card/50 p-6">
                 <div className="flex items-center gap-2 mb-6">
-                    <IconChartBar className="h-5 w-5 text-primary" />
+                    <IconChartBar className="h-5 w-5 text-muted-foreground" />
                     <h3 className="font-semibold">Attack Types Distribution</h3>
                 </div>
 
@@ -184,7 +175,7 @@ export function MLMetricsCharts({ service, refreshInterval = 10000 }: MLMetricsC
                         </BarChart>
                     </ResponsiveContainer>
                 )}
-            </motion.div>
+            </div>
         </div>
     );
 }

@@ -9,7 +9,6 @@ import {
     IconServer,
     IconChartBar,
 } from '@tabler/icons-react';
-import { motion } from 'framer-motion';
 import { MLStats, getMLStats } from '@/lib/ml-data';
 
 interface StatsCardProps {
@@ -23,11 +22,7 @@ interface StatsCardProps {
 
 function StatsCard({ title, value, subtitle, icon, color }: StatsCardProps) {
     return (
-        <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            className="relative overflow-hidden rounded-xl border border-border/50 bg-card p-6 shadow-lg backdrop-blur-sm"
-        >
+        <div className="relative overflow-hidden border border-border/50 bg-card p-6 shadow-sm">
             {/* Gradient background */}
             <div
                 className="absolute inset-0 opacity-5"
@@ -47,13 +42,13 @@ function StatsCard({ title, value, subtitle, icon, color }: StatsCardProps) {
                     )}
                 </div>
                 <div
-                    className="rounded-lg p-3"
-                    style={{ backgroundColor: `${color}20` }}
+                    className="p-3"
+                    style={{ backgroundColor: `${color}15` }}
                 >
                     <div style={{ color }}>{icon}</div>
                 </div>
             </div>
-        </motion.div>
+        </div>
     );
 }
 
@@ -62,7 +57,7 @@ interface MLStatsCardsProps {
     refreshInterval?: number;
 }
 
-export function MLStatsCards({ service, refreshInterval = 5000 }: MLStatsCardsProps) {
+export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsProps) {
     const [stats, setStats] = useState<MLStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
@@ -171,15 +166,10 @@ export function MLStatsCards({ service, refreshInterval = 5000 }: MLStatsCardsPr
 
     return (
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
-            {cards.map((card, index) => (
-                <motion.div
-                    key={card.title}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: index * 0.1 }}
-                >
+            {cards.map((card) => (
+                <div key={card.title}>
                     <StatsCard {...card} />
-                </motion.div>
+                </div>
             ))}
         </div>
     );

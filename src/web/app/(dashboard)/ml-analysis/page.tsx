@@ -1,9 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
 import {
-    IconBrain,
     IconRefresh,
     IconServer,
     IconSettings,
@@ -52,31 +50,22 @@ export default function MLAnalysisPage() {
     }
 
     return (
-        <div className="min-h-screen bg-gradient-to-br from-background via-background to-muted/20">
+        <div className="min-h-screen bg-background">
             <div className="container max-w-[1600px] mx-auto py-8 px-4 space-y-8">
-                {/* Header */}
-                <motion.div
-                    initial={{ opacity: 0, y: -20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between"
-                >
-                    <div className="flex items-center gap-4">
-                        <div className="rounded-xl bg-gradient-to-br from-primary/20 to-violet-500/20 p-3">
-                            <IconBrain className="h-8 w-8 text-primary" />
-                        </div>
-                        <div>
-                            <h1 className="text-3xl font-bold tracking-tight bg-gradient-to-r from-primary to-violet-500 bg-clip-text text-transparent">
-                                Real-Time ML Analysis
-                            </h1>
-                            <p className="text-muted-foreground">
-                                Machine learning threat detection and attack analysis
-                            </p>
-                        </div>
+                {/* Header - matching Live Attacks style */}
+                <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                    <div>
+                        <h1 className="text-2xl font-bold text-foreground">
+                            Real-Time ML Analysis
+                        </h1>
+                        <p className="text-sm text-muted-foreground">
+                            Machine learning threat detection and attack analysis
+                        </p>
                     </div>
 
                     <div className="flex items-center gap-4">
                         {/* Active Services Indicator */}
-                        <div className="flex items-center gap-2 rounded-lg border border-border/50 bg-card/50 px-4 py-2">
+                        <div className="flex items-center gap-2 border border-border/50 bg-card/50 px-4 py-2">
                             <IconServer className="h-4 w-4 text-muted-foreground" />
                             <span className="text-sm text-muted-foreground">Active:</span>
                             {activeServices.length > 0 ? (
@@ -85,7 +74,7 @@ export default function MLAnalysisPage() {
                                         <Badge
                                             key={svc.service}
                                             variant="outline"
-                                            className="uppercase text-xs cursor-pointer hover:bg-primary/10"
+                                            className="uppercase text-xs cursor-pointer hover:bg-primary/10 rounded-none"
                                             onClick={() => setServiceFilter(
                                                 serviceFilter === svc.service ? undefined : svc.service
                                             )}
@@ -106,62 +95,45 @@ export default function MLAnalysisPage() {
                         <button
                             onClick={handleRefresh}
                             disabled={isRefreshing}
-                            className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-primary disabled:opacity-50"
+                            className="p-2 hover:bg-muted transition-colors text-muted-foreground hover:text-primary disabled:opacity-50"
                             title="Refresh data"
                         >
                             <IconRefresh className={`h-5 w-5 ${isRefreshing ? 'animate-spin' : ''}`} />
                         </button>
                     </div>
-                </motion.div>
+                </div>
 
                 {/* LLM Configuration Info */}
                 {activeServices.length > 0 && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        transition={{ delay: 0.1 }}
-                        className="flex flex-wrap gap-4"
-                    >
+                    <div className="flex flex-wrap gap-4">
                         {activeServices.map((svc) => (
                             <div
                                 key={svc.service}
-                                className="flex items-center gap-2 rounded-lg border border-border/30 bg-muted/30 px-3 py-1.5 text-xs"
+                                className="flex items-center gap-2 border border-border/30 bg-muted/30 px-3 py-1.5 text-xs"
                             >
                                 <IconSettings className="h-3 w-3 text-muted-foreground" />
                                 <span className="uppercase font-medium">{svc.service}</span>
                                 <span className="text-muted-foreground">LLM:</span>
-                                <Badge variant="secondary" className="text-xs">
+                                <Badge variant="secondary" className="text-xs rounded-none">
                                     {svc.config.llm_provider} / {svc.config.model_name}
                                 </Badge>
                             </div>
                         ))}
-                    </motion.div>
+                    </div>
                 )}
 
                 {/* Stats Cards */}
-                <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.2 }}
-                >
+                <section>
                     <MLStatsCards service={serviceFilter} key={isRefreshing ? 'refresh' : 'normal'} />
-                </motion.section>
+                </section>
 
                 {/* Charts */}
-                <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.3 }}
-                >
+                <section>
                     <MLMetricsCharts service={serviceFilter} />
-                </motion.section>
+                </section>
 
                 {/* Attack Analysis Table */}
-                <motion.section
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.4 }}
-                >
+                <section>
                     <div className="mb-4">
                         <h2 className="text-xl font-semibold">Attack Analysis</h2>
                         <p className="text-sm text-muted-foreground">
@@ -172,7 +144,7 @@ export default function MLAnalysisPage() {
                         service={serviceFilter}
                         onSelectAttack={handleSelectAttack}
                     />
-                </motion.section>
+                </section>
 
                 {/* Attack Detail Modal */}
                 <AttackDetailModal

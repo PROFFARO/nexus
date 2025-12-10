@@ -49,12 +49,12 @@ interface AttackAnalysisTableProps {
 export function AttackAnalysisTable({
     service,
     onSelectAttack,
-    refreshInterval = 10000,
+    refreshInterval = 3000,
 }: AttackAnalysisTableProps) {
     const [sessions, setSessions] = useState<SessionSummary[]>([]);
     const [loading, setLoading] = useState(true);
     const [sorting, setSorting] = useState<SortingState>([
-        { id: 'ml_score', desc: true },
+        { id: 'timestamp', desc: true },
     ]);
     const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([]);
     const [selectedService, setSelectedService] = useState<string | undefined>(service);
@@ -73,6 +73,13 @@ export function AttackAnalysisTable({
                 });
             }
         }
+
+        // Sort by timestamp descending (newest first)
+        allAttacks.sort((a, b) => {
+            const timeA = new Date(a.timestamp || 0).getTime();
+            const timeB = new Date(b.timestamp || 0).getTime();
+            return timeB - timeA;
+        });
 
         return allAttacks;
     }, [sessions]);
@@ -273,7 +280,7 @@ export function AttackAnalysisTable({
             <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                     <IconFilter className="h-4 w-4 text-muted-foreground" />
-                    <div className="flex rounded-lg border border-border/50 overflow-hidden">
+                    <div className="flex border border-border/50 overflow-hidden">
                         {services.map((svc) => (
                             <button
                                 key={svc}
@@ -296,7 +303,7 @@ export function AttackAnalysisTable({
                     <button
                         onClick={fetchData}
                         disabled={isRefreshing}
-                        className="p-2 rounded-lg hover:bg-muted transition-colors text-muted-foreground hover:text-primary disabled:opacity-50"
+                        className="p-2 hover:bg-muted transition-colors text-muted-foreground hover:text-primary disabled:opacity-50"
                     >
                         <IconRefresh className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                     </button>
@@ -304,7 +311,7 @@ export function AttackAnalysisTable({
             </div>
 
             {/* Table */}
-            <div className="rounded-xl border border-border/50 overflow-hidden bg-card/50 backdrop-blur-sm">
+            <div className="border border-border/50 overflow-hidden bg-card/50">
                 {loading ? (
                     <div className="p-12 text-center">
                         <div className="h-8 w-8 mx-auto mb-4 rounded-full border-2 border-primary border-t-transparent animate-spin" />
@@ -335,27 +342,22 @@ export function AttackAnalysisTable({
                             ))}
                         </TableHeader>
                         <TableBody>
-                            <AnimatePresence mode="popLayout">
-                                {table.getRowModel().rows.map((row) => (
-                                    <motion.tr
-                                        key={row.id}
-                                        initial={{ opacity: 0, x: -10 }}
-                                        animate={{ opacity: 1, x: 0 }}
-                                        exit={{ opacity: 0, x: 10 }}
-                                        onClick={() => onSelectAttack?.(row.original, {
-                                            session_id: row.original.session_id || '',
-                                            service: row.original.service || '',
-                                        })}
-                                        className="cursor-pointer hover:bg-muted/50 transition-colors border-b border-border/30"
-                                    >
-                                        {row.getVisibleCells().map((cell) => (
-                                            <TableCell key={cell.id} className="py-3">
-                                                {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                                            </TableCell>
-                                        ))}
-                                    </motion.tr>
-                                ))}
-                            </AnimatePresence>
+                            {table.getRowModel().rows.map((row) => (
+                                <tr
+                                    key={row.id}
+                                    onClick={() => onSelectAttack?.(row.original, {
+                                        session_id: row.original.session_id || '',
+                                        service: row.original.service || '',
+                                    })}
+                                    className="cursor-pointer hover:bg-muted/50 transition-colors border-b border-border/30"
+                                >
+                                    {row.getVisibleCells().map((cell) => (
+                                        <TableCell key={cell.id} className="py-3">
+                                            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+                                        </TableCell>
+                                    ))}
+                                </tr>
+                            ))}
                         </TableBody>
                     </Table>
                 )}
