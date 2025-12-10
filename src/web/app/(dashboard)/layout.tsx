@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import {
     IconSettings,
@@ -10,12 +10,17 @@ import {
     IconLogout,
     IconBrain,
     IconMessages,
+    IconSun,
+    IconMoon,
+    IconFileText,
+    IconLock
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { UserButton, useClerk, useUser } from "@clerk/nextjs";
 import { usePathname, useRouter } from "next/navigation";
+import { useTheme } from "next-themes";
 
 export default function DashboardLayout({
     children,
@@ -27,6 +32,12 @@ export default function DashboardLayout({
     const { user } = useUser();
     const pathname = usePathname();
     const router = useRouter();
+    const { setTheme, resolvedTheme } = useTheme();
+    const [mounted, setMounted] = useState(false);
+
+    useEffect(() => {
+        setMounted(true);
+    }, []);
 
     const links = [
         {
@@ -71,6 +82,20 @@ export default function DashboardLayout({
                 <IconSettings className="h-5 w-5 flex-shrink-0" />
             ),
         },
+        {
+            label: "Terms of Service",
+            href: "/terms",
+            icon: (
+                <IconFileText className="h-5 w-5 flex-shrink-0" />
+            ),
+        },
+        {
+            label: "Privacy Policy",
+            href: "/privacy",
+            icon: (
+                <IconLock className="h-5 w-5 flex-shrink-0" />
+            ),
+        },
     ];
 
     return (
@@ -107,7 +132,7 @@ export default function DashboardLayout({
                                         key={idx}
                                         link={link}
                                         className={cn(
-                                            "transition-all duration-200 rounded-xl px-2",
+                                            "transition-all duration-200 rounded px-2",
                                             isActive
                                                 ? "bg-orange-500/10 text-orange-600 dark:text-orange-400 font-medium"
                                                 : "text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5"
@@ -117,18 +142,24 @@ export default function DashboardLayout({
                             })}
 
                             <div
-                                onClick={() => signOut({ redirectUrl: '/sign-in' })}
+                                onClick={() => setTheme(resolvedTheme === "dark" ? "light" : "dark")}
                                 className="cursor-pointer group mt-auto"
                             >
                                 <SidebarLink
                                     link={{
-                                        label: "Logout",
+                                        label: mounted ? (resolvedTheme === "dark" ? "Light Mode" : "Dark Mode") : "Theme",
                                         href: "#",
-                                        icon: <IconLogout className="h-5 w-5 flex-shrink-0 group-hover:text-red-500 transition-colors" />
+                                        icon: mounted && resolvedTheme === "dark" ? (
+                                            <IconSun className="h-5 w-5 flex-shrink-0 group-hover:text-orange-500 transition-colors" />
+                                        ) : (
+                                            <IconMoon className="h-5 w-5 flex-shrink-0 group-hover:text-blue-500 transition-colors" />
+                                        )
                                     }}
-                                    className="text-neutral-600 dark:text-neutral-400 group-hover:bg-red-500/10 group-hover:text-red-500 rounded-xl px-2"
+                                    className="text-neutral-600 dark:text-neutral-400 group-hover:bg-neutral-100 dark:group-hover:bg-white/5 rounded px-2"
                                 />
                             </div>
+
+
                         </div>
                     </div>
 
@@ -136,8 +167,8 @@ export default function DashboardLayout({
                     <div className="border-t border-neutral-200/50 dark:border-white/5 pt-4">
                         <div
                             className={cn(
-                                "flex items-center gap-3 px-1 rounded-xl p-2 transition-colors",
-                                "hover:bg-neutral-100 dark:hover:bg-white/5"
+                                "flex items-center gap-3 px-1 rounded p-2 transition-colors",
+                                "hover:bg-neutral-300 dark:hover:bg-white/5"
                             )}
                         >
                             <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
@@ -161,6 +192,20 @@ export default function DashboardLayout({
                                     {user?.primaryEmailAddress?.emailAddress}
                                 </span>
                             </motion.div>
+
+                            <motion.button
+                                animate={{
+                                    display: open ? "flex" : "none",
+                                    opacity: open ? 1 : 0,
+                                }}
+                                onClick={(e) => {
+                                    e.stopPropagation();
+                                    signOut({ redirectUrl: '/sign-in' });
+                                }}
+                                className="ml-auto cursor-pointer p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-200 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-colors"
+                            >
+                                <IconLogout className="h-5 w-5" />
+                            </motion.button>
                         </div>
                     </div>
                 </SidebarBody>

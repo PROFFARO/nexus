@@ -1,14 +1,7 @@
 import type { Metadata } from "next";
-import {
-  ClerkProvider,
-  SignInButton,
-  SignUpButton,
-  SignedIn,
-  SignedOut,
-  UserButton,
-} from "@clerk/nextjs";
 import { Outfit } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
+import { ClerkWrapper } from "@/components/clerk-wrapper";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -32,22 +25,22 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <ClerkProvider>
-      <html lang="en" suppressHydrationWarning>
-        <body
-          className={`${outfit.variable} antialiased`}
-          suppressHydrationWarning
+    <html lang="en" suppressHydrationWarning>
+      <body
+        className={`${outfit.variable} antialiased`}
+        suppressHydrationWarning
+      >
+        <ThemeProvider
+          attribute="class"
+          defaultTheme="dark"
+          enableSystem
+          disableTransitionOnChange={false}
         >
-          <ThemeProvider
-            attribute="class"
-            defaultTheme="dark"
-            enableSystem
-            disableTransitionOnChange={false}
-          >
+          <ClerkWrapper>
             {children}
-          </ThemeProvider>
-        </body>
-      </html>
-    </ClerkProvider>
+          </ClerkWrapper>
+        </ThemeProvider>
+      </body>
+    </html>
   );
 }

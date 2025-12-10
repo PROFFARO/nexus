@@ -429,7 +429,7 @@ export default function SignInPage() {
                                 Sign In to access
                                 <br />
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400">
-                                    AI based Honeypot Platform
+                                    the Dashboard
                                 </span>
                             </h2>
                             <p className="mt-4 text-lg text-slate-400 max-w-md">
