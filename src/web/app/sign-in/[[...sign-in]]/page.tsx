@@ -85,8 +85,9 @@ function FeatureCard({
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay, duration: 0.6, ease: [0.25, 0.46, 0.45, 0.94] }}
             whileHover={{ scale: 1.02, x: -5 }}
-            className="flex items-start gap-4 p-5 rounded-2xl bg-white/5 backdrop-blur-sm border border-white/10 cursor-default"
+            className="group flex items-start gap-4 p-6 rounded-2xl bg-white/5 backdrop-blur-md border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all duration-300 shadow-lg shadow-black/5 cursor-default relative overflow-hidden"
         >
+            <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-1000" />
             <motion.div
                 className={`p-3 rounded-xl ${color}`}
                 whileHover={{ rotate: [0, -10, 10, 0] }}
@@ -215,7 +216,7 @@ export default function SignInPage() {
                         >
                             <div className="relative w-10 h-10">
                                 <Image
-                                    src="/assets/nexus_logo.png"
+                                    src="/assets/nexus_logo.svg"
                                     alt="NEXUS Logo"
                                     fill
                                     className="object-contain"
@@ -299,9 +300,9 @@ export default function SignInPage() {
                                     transition={{ delay: 0.4 }}
                                     className="relative flex items-center gap-4 py-2"
                                 >
-                                    <div className="flex-1 h-px bg-[var(--border)]" />
+                                    <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
                                     <span className="text-sm text-[var(--muted-foreground)] font-medium">or continue with email</span>
-                                    <div className="flex-1 h-px bg-[var(--border)]" />
+                                    <div className="flex-1 h-[1px] bg-gradient-to-r from-transparent via-[var(--border)] to-transparent" />
                                 </motion.div>
 
                                 {/* Form Fields */}
@@ -405,6 +406,11 @@ export default function SignInPage() {
 
                 {/* Right Side - Showcase */}
                 <div className="hidden lg:flex w-1/2 bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 relative overflow-hidden">
+                    {/* Premium Vertical Partition Bar */}
+                    <div className="absolute inset-y-0 left-0 w-[2px] bg-gradient-to-b from-transparent via-white/10 to-transparent backdrop-blur-sm z-30"></div>
+                    <div className="absolute inset-y-0 left-0 w-[1px] bg-gradient-to-b from-transparent via-white/30 to-transparent shadow-[0_0_20px_2px_rgba(255,255,255,0.2)] z-30"></div>
+                    <div className="absolute inset-y-0 left-0 w-16 bg-gradient-to-r from-black/20 to-transparent z-20 pointer-events-none" />
+
                     {/* Background Effects */}
                     <div className="absolute inset-0">
                         <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-gradient-radial from-teal-500/20 to-transparent rounded-full blur-3xl" />
@@ -420,10 +426,10 @@ export default function SignInPage() {
                             className="mb-12"
                         >
                             <h2 className="text-4xl font-bold text-white leading-tight">
-                                Advanced Security
+                                Sign In to access
                                 <br />
                                 <span className="text-transparent bg-clip-text bg-gradient-to-r from-teal-400 to-cyan-400">
-                                    Intelligence Platform
+                                    AI based Honeypot Platform
                                 </span>
                             </h2>
                             <p className="mt-4 text-lg text-slate-400 max-w-md">
