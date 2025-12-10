@@ -33,11 +33,29 @@ function generateSparklineData(logs: LogEntry[], minutes: number = 30): { value:
 export function StatsCards({ logs, isConnected }: StatsCardsProps) {
     const stats = useMemo(() => {
         const total = logs.length;
-        const criticals = logs.filter(l =>
-            l.level === 'CRITICAL' || l.level === 'ERROR' ||
-            l.severity === 'critical' || l.severity === 'high'
-        ).length;
-        const warnings = logs.filter(l => l.level === 'WARNING' || l.severity === 'medium').length;
+
+        // Count criticals: severity high/critical, or judgement MALICIOUS, or level ERROR/CRITICAL
+        const criticals = logs.filter(l => {
+            const sev = (l.severity || '').toLowerCase();
+            if (sev === 'critical' || sev === 'high') return true;
+            if ((l as any).judgement === 'MALICIOUS') return true;
+            const level = (l.level || '').toUpperCase();
+            return level === 'CRITICAL' || level === 'ERROR';
+        }).length;
+
+        // Count warnings: severity medium, or has attack_types, or level WARNING
+        const warnings = logs.filter(l => {
+            // Exclude items already counted as critical
+            const sev = (l.severity || '').toLowerCase();
+            if (sev === 'critical' || sev === 'high') return false;
+            if ((l as any).judgement === 'MALICIOUS') return false;
+            const level = (l.level || '').toUpperCase();
+            if (level === 'CRITICAL' || level === 'ERROR') return false;
+
+            if (sev === 'medium') return true;
+            if (l.attack_types && l.attack_types.length > 0) return true;
+            return level === 'WARNING';
+        }).length;
 
         // Unique sensors
         const sensors = new Set(logs.map(l => l.sensor_name).filter(Boolean));

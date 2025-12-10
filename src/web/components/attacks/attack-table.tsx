@@ -68,16 +68,38 @@ function getProtocolIcon(protocol: string) {
     }
 }
 
-function getLevelBadge(level: string) {
-    const levelUpper = level?.toUpperCase();
-    switch (levelUpper) {
+// Derive effective severity level from log entry
+function getEffectiveLevel(log: LogEntry): string {
+    // First check explicit severity field
+    if (log.severity) {
+        const sev = log.severity.toLowerCase();
+        if (sev === 'critical' || sev === 'high') return 'CRITICAL';
+        if (sev === 'medium') return 'WARNING';
+    }
+
+    // Check judgement field (e.g., "MALICIOUS" from session summary)
+    if ((log as any).judgement === 'MALICIOUS') return 'CRITICAL';
+
+    // Check if attack_types present
+    if (log.attack_types && log.attack_types.length > 0) return 'WARNING';
+
+    // Check explicit level field
+    const level = log.level?.toUpperCase();
+    if (level === 'CRITICAL' || level === 'ERROR') return 'CRITICAL';
+    if (level === 'WARNING') return 'WARNING';
+
+    return 'INFO';
+}
+
+function getLevelBadge(log: LogEntry) {
+    const effectiveLevel = getEffectiveLevel(log);
+    switch (effectiveLevel) {
         case 'CRITICAL':
-        case 'ERROR':
-            return <Badge className="bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20">{levelUpper}</Badge>;
+            return <Badge className="bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 rounded-sm">{effectiveLevel}</Badge>;
         case 'WARNING':
-            return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20">{levelUpper}</Badge>;
+            return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 rounded-sm">{effectiveLevel}</Badge>;
         default:
-            return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30">{level || 'INFO'}</Badge>;
+            return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30 rounded-sm">INFO</Badge>;
     }
 }
 
@@ -120,10 +142,11 @@ export function AttackTable({ logs }: AttackTableProps) {
         {
             accessorKey: "level",
             header: "Level",
-            cell: ({ row }) => getLevelBadge(row.getValue("level")),
+            cell: ({ row }) => getLevelBadge(row.original),
             filterFn: (row, id, value) => {
                 if (value === "ALL") return true;
-                return row.getValue(id) === value;
+                const effectiveLevel = getEffectiveLevel(row.original);
+                return effectiveLevel === value;
             },
         },
         {
@@ -206,9 +229,16 @@ export function AttackTable({ logs }: AttackTableProps) {
         },
     });
 
+    // Extract session from task_name if it starts with "session-" or use session_id
+    const getSessionId = (log: LogEntry): string => {
+        if (log.session_id) return log.session_id;
+        if (log.task_name && log.task_name.startsWith('session-')) return log.task_name;
+        return log.task_name || '';
+    };
+
     // Convert LogEntry to ParsedAttack format for the sheet
     const convertToAttack = (log: LogEntry): any => ({
-        id: log.session_id || crypto.randomUUID(),
+        id: log.session_id || log.task_name || crypto.randomUUID(),
         timestamp: log.timestamp,
         level: log.level,
         message: log.message,
@@ -216,11 +246,11 @@ export function AttackTable({ logs }: AttackTableProps) {
         src_ip: log.src_ip,
         src_port: log.src_port,
         dst_port: log.dst_port,
-        username: (log as any).username,
+        username: log.username || '',
         command: decodeCommand(log),
         payload: log.details,
-        response: (log as any).response,
-        session_id: log.session_id,
+        response: log.response,
+        session_id: getSessionId(log),
         is_attack: log.attack_types && log.attack_types.length > 0,
         attack_details: {
             attack_types: log.attack_types,
@@ -253,12 +283,12 @@ export function AttackTable({ logs }: AttackTableProps) {
                         placeholder="Search IP, message..."
                         value={globalFilter ?? ""}
                         onChange={(e) => setGlobalFilter(e.target.value)}
-                        className="pl-9 h-9 bg-muted/30"
+                        className="pl-9 h-9 bg-muted/30 rounded-sm"
                     />
                 </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 gap-1">
+                        <Button variant="outline" size="sm" className="h-9 gap-1 rounded-sm">
                             <Filter className="h-3.5 w-3.5" />
                             Level
                         </Button>
@@ -277,7 +307,7 @@ export function AttackTable({ logs }: AttackTableProps) {
             </div>
 
             {/* Table */}
-            <div className="rounded-lg border border-white/10 dark:border-white/5 overflow-hidden bg-card/40 backdrop-blur-sm">
+            <div className="rounded-sm border border-white/10 dark:border-white/5 overflow-hidden bg-card/40 backdrop-blur-sm">
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (

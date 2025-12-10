@@ -9,6 +9,10 @@ export interface LogEntry {
     dst_ip?: string;
     dst_port?: string | number;
     session_id?: string;
+    task_name?: string;
+    username?: string;
+    command?: string;
+    details?: string;
     attack_types?: string[];
     severity?: 'low' | 'medium' | 'high' | 'critical';
     threat_score?: number;
