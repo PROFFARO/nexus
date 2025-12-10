@@ -30,6 +30,7 @@ export interface MLAnalysisEntry {
     indicators: string[];
     pattern_matches: string[];
     vulnerabilities: string[];
+    response?: string;
 }
 
 /**
@@ -51,57 +52,81 @@ export function useRealtimeMLAnalysis() {
 
     // Transform log entry to ML analysis entry
     const transformLogEntry = useCallback((log: any): MLAnalysisEntry | null => {
+        // Flatten structured_data if present (MySQL logs)
+        let flatLog = log;
+        if (log.structured_data && typeof log.structured_data === 'object') {
+            flatLog = { ...log, ...log.structured_data };
+        }
+
         // Extract service from sensor_protocol or sensor_name
-        const service = (log.sensor_protocol || log.sensor_name || 'unknown').toLowerCase();
+        const service = (flatLog.sensor_protocol || flatLog.sensor_name || 'unknown').toLowerCase();
 
         // Skip entries without useful command data
-        const command = log.command || log.query || log.message || '';
+        const command = flatLog.command || flatLog.query || flatLog.message || '';
         if (!command || command.length < 2) return null;
 
         // Extract ML metrics from the log entry
-        const mlAnomalyScore = log.ml_anomaly_score ?? log.anomaly_score ?? log.threat_score ?? 0;
-        const mlRiskLevel = log.ml_risk_level || log.risk_level || (mlAnomalyScore > 0.7 ? 'high' : mlAnomalyScore > 0.4 ? 'medium' : 'low');
-        const mlRiskColor = log.ml_risk_color || (mlRiskLevel === 'high' || mlRiskLevel === 'critical' ? '#ef4444' : mlRiskLevel === 'medium' ? '#f59e0b' : '#22c55e');
+        const mlAnomalyScore = flatLog.ml_anomaly_score ?? flatLog.anomaly_score ?? flatLog.threat_score ?? 0;
+        const mlRiskLevel = flatLog.ml_risk_level || flatLog.risk_level || (mlAnomalyScore > 0.7 ? 'high' : mlAnomalyScore > 0.4 ? 'medium' : 'low');
+        const mlRiskColor = flatLog.ml_risk_color || (mlRiskLevel === 'high' || mlRiskLevel === 'critical' ? '#ef4444' : mlRiskLevel === 'medium' ? '#f59e0b' : '#22c55e');
 
         // Compute confidence - use log value, or derive from anomaly score (higher anomaly = higher confidence in detection)
-        const rawConfidence = log.ml_confidence ?? log.confidence ?? log.ml_prediction_confidence;
+        const rawConfidence = flatLog.ml_confidence ?? flatLog.confidence ?? flatLog.ml_prediction_confidence;
         const mlConfidence = rawConfidence !== undefined && rawConfidence !== null
             ? rawConfidence
             : (mlAnomalyScore > 0 ? Math.min(0.95, 0.5 + mlAnomalyScore * 0.5) : 0);
 
         // Compute threat score - use log value, or derive from anomaly score (scale to percentage)
-        const rawThreatScore = log.threat_score ?? log.ml_threat_score ?? log.risk_score;
+        const rawThreatScore = flatLog.threat_score ?? flatLog.ml_threat_score ?? flatLog.risk_score;
         const threatScore = rawThreatScore !== undefined && rawThreatScore !== null
             ? (rawThreatScore > 1 ? rawThreatScore : rawThreatScore * 100)  // Normalize to 0-100
             : mlAnomalyScore * 100;  // Fallback: use anomaly score as percentage
 
+        // Extract response info - handle array format from MySQL
+        let response = flatLog.response || flatLog.summary;
+        if (Array.isArray(response)) {
+            try {
+                response = response.map((row: any[]) => Array.isArray(row) ? row.join(', ') : String(row)).join('\n');
+            } catch {
+                response = JSON.stringify(response);
+            }
+        }
+        if (!response && flatLog.details) {
+            try {
+                response = atob(flatLog.details);
+            } catch {
+                response = flatLog.details;
+            }
+        }
+
         return {
-            id: `${log.timestamp}-${log.session_id || Math.random().toString(36).substring(7)}`,
-            timestamp: log.timestamp,
+            id: `${flatLog.timestamp}-${flatLog.session_id || Math.random().toString(36).substring(7)}`,
+            timestamp: flatLog.timestamp,
             service,
             command,
-            session_id: log.session_id,
+            session_id: flatLog.session_id,
             // Extract src_ip from various possible field names (different protocols use different names)
-            src_ip: log.src_ip || log.source_ip || log.client_ip || log.ip || log.remote_ip || log.peer_ip || log.attacker_ip,
+            src_ip: flatLog.src_ip || flatLog.source_ip || flatLog.client_ip || flatLog.ip || flatLog.remote_ip || flatLog.peer_ip || flatLog.attacker_ip,
             // Extract username from various possible field names
-            username: log.username || log.user || log.login || log.client_user || log.auth_user || log.ftp_user || log.ssh_user,
+            username: flatLog.username || flatLog.user || flatLog.login || flatLog.client_user || flatLog.auth_user || flatLog.ftp_user || flatLog.ssh_user,
 
             // ML metrics - with computed fallbacks
             ml_anomaly_score: mlAnomalyScore,
             ml_risk_level: mlRiskLevel,
             ml_confidence: mlConfidence,
-            ml_inference_time_ms: log.ml_inference_time_ms ?? log.inference_time_ms ?? 0,
+            ml_inference_time_ms: flatLog.ml_inference_time_ms ?? flatLog.inference_time_ms ?? 0,
             ml_risk_color: mlRiskColor,
-            ml_labels: log.ml_labels || log.labels || [],
-            ml_reason: log.ml_reason || log.reason || log.classification_reason || '',
+            ml_labels: flatLog.ml_labels || flatLog.labels || [],
+            ml_reason: flatLog.ml_reason || flatLog.reason || flatLog.classification_reason || '',
 
             // Attack info
-            attack_types: log.attack_types || [],
-            severity: log.severity || mlRiskLevel || 'low',
+            attack_types: flatLog.attack_types || [],
+            severity: flatLog.severity || mlRiskLevel || 'low',
             threat_score: threatScore,
-            indicators: log.indicators || [],
-            pattern_matches: log.pattern_matches || [],
-            vulnerabilities: log.vulnerabilities || [],
+            indicators: flatLog.indicators || [],
+            pattern_matches: flatLog.pattern_matches || [],
+            vulnerabilities: flatLog.vulnerabilities || [],
+            response,
         };
     }, []);
 

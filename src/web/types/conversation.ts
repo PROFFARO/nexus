@@ -70,7 +70,18 @@ export const defaultFilters: ConversationFilters = {
 
 // Utility function to determine message type from log entry
 export function getMessageTypeFromLog(log: LogEntry): MessageType {
-    const message = log.message?.toLowerCase() || '';
+    // Flatten structured_data if present (MySQL logs)
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+
+    const message = flatLog.message?.toLowerCase() || '';
+    const event = (flatLog as any).event?.toLowerCase() || '';
+
+    // MySQL specific events
+    if (event === 'query_request') return 'command';
+    if (event === 'query_response' || event === 'llm_interaction') return 'response';
 
     if (message.includes('session summary') || message.includes('ftp session summary')) {
         return 'session_summary';
@@ -78,10 +89,10 @@ export function getMessageTypeFromLog(log: LogEntry): MessageType {
     if (message.includes('authentication') || message.includes('login')) {
         return 'auth';
     }
-    if (message === 'user input' || message.includes('command') || log.command) {
+    if (message === 'user input' || message.includes('command') || flatLog.command || (flatLog as any).query) {
         return 'command';
     }
-    if (message.includes('response') || log.response) {
+    if (message.includes('response') || (flatLog as any).response || (flatLog as any).summary) {
         return 'response';
     }
     return 'system';
@@ -89,10 +100,21 @@ export function getMessageTypeFromLog(log: LogEntry): MessageType {
 
 // Utility function to determine sender from log entry
 export function getSenderFromLog(log: LogEntry): MessageSender {
-    const message = log.message?.toLowerCase() || '';
+    // Flatten structured_data if present (MySQL logs)
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+
+    const message = flatLog.message?.toLowerCase() || '';
+    const event = (flatLog as any).event?.toLowerCase() || '';
+
+    // MySQL specific events
+    if (event === 'query_request') return 'attacker';
+    if (event === 'query_response' || event === 'llm_interaction') return 'honeypot';
 
     // Commands from attacker
-    if (message === 'user input' || log.command) {
+    if (message === 'user input' || flatLog.command || ((flatLog as any).query && !(flatLog as any).response && !(flatLog as any).summary)) {
         return 'attacker';
     }
     // Everything else is from the honeypot
@@ -101,28 +123,90 @@ export function getSenderFromLog(log: LogEntry): MessageSender {
 
 // Extract display content from log entry
 export function getMessageContent(log: LogEntry): string {
-    // First check for command
-    if (log.command) return log.command;
+    // Flatten structured_data if present (MySQL logs)
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+
+    const event = (flatLog as any).event?.toLowerCase() || '';
+
+    // MySQL specific content extraction
+    if (event === 'query_request' && (flatLog as any).query) return (flatLog as any).query;
+    if (event === 'llm_interaction' && (flatLog as any).response) {
+        const resp = (flatLog as any).response;
+        if (Array.isArray(resp)) {
+            try {
+                return resp.map((row: any[]) => Array.isArray(row) ? row.join(', ') : String(row)).join('\n');
+            } catch {
+                return JSON.stringify(resp);
+            }
+        }
+        return resp;
+    }
+    if (event === 'query_response') {
+        // Check for actual response data first
+        const resp = (flatLog as any).response;
+        if (resp) {
+            if (Array.isArray(resp)) {
+                try {
+                    return resp.map((row: any[]) => Array.isArray(row) ? row.join(', ') : String(row)).join('\n');
+                } catch {
+                    return JSON.stringify(resp);
+                }
+            }
+            return resp;
+        }
+        // Fall back to summary
+        if ((flatLog as any).summary) return `Result: ${(flatLog as any).summary} (${(flatLog as any).duration_ms}ms)`;
+        if ((flatLog as any).error) return `Error: ${(flatLog as any).error}`;
+    }
+
+    // First check for command/query
+    if (flatLog.command) return flatLog.command;
+    if ((flatLog as any).query && !(flatLog as any).response && !(flatLog as any).summary) return (flatLog as any).query;
 
     // Check for response
-    if (log.response) return log.response;
+    if ((flatLog as any).response) {
+        const resp = (flatLog as any).response;
+        if (Array.isArray(resp)) {
+            try {
+                return resp.map((row: any[]) => Array.isArray(row) ? row.join(', ') : String(row)).join('\n');
+            } catch {
+                return JSON.stringify(resp);
+            }
+        }
+        return resp;
+    }
 
     // Check for details (base64 encoded sometimes)
-    if (log.details) {
+    if (flatLog.details) {
         try {
-            return atob(log.details);
+            return atob(flatLog.details);
         } catch {
-            return log.details;
+            return flatLog.details;
         }
     }
 
     // Fall back to message
-    return log.message || '';
+    return flatLog.message || '';
 }
 
 // Check if log entry is conversation-relevant
 export function isConversationRelevant(log: LogEntry): boolean {
-    const message = log.message?.toLowerCase() || '';
+    // Flatten structured_data if present (MySQL logs)
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+    
+    const message = flatLog.message?.toLowerCase() || '';
+    const event = (flatLog as any).event?.toLowerCase() || '';
+
+    // Include MySQL specific events
+    if (['query_request', 'query_response', 'llm_interaction'].includes(event)) {
+        return true;
+    }
 
     // Include these message types
     const relevantPatterns = [
@@ -143,7 +227,7 @@ export function isConversationRelevant(log: LogEntry): boolean {
     }
 
     // Include if has command or response
-    if (log.command || log.response) {
+    if (flatLog.command || (flatLog as any).response || (flatLog as any).query) {
         return true;
     }
 

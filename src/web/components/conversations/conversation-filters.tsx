@@ -29,7 +29,8 @@ import {
     Zap,
     AlertTriangle,
     Info,
-    CheckCircle
+    CheckCircle,
+    ChevronDown
 } from "lucide-react";
 
 interface ConversationFiltersProps {
@@ -96,119 +97,104 @@ export function ConversationFiltersBar({ filters, onFiltersChange, totalCount, f
     const currentSort = sortOptions.find(s => s.value === filters.sortBy);
 
     return (
-        <div className="flex flex-col gap-3 p-4 bg-card/50 backdrop-blur-xl border-b border-white/10 dark:border-white/5">
-            {/* Top Row - Search and Quick Filters */}
+        <div className="flex-shrink-0 flex flex-col gap-2 p-3 bg-gradient-to-r from-card/50 to-card/30 border-b border-border/50">
+            {/* Top Row */}
             <div className="flex items-center gap-2 flex-wrap">
-                {/* Search Input */}
+                {/* Search */}
                 <div className="relative flex-1 min-w-[200px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
                     <Input
                         placeholder="Search conversations..."
                         value={filters.searchQuery}
                         onChange={(e) => updateFilter('searchQuery', e.target.value)}
-                        className="pl-9 h-9 bg-muted/30 rounded-none border-white/10 focus:border-primary/50"
+                        className="pl-10 h-9 bg-muted/30 rounded-none border-border/50 focus:border-primary/50"
                     />
                     {filters.searchQuery && (
                         <button
                             onClick={() => updateFilter('searchQuery', '')}
-                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground"
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground p-0.5"
                         >
-                            <X className="h-3.5 w-3.5" />
+                            <X className="h-4 w-4" />
                         </button>
                     )}
                 </div>
 
-                {/* Protocol Filter */}
+                {/* Protocol */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button
                             variant="outline"
                             size="sm"
-                            className={cn(
-                                "h-9 gap-1.5 rounded-none border-dashed",
-                                filters.protocol !== 'all' && "border-solid border-primary/50 bg-primary/10"
-                            )}
+                            className={cn("h-9 gap-2 rounded-none border-border/50 px-3", filters.protocol !== 'all' && "border-primary/50 bg-primary/10")}
                         >
-                            {currentProtocol && <currentProtocol.icon className="h-3.5 w-3.5" />}
-                            <span className="hidden sm:inline">{currentProtocol?.label}</span>
+                            {currentProtocol && <currentProtocol.icon className="h-4 w-4" />}
+                            <span>{currentProtocol?.label}</span>
+                            <ChevronDown className="h-3 w-3 opacity-50" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-white/10 rounded-none">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Protocol</DropdownMenuLabel>
+                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-border/50 rounded-none p-1">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground px-2">Protocol</DropdownMenuLabel>
                         {protocolOptions.map((option) => (
                             <DropdownMenuItem
                                 key={option.value}
                                 onClick={() => updateFilter('protocol', option.value)}
-                                className={cn(
-                                    "rounded-none cursor-pointer gap-2",
-                                    filters.protocol === option.value && "bg-primary/20"
-                                )}
+                                className={cn("rounded-none cursor-pointer gap-2 px-3 py-2", filters.protocol === option.value && "bg-primary/15")}
                             >
-                                <option.icon className="h-3.5 w-3.5" />
+                                <option.icon className="h-4 w-4" />
                                 {option.label}
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Severity Filter */}
+                {/* Severity */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button
                             variant="outline"
                             size="sm"
-                            className={cn(
-                                "h-9 gap-1.5 rounded-none border-dashed",
-                                filters.severity !== 'all' && "border-solid border-primary/50 bg-primary/10"
-                            )}
+                            className={cn("h-9 gap-2 rounded-none border-border/50 px-3", filters.severity !== 'all' && "border-primary/50 bg-primary/10")}
                         >
-                            {currentSeverity && <currentSeverity.icon className={cn("h-3.5 w-3.5", currentSeverity.color)} />}
-                            <span className="hidden sm:inline">{currentSeverity?.label}</span>
+                            {currentSeverity && <currentSeverity.icon className={cn("h-4 w-4", currentSeverity.color)} />}
+                            <span>{currentSeverity?.label}</span>
+                            <ChevronDown className="h-3 w-3 opacity-50" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-white/10 rounded-none">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Severity</DropdownMenuLabel>
+                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-border/50 rounded-none p-1">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground px-2">Severity</DropdownMenuLabel>
                         {severityOptions.map((option) => (
                             <DropdownMenuItem
                                 key={option.value}
                                 onClick={() => updateFilter('severity', option.value)}
-                                className={cn(
-                                    "rounded-none cursor-pointer gap-2",
-                                    filters.severity === option.value && "bg-primary/20"
-                                )}
+                                className={cn("rounded-none cursor-pointer gap-2 px-3 py-2", filters.severity === option.value && "bg-primary/15")}
                             >
-                                <option.icon className={cn("h-3.5 w-3.5", option.color)} />
+                                <option.icon className={cn("h-4 w-4", option.color)} />
                                 {option.label}
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Time Range Filter */}
+                {/* Time Range */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
                         <Button
                             variant="outline"
                             size="sm"
-                            className={cn(
-                                "h-9 gap-1.5 rounded-none border-dashed",
-                                filters.timeRange !== 'all' && "border-solid border-primary/50 bg-primary/10"
-                            )}
+                            className={cn("h-9 gap-2 rounded-none border-border/50 px-3", filters.timeRange !== 'all' && "border-primary/50 bg-primary/10")}
                         >
-                            <Clock className="h-3.5 w-3.5" />
-                            <span className="hidden sm:inline">{currentTimeRange?.label}</span>
+                            <Clock className="h-4 w-4" />
+                            <span>{currentTimeRange?.label}</span>
+                            <ChevronDown className="h-3 w-3 opacity-50" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-white/10 rounded-none">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Time Range</DropdownMenuLabel>
+                    <DropdownMenuContent align="start" className="w-[160px] bg-card/95 backdrop-blur-xl border-border/50 rounded-none p-1">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground px-2">Time Range</DropdownMenuLabel>
                         {timeRangeOptions.map((option) => (
                             <DropdownMenuItem
                                 key={option.value}
                                 onClick={() => updateFilter('timeRange', option.value)}
-                                className={cn(
-                                    "rounded-none cursor-pointer",
-                                    filters.timeRange === option.value && "bg-primary/20"
-                                )}
+                                className={cn("rounded-none cursor-pointer px-3 py-2", filters.timeRange === option.value && "bg-primary/15")}
                             >
                                 {option.label}
                             </DropdownMenuItem>
@@ -219,99 +205,75 @@ export function ConversationFiltersBar({ filters, onFiltersChange, totalCount, f
                 {/* Sort */}
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 gap-1.5 rounded-none border-dashed">
-                            {currentSort && <currentSort.icon className="h-3.5 w-3.5" />}
-                            <span className="hidden sm:inline">{currentSort?.label}</span>
+                        <Button variant="outline" size="sm" className="h-9 gap-2 rounded-none border-border/50 px-3">
+                            {currentSort && <currentSort.icon className="h-4 w-4" />}
+                            <span>{currentSort?.label}</span>
+                            <ChevronDown className="h-3 w-3 opacity-50" />
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-[160px] bg-card/95 backdrop-blur-xl border-white/10 rounded-none">
-                        <DropdownMenuLabel className="text-xs text-muted-foreground">Sort By</DropdownMenuLabel>
+                    <DropdownMenuContent align="end" className="w-[160px] bg-card/95 backdrop-blur-xl border-border/50 rounded-none p-1">
+                        <DropdownMenuLabel className="text-xs text-muted-foreground px-2">Sort By</DropdownMenuLabel>
                         {sortOptions.map((option) => (
                             <DropdownMenuItem
                                 key={option.value}
                                 onClick={() => updateFilter('sortBy', option.value)}
-                                className={cn(
-                                    "rounded-none cursor-pointer gap-2",
-                                    filters.sortBy === option.value && "bg-primary/20"
-                                )}
+                                className={cn("rounded-none cursor-pointer gap-2 px-3 py-2", filters.sortBy === option.value && "bg-primary/15")}
                             >
-                                <option.icon className="h-3.5 w-3.5" />
+                                <option.icon className="h-4 w-4" />
                                 {option.label}
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>
                 </DropdownMenu>
 
-                {/* Active Only Toggle */}
+                {/* Active Only */}
                 <Button
                     variant={filters.showActiveOnly ? "default" : "outline"}
                     size="sm"
                     onClick={() => updateFilter('showActiveOnly', !filters.showActiveOnly)}
                     className={cn(
-                        "h-9 rounded-none",
-                        filters.showActiveOnly ? "bg-emerald-600 hover:bg-emerald-700" : "border-dashed"
+                        "h-9 rounded-none px-3",
+                        filters.showActiveOnly ? "bg-emerald-600 hover:bg-emerald-700" : "border-border/50"
                     )}
                 >
-                    <span className="relative flex h-2 w-2 mr-1.5">
-                        {filters.showActiveOnly && (
-                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-75"></span>
-                        )}
-                        <span className={cn(
-                            "relative inline-flex rounded-full h-2 w-2",
-                            filters.showActiveOnly ? "bg-white" : "bg-emerald-500"
-                        )}></span>
-                    </span>
-                    <span className="hidden sm:inline">Active</span>
+                    <span className={cn("w-2 h-2 mr-2", filters.showActiveOnly ? "bg-white" : "bg-emerald-500")} />
+                    Active
                 </Button>
 
-                {/* Reset Filters */}
+                {/* Reset */}
                 {hasActiveFilters && (
-                    <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={resetFilters}
-                        className="h-9 gap-1.5 rounded-none text-muted-foreground hover:text-foreground"
-                    >
-                        <RotateCcw className="h-3.5 w-3.5" />
-                        <span className="hidden sm:inline">Reset</span>
+                    <Button variant="ghost" size="sm" onClick={resetFilters} className="h-9 gap-2 rounded-none text-muted-foreground hover:text-foreground">
+                        <RotateCcw className="h-4 w-4" />
+                        Reset
                     </Button>
                 )}
             </div>
 
-            {/* Bottom Row - IP/Username Filters & Status */}
+            {/* Bottom Row */}
             <div className="flex items-center justify-between gap-4">
                 <div className="flex items-center gap-2">
-                    {/* IP Filter */}
-                    <div className="relative">
-                        <Input
-                            placeholder="Filter IP..."
-                            value={filters.ipFilter}
-                            onChange={(e) => updateFilter('ipFilter', e.target.value)}
-                            className="h-8 w-32 text-xs bg-muted/30 rounded-none border-white/10 focus:border-primary/50 font-mono"
-                        />
-                    </div>
-
-                    {/* Username Filter */}
-                    <div className="relative">
-                        <Input
-                            placeholder="Filter user..."
-                            value={filters.usernameFilter}
-                            onChange={(e) => updateFilter('usernameFilter', e.target.value)}
-                            className="h-8 w-28 text-xs bg-muted/30 rounded-none border-white/10 focus:border-primary/50"
-                        />
-                    </div>
+                    <Input
+                        placeholder="Filter IP..."
+                        value={filters.ipFilter}
+                        onChange={(e) => updateFilter('ipFilter', e.target.value)}
+                        className="h-8 w-32 text-sm bg-muted/30 rounded-none border-border/50 font-mono"
+                    />
+                    <Input
+                        placeholder="Filter user..."
+                        value={filters.usernameFilter}
+                        onChange={(e) => updateFilter('usernameFilter', e.target.value)}
+                        className="h-8 w-28 text-sm bg-muted/30 rounded-none border-border/50"
+                    />
                 </div>
-
-                {/* Filter Status */}
-                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                <div className="flex items-center gap-3 text-sm text-muted-foreground">
                     {hasActiveFilters && (
-                        <Badge variant="outline" className="rounded-none px-1.5 py-0 h-5 bg-primary/10 border-primary/30">
-                            <Filter className="h-2.5 w-2.5 mr-1" />
+                        <Badge className="rounded-none px-2 py-1 bg-primary/10 text-primary border-primary/20 font-semibold">
+                            <Filter className="h-3 w-3 mr-1" />
                             {activeFilterCount} active
                         </Badge>
                     )}
                     <span>
-                        Showing <span className="font-semibold text-foreground">{filteredCount}</span> of {totalCount}
+                        Showing <span className="font-bold text-foreground">{filteredCount}</span> of {totalCount}
                     </span>
                 </div>
             </div>

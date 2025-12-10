@@ -2291,6 +2291,15 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
                     break
                 except asyncio.IncompleteReadError:
                     break
+                except ConnectionResetError:
+                    logger.info(f"Connection reset by peer: {src_ip}")
+                    break
+                except OSError as e:
+                    if getattr(e, 'winerror', 0) == 121:
+                        logger.info(f"Connection timed out (WinError 121) for {src_ip}")
+                    else:
+                        logger.error(f"Socket error handling FTP command: {e}")
+                    break
                 except Exception as e:
                     logger.error(f"Error handling FTP command: {e}")
                     break
@@ -2398,8 +2407,12 @@ Remember: This is a honeypot session analysis. Do NOT respond as an FTP server. 
                     logger.error(f"Session summary generation failed: {e}")
 
             logger.info("FTP connection closed")
-            writer.close()
-            await writer.wait_closed()
+            try:
+                writer.close()
+                await writer.wait_closed()
+            except Exception:
+                pass
+
 
 
 async def start_server():
@@ -2759,6 +2772,10 @@ try:
     thread_local = threading.local()
 
     # Start the server
+    # Set event loop policy for Windows to fix WinError 121
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+
     # amazonq-ignore-next-line
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)

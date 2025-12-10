@@ -1822,29 +1822,47 @@ class MySQLHoneypotSession(Session):
         
         status = "success"
         result_summary = "unknown"
+        response_content = None  # Store actual response data
         error_details = None
+        query_result = None  # Store result for finally block
         
         try:
-            result = await self._handle_query_logic(sql, attrs)
+            query_result = await self._handle_query_logic(sql, attrs)
             
-            # Analyze result for logging summary
-            if result is None:
+            # Analyze result for logging summary and extract response content
+            if query_result is None:
                  result_summary = "None"
-            elif hasattr(result, "rows"):
-                result_summary = f"{len(result.rows)} rows"
-            elif isinstance(result, list):
-                 result_summary = f"{len(result)} items"
-            elif hasattr(result, "message"): 
-                 result_summary = result.message
+                 response_content = None
+            elif hasattr(query_result, "rows"):
+                result_summary = f"{len(query_result.rows)} rows"
+                # Extract actual row data for logging (limit to prevent huge logs)
+                try:
+                    rows_data = []
+                    for row in query_result.rows[:50]:  # Limit to first 50 rows
+                        if hasattr(row, '__iter__') and not isinstance(row, (str, bytes)):
+                            rows_data.append([str(cell) for cell in row])
+                        else:
+                            rows_data.append([str(row)])
+                    response_content = rows_data
+                except Exception:
+                    response_content = f"[{len(query_result.rows)} rows - extraction failed]"
+            elif isinstance(query_result, list):
+                 result_summary = f"{len(query_result)} items"
+                 response_content = query_result[:50] if len(query_result) > 50 else query_result
+            elif hasattr(query_result, "message"): 
+                 result_summary = query_result.message
+                 response_content = query_result.message
             else:
-                 result_summary = str(type(result).__name__)
+                 result_summary = str(type(query_result).__name__)
+                 response_content = str(query_result)[:500]  # Truncate long responses
                  
-            return result
+            return query_result
             
         except Exception as e:
             status = "error"
             error_details = str(e)
             result_summary = f"Exception: {type(e).__name__}"
+            response_content = f"ERROR: {str(e)}"
             raise e 
             
         finally:
@@ -1858,6 +1876,11 @@ class MySQLHoneypotSession(Session):
                 "summary": result_summary,
                 "session_id": session_id
             }
+            
+            # Add actual response content if available
+            if response_content is not None:
+                response_data["response"] = response_content
+                
             if error_details:
                 response_data["error"] = error_details
                 
@@ -2179,11 +2202,14 @@ Respond ONLY with valid JSON array format. No text, markdown, or explanations.""
             logger.info(
                 "LLM response",
                 extra={
-                    "query": query,
-                    "llm_response": raw[:200],
-                    "session_id": session_id,
-                    "model": self.config["llm"].get("model_name", "llama3.2"),
-                    "creativity": self.config["llm"].getfloat("creativity_level", 0.4),
+                    "structured_data": {
+                        "event": "llm_interaction",
+                        "query": query,
+                        "response": raw,
+                        "session_id": session_id,
+                        "model": self.config["llm"].get("model_name", "llama3.2"),
+                        "creativity": self.config["llm"].getfloat("creativity_level", 0.4),
+                    }
                 },
             )
             return raw

@@ -216,6 +216,17 @@ export function AttackDetailModal({
                         </div>
                     </Section>
 
+                    {/* Response Section */}
+                    {attack.response && (
+                        <Section title="RESPONSE" icon={<IconTerminal2 className="h-4 w-4" />}>
+                            <div className="relative">
+                                <code className="block bg-zinc-900 dark:bg-zinc-950 border border-border p-4 font-mono text-sm text-blue-400 overflow-x-auto whitespace-pre-wrap break-all max-h-60 overflow-y-auto">
+                                    {attack.response}
+                                </code>
+                            </div>
+                        </Section>
+                    )}
+
                     {/* Session Metadata */}
                     <Section title="SESSION METADATA" icon={<IconServer className="h-4 w-4" />}>
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

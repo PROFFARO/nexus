@@ -48,6 +48,7 @@ interface AttackTableProps {
 
 // Decode command from base64 if needed
 function decodeCommand(log: LogEntry): string {
+    if (log.query) return log.query;
     if (log.command) return log.command;
     if (log.details) {
         try {

@@ -37,32 +37,60 @@ function generateMessageId(): string {
 
 // Convert LogEntry to ConversationMessage
 function logToMessage(log: LogEntry): ConversationMessage {
+    // Flatten structured_data if present (MySQL logs)
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+    
+    // Extract command/query
+    const command = (flatLog as any).query || flatLog.command;
+    
+    // Extract response - handle array format from MySQL
+    let response = (flatLog as any).response;
+    if (Array.isArray(response)) {
+        try {
+            response = response.map((row: any[]) => Array.isArray(row) ? row.join(', ') : String(row)).join('\n');
+        } catch {
+            response = JSON.stringify(response);
+        }
+    } else if (!response && (flatLog as any).summary) {
+        response = `Result: ${(flatLog as any).summary}`;
+    }
+    
     return {
         id: generateMessageId(),
-        timestamp: log.timestamp,
-        type: getMessageTypeFromLog(log),
-        sender: getSenderFromLog(log),
-        content: getMessageContent(log),
-        command: log.command,
-        response: log.response,
-        protocol: log.sensor_protocol?.toLowerCase(),
-        username: log.username,
-        attack_types: log.attack_types,
-        severity: log.severity,
-        threat_score: log.threat_score,
-        raw: log
+        timestamp: flatLog.timestamp,
+        type: getMessageTypeFromLog(flatLog),
+        sender: getSenderFromLog(flatLog),
+        content: getMessageContent(flatLog),
+        command: command,
+        response: response,
+        protocol: flatLog.sensor_protocol?.toLowerCase(),
+        username: flatLog.username || (flatLog as any).username,
+        attack_types: flatLog.attack_types,
+        severity: flatLog.severity,
+        threat_score: flatLog.threat_score,
+        raw: log  // Keep original log for debugging
     };
 }
 
 // Get or create session ID from log entry
 function getSessionKey(log: LogEntry): string {
+    // Flatten structured_data if present
+    let flatLog = log;
+    if ((log as any).structured_data && typeof (log as any).structured_data === 'object') {
+        flatLog = { ...log, ...(log as any).structured_data };
+    }
+    
     // Use session_id if available
-    if (log.session_id) return log.session_id;
+    if (flatLog.session_id) return flatLog.session_id;
+    if ((flatLog as any).session_id) return (flatLog as any).session_id;
     // Fall back to task_name if it's a session identifier
-    if (log.task_name?.startsWith('session-')) return log.task_name;
+    if (flatLog.task_name?.startsWith('session-')) return flatLog.task_name;
     // Create composite key from IP + protocol
-    const ip = log.src_ip || 'unknown';
-    const proto = log.sensor_protocol || 'unknown';
+    const ip = flatLog.src_ip || (flatLog as any).client_ip || 'unknown';
+    const proto = flatLog.sensor_protocol || 'unknown';
     return `${proto}-${ip}`;
 }
 
