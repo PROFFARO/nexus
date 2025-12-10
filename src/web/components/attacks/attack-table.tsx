@@ -296,22 +296,33 @@ export function AttackTable({ logs }: AttackTableProps) {
                         </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" className="w-[140px] bg-zinc-950/80 backdrop-blur-2xl border-white/10 shadow-2xl rounded-none p-1">
-                        {["ALL", "INFO", "WARNING", "ERROR", "CRITICAL"].map((level) => (
-                            <DropdownMenuItem
-                                key={level}
-                                onClick={() => table.getColumn("level")?.setFilterValue(level === "ALL" ? "" : level)}
-                                className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors date-picker-item"
-                            >
-                                <div className="flex items-center gap-2">
-                                    {level === "ALL" ? (
-                                        <div className="h-1.5 w-1.5 bg-white/50 rounded-full" />
-                                    ) : (
-                                        getLevelBadge({ level } as LogEntry)
-                                    )}
-                                    <span className={level === "ALL" ? "ml-0.5" : ""}>{level === "ALL" ? "All Events" : ""}</span>
-                                </div>
-                            </DropdownMenuItem>
-                        ))}
+                        <DropdownMenuItem
+                            onClick={() => table.getColumn("level")?.setFilterValue("")}
+                            className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors"
+                        >
+                            <div className="flex items-center gap-2">
+                                <div className="h-1.5 w-1.5 bg-white/50 rounded-full" />
+                                <span>All Events</span>
+                            </div>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={() => table.getColumn("level")?.setFilterValue("INFO")}
+                            className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors"
+                        >
+                            <Badge className="bg-blue-500/10 text-blue-500 border-blue-500/30 rounded-none">INFO</Badge>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={() => table.getColumn("level")?.setFilterValue("WARNING")}
+                            className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors"
+                        >
+                            <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 rounded-none">WARNING</Badge>
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                            onClick={() => table.getColumn("level")?.setFilterValue("CRITICAL")}
+                            className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors"
+                        >
+                            <Badge className="bg-rose-500/10 text-rose-500 border-rose-500/30 rounded-none">CRITICAL</Badge>
+                        </DropdownMenuItem>
                     </DropdownMenuContent>
                 </DropdownMenu>
             </div>
