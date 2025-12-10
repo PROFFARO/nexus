@@ -1173,6 +1173,8 @@ class MySQLHoneypotSession(Session):
                 "total_queries": 0,
                 "attack_queries": 0,
             },
+            # Store attack_analyzer reference for handle_query to use
+            "attack_analyzer": self.attack_analyzer,
         }
         self.forensic_logger = None
 
@@ -1809,16 +1811,40 @@ class MySQLHoneypotSession(Session):
         username = self.session_data.get("username", "unknown")
         client_ip = self.session_data.get("client_info", {}).get("ip", "unknown")
         session_id = self.session_data.get("session_id", "unknown")
+        current_db = self.session_data.get("current_database", "")
         
-        # Log Request Structurally
+        # Analyze query for attacks using the attack analyzer
+        attack_analyzer = self.session_data.get("attack_analyzer")
+        attack_analysis = {}
+        if attack_analyzer and hasattr(attack_analyzer, 'analyze_query'):
+            try:
+                attack_analysis = attack_analyzer.analyze_query(sql, username, current_db)
+            except Exception as e:
+                logger.debug(f"Attack analysis error: {e}")
+                attack_analysis = {"attack_types": [], "severity": "low", "threat_score": 0}
+        else:
+            attack_analysis = {"attack_types": [], "severity": "low", "threat_score": 0}
+        
+        # Log Request Structurally with attack analysis
         request_data = {
             "event": "query_request",
             "query": sql,
             "client_ip": client_ip,
             "username": username,
             "session_id": session_id,
+            # Attack analysis fields
+            "attack_types": attack_analysis.get("attack_types", []),
+            "severity": attack_analysis.get("severity", "low"),
+            "threat_score": attack_analysis.get("threat_score", 0),
+            "indicators": attack_analysis.get("indicators", []),
+            "vulnerabilities": attack_analysis.get("vulnerabilities", []),
         }
-        logger.info("Incoming MySQL Query", extra={"structured_data": request_data})
+        
+        # Use WARNING log level for detected attacks
+        if attack_analysis.get("attack_types"):
+            logger.warning("Incoming MySQL Query - Attack Detected", extra={"structured_data": request_data})
+        else:
+            logger.info("Incoming MySQL Query", extra={"structured_data": request_data})
         
         status = "success"
         result_summary = "unknown"
@@ -1874,7 +1900,11 @@ class MySQLHoneypotSession(Session):
                 "status": status,
                 "duration_ms": round(duration_ms, 2),
                 "summary": result_summary,
-                "session_id": session_id
+                "session_id": session_id,
+                # Include attack analysis in response too
+                "attack_types": attack_analysis.get("attack_types", []),
+                "severity": attack_analysis.get("severity", "low"),
+                "threat_score": attack_analysis.get("threat_score", 0),
             }
             
             # Add actual response content if available
@@ -1883,8 +1913,12 @@ class MySQLHoneypotSession(Session):
                 
             if error_details:
                 response_data["error"] = error_details
-                
-            logger.info("MySQL Query Processed", extra={"structured_data": response_data})
+            
+            # Use WARNING log level for detected attacks
+            if attack_analysis.get("attack_types"):
+                logger.warning("MySQL Query Processed - Attack Detected", extra={"structured_data": response_data})
+            else:
+                logger.info("MySQL Query Processed", extra={"structured_data": response_data})
 
     async def _handle_query_logic(self, sql: str, attrs: Dict[str, str]) -> Any:  # type: ignore
         """Core logic for handling MySQL query"""

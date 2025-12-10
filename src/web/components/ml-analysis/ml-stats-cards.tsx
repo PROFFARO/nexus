@@ -80,21 +80,37 @@ function StatsCard({ title, value, subtitle, icon, color }: StatsCardProps) {
 interface MLStatsCardsProps {
     service?: string;
     refreshInterval?: number;
+    // Real-time data from WebSocket
+    realtimeStats?: {
+        totalCommands: number;
+        totalAttacks: number;
+        highRisk: number;
+        mediumRisk: number;
+        lowRisk: number;
+        avgAnomalyScore: number;
+    };
+    entries?: any[];
 }
 
-export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsProps) {
-    const [stats, setStats] = useState<MLStats | null>(null);
+export function MLStatsCards({ service, refreshInterval = 3000, realtimeStats, entries }: MLStatsCardsProps) {
+    const [apiStats, setApiStats] = useState<MLStats | null>(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState<string | null>(null);
 
     useEffect(() => {
+        // If we have real-time stats, no need to fetch from API
+        if (realtimeStats && entries && entries.length > 0) {
+            setLoading(false);
+            return;
+        }
+
         let mounted = true;
 
         async function fetchStats() {
             try {
                 const data = await getMLStats(service);
                 if (mounted) {
-                    setStats(data);
+                    setApiStats(data);
                     setError(null);
                 }
             } catch (err) {
@@ -115,9 +131,12 @@ export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsPr
             mounted = false;
             clearInterval(interval);
         };
-    }, [service, refreshInterval]);
+    }, [service, refreshInterval, realtimeStats, entries]);
 
-    if (loading) {
+    // Use real-time stats if available, otherwise fall back to API stats
+    const hasRealtimeData = realtimeStats && entries && entries.length > 0;
+
+    if (loading && !hasRealtimeData) {
         return (
             <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
                 {[...Array(6)].map((_, i) => (
@@ -130,7 +149,7 @@ export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsPr
         );
     }
 
-    if (error) {
+    if (error && !hasRealtimeData) {
         return (
             <div className="rounded-xl border border-destructive/50 bg-destructive/10 p-6 text-center">
                 <IconAlertTriangle className="mx-auto mb-2 h-8 w-8 text-destructive" />
@@ -139,6 +158,19 @@ export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsPr
             </div>
         );
     }
+
+    // Build display stats from either real-time or API data
+    const stats = hasRealtimeData ? {
+        total_sessions: entries.length,
+        total_commands: realtimeStats.totalCommands,
+        total_attacks: realtimeStats.totalAttacks,
+        avg_anomaly_score: realtimeStats.avgAnomalyScore,
+        high_risk_count: realtimeStats.highRisk,
+        medium_risk_count: realtimeStats.mediumRisk,
+        low_risk_count: realtimeStats.lowRisk,
+        avg_inference_time_ms: 0,
+        services_active: [...new Set(entries.map((e: any) => e.service))],
+    } : apiStats;
 
     if (!stats) return null;
 

@@ -39,17 +39,29 @@ const ATTACK_TYPE_COLORS = [
 interface MLMetricsChartsProps {
     service?: string;
     refreshInterval?: number;
+    // Real-time data from WebSocket
+    realtimeMetrics?: {
+        riskDistribution: Record<string, number>;
+        attackTypeDistribution: Record<string, number>;
+    };
+    entries?: any[];
 }
 
-export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsChartsProps) {
-    const [stats, setStats] = useState<MLStats | null>(null);
+export function MLMetricsCharts({ service, refreshInterval = 5000, realtimeMetrics, entries }: MLMetricsChartsProps) {
+    const [apiStats, setApiStats] = useState<MLStats | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
+        // If we have real-time data, skip API fetch
+        if (realtimeMetrics && entries && entries.length > 0) {
+            setLoading(false);
+            return;
+        }
+
         async function fetchStats() {
             try {
                 const data = await getMLStats(service);
-                setStats(data);
+                setApiStats(data);
             } catch (err) {
                 console.error('Failed to fetch ML stats:', err);
             } finally {
@@ -60,9 +72,11 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
         fetchStats();
         const interval = setInterval(fetchStats, refreshInterval);
         return () => clearInterval(interval);
-    }, [service, refreshInterval]);
+    }, [service, refreshInterval, realtimeMetrics, entries]);
 
-    if (loading) {
+    const hasRealtimeData = realtimeMetrics && entries && entries.length > 0;
+
+    if (loading && !hasRealtimeData) {
         return (
             <div className="grid gap-6 lg:grid-cols-2">
                 <div className="h-80 animate-pulse border border-border/50 bg-muted/30" />
@@ -71,24 +85,46 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
         );
     }
 
-    if (!stats) return null;
+    // Use real-time data if available
+    let riskData: Array<{ name: string; value: number; color: string }>;
+    let attackTypeData: Array<{ name: string; value: number; fill: string }>;
 
-    // Prepare risk distribution data
-    const riskData = Object.entries(stats.risk_distribution).map(([name, value]) => ({
-        name: name.charAt(0).toUpperCase() + name.slice(1),
-        value,
-        color: RISK_COLORS[name as keyof typeof RISK_COLORS] || '#6b7280',
-    }));
-
-    // Prepare attack type distribution data
-    const attackTypeData = Object.entries(stats.attack_type_distribution)
-        .sort((a, b) => b[1] - a[1])
-        .slice(0, 8)
-        .map(([name, value], index) => ({
-            name: name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+    if (hasRealtimeData) {
+        // Build from real-time data
+        riskData = Object.entries(realtimeMetrics.riskDistribution).map(([name, value]) => ({
+            name: name.charAt(0).toUpperCase() + name.slice(1),
             value,
-            fill: ATTACK_TYPE_COLORS[index % ATTACK_TYPE_COLORS.length],
+            color: RISK_COLORS[name as keyof typeof RISK_COLORS] || '#6b7280',
         }));
+
+        attackTypeData = Object.entries(realtimeMetrics.attackTypeDistribution)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([name, value], index) => ({
+                name: name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+                value,
+                fill: ATTACK_TYPE_COLORS[index % ATTACK_TYPE_COLORS.length],
+            }));
+    } else if (apiStats) {
+        // Fall back to API data
+        riskData = Object.entries(apiStats.risk_distribution).map(([name, value]) => ({
+            name: name.charAt(0).toUpperCase() + name.slice(1),
+            value,
+            color: RISK_COLORS[name as keyof typeof RISK_COLORS] || '#6b7280',
+        }));
+
+        attackTypeData = Object.entries(apiStats.attack_type_distribution)
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, 8)
+            .map(([name, value], index) => ({
+                name: name.replace(/_/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase()),
+                value,
+                fill: ATTACK_TYPE_COLORS[index % ATTACK_TYPE_COLORS.length],
+            }));
+    } else {
+        riskData = [];
+        attackTypeData = [];
+    }
 
     return (
         <div className="grid gap-6 lg:grid-cols-2">
