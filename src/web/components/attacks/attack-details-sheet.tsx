@@ -12,6 +12,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ParsedAttack } from "@/lib/logs";
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter';
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism';
 import {
     Terminal,
     X,
@@ -273,10 +275,26 @@ export function AttackDetailsSheet({ attack, open, onOpenChange }: AttackDetails
                                         {copied ? <><CheckCircle2 className="h-3 w-3 mr-1 text-green-500" /> Copied</> : <><Copy className="h-3 w-3 mr-1" /> Copy</>}
                                     </Button>
                                 </div>
-                                <div className="border border-border bg-muted/30 rounded-none max-h-48 overflow-auto">
-                                    <pre className="p-3 font-mono text-[10px] text-muted-foreground leading-relaxed">
+                                <div className="rounded-lg overflow-hidden max-h-64 overflow-y-auto">
+                                    <SyntaxHighlighter
+                                        language="json"
+                                        style={oneDark}
+                                        showLineNumbers={true}
+                                        customStyle={{
+                                            margin: 0,
+                                            fontSize: '10px',
+                                            borderRadius: '0.5rem',
+                                            background: 'hsl(var(--muted) / 0.3)',
+                                        }}
+                                        lineNumberStyle={{
+                                            minWidth: '2.5em',
+                                            paddingRight: '1em',
+                                            color: 'hsl(var(--muted-foreground))',
+                                            opacity: 0.5,
+                                        }}
+                                    >
                                         {JSON.stringify(currentAttack, null, 2)}
-                                    </pre>
+                                    </SyntaxHighlighter>
                                 </div>
                             </div>
                         </div>

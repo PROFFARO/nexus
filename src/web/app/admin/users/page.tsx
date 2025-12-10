@@ -129,7 +129,7 @@ export default function AdminUsersPage() {
     return (
         <div className="min-h-screen bg-background" suppressHydrationWarning>
             <div className="gradient-bg" />
-            <Sidebar />
+            <Sidebar>{null}</Sidebar>
 
             <div className="flex min-h-screen flex-col" style={{ marginLeft: 256 }}>
                 <Header />
