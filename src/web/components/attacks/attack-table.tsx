@@ -68,7 +68,9 @@ function getProtocolIcon(protocol: string) {
     }
 }
 
-// Derive effective severity level from log entry
+
+
+// Derive effective severity level from log entry (same logic as stats-cards)
 function getEffectiveLevel(log: LogEntry): string {
     // First check explicit severity field
     if (log.severity) {
@@ -95,11 +97,11 @@ function getLevelBadge(log: LogEntry) {
     const effectiveLevel = getEffectiveLevel(log);
     switch (effectiveLevel) {
         case 'CRITICAL':
-            return <Badge className="bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 rounded-sm">{effectiveLevel}</Badge>;
+            return <Badge className="bg-rose-500/10 text-rose-500 border-rose-500/30 hover:bg-rose-500/20 rounded-none">{effectiveLevel}</Badge>;
         case 'WARNING':
-            return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 rounded-sm">{effectiveLevel}</Badge>;
+            return <Badge className="bg-amber-500/10 text-amber-500 border-amber-500/30 hover:bg-amber-500/20 rounded-none">{effectiveLevel}</Badge>;
         default:
-            return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30 rounded-sm">INFO</Badge>;
+            return <Badge variant="outline" className="bg-blue-500/10 text-blue-500 border-blue-500/30 rounded-none">INFO</Badge>;
     }
 }
 
@@ -283,23 +285,31 @@ export function AttackTable({ logs }: AttackTableProps) {
                         placeholder="Search IP, message..."
                         value={globalFilter ?? ""}
                         onChange={(e) => setGlobalFilter(e.target.value)}
-                        className="pl-9 h-9 bg-muted/30 rounded-sm"
+                        className="pl-9 h-9 bg-muted/30 rounded-none"
                     />
                 </div>
                 <DropdownMenu>
                     <DropdownMenuTrigger asChild>
-                        <Button variant="outline" size="sm" className="h-9 gap-1 rounded-sm">
+                        <Button variant="outline" size="sm" className="h-9 gap-1 rounded-none border-dashed hover:border-solid hover:bg-muted/50">
                             <Filter className="h-3.5 w-3.5" />
                             Level
                         </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="w-[140px] bg-zinc-950/80 backdrop-blur-2xl border-white/10 shadow-2xl rounded-none p-1">
                         {["ALL", "INFO", "WARNING", "ERROR", "CRITICAL"].map((level) => (
                             <DropdownMenuItem
                                 key={level}
                                 onClick={() => table.getColumn("level")?.setFilterValue(level === "ALL" ? "" : level)}
+                                className="rounded-none focus:bg-white/10 focus:text-white cursor-pointer py-1.5 text-xs font-medium transition-colors date-picker-item"
                             >
-                                {level}
+                                <div className="flex items-center gap-2">
+                                    {level === "ALL" ? (
+                                        <div className="h-1.5 w-1.5 bg-white/50 rounded-full" />
+                                    ) : (
+                                        getLevelBadge({ level } as LogEntry)
+                                    )}
+                                    <span className={level === "ALL" ? "ml-0.5" : ""}>{level === "ALL" ? "All Events" : ""}</span>
+                                </div>
                             </DropdownMenuItem>
                         ))}
                     </DropdownMenuContent>
@@ -307,7 +317,7 @@ export function AttackTable({ logs }: AttackTableProps) {
             </div>
 
             {/* Table */}
-            <div className="rounded-sm border border-white/10 dark:border-white/5 overflow-hidden bg-card/40 backdrop-blur-sm">
+            <div className="rounded-none border border-white/10 dark:border-white/5 overflow-hidden bg-card/40 backdrop-blur-sm">
                 <Table>
                     <TableHeader>
                         {table.getHeaderGroups().map((headerGroup) => (

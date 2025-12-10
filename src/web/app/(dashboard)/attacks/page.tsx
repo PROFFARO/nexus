@@ -57,7 +57,7 @@ export default function AttacksPage() {
                 <div className="flex items-center gap-3">
                     <Badge
                         variant={isConnected ? "default" : "destructive"}
-                        className={`px-3 py-1.5 text-xs font-semibold ${isConnected ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : ''}`}
+                        className={`px-3 py-1.5 text-xs font-semibold rounded-none ${isConnected ? 'bg-emerald-500/10 text-emerald-500 border-emerald-500/30' : ''}`}
                     >
                         <span className="relative flex h-2 w-2 mr-2">
                             {isConnected && (
@@ -81,7 +81,7 @@ export default function AttacksPage() {
             {/* Main Content Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
                 {/* Attack Feed - Takes 3 columns */}
-                <Card className="lg:col-span-3 bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5">
+                <Card className="lg:col-span-3 bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5 rounded-none">
                     <CardHeader className="pb-3">
                         <div className="flex items-center justify-between">
                             <div>
@@ -105,7 +105,7 @@ export default function AttacksPage() {
                 {/* Sidebar - Takes 1 column */}
                 <div className="space-y-4">
                     {/* Top IPs */}
-                    <Card className="bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5">
+                    <Card className="bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5 rounded-none">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm flex items-center gap-2">
                                 <Globe className="h-4 w-4 text-blue-500" />
@@ -117,7 +117,7 @@ export default function AttacksPage() {
                                 <p className="text-xs text-muted-foreground">No data yet</p>
                             ) : (
                                 topIPs.map(([ip, count], i) => (
-                                    <div key={ip} className="flex items-center justify-between py-1.5 px-2 bg-muted/30 rounded">
+                                    <div key={ip} className="flex items-center justify-between py-1.5 px-2 bg-muted/30 rounded-none">
                                         <span className="font-mono text-xs text-emerald-500">{ip}</span>
                                         <Badge variant="outline" className="text-[10px] px-1.5 h-5">
                                             {count}
@@ -129,7 +129,7 @@ export default function AttacksPage() {
                     </Card>
 
                     {/* Protocol Distribution */}
-                    <Card className="bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5">
+                    <Card className="bg-card/60 backdrop-blur-xl border-white/10 dark:border-white/5 rounded-none">
                         <CardHeader className="pb-3">
                             <CardTitle className="text-sm flex items-center gap-2">
                                 <Radio className="h-4 w-4 text-purple-500" />
