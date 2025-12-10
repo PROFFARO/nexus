@@ -6,6 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .routes import router, manager
 from .log_watcher import LogWatcher
+from .ml_routes import router as ml_router
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -56,6 +57,7 @@ app.add_middleware(
 )
 
 app.include_router(router)
+app.include_router(ml_router)
 
 if __name__ == "__main__":
     import uvicorn
