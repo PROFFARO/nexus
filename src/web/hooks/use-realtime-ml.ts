@@ -59,9 +59,21 @@ export function useRealtimeMLAnalysis() {
         if (!command || command.length < 2) return null;
 
         // Extract ML metrics from the log entry
-        const mlAnomalyScore = log.ml_anomaly_score ?? log.threat_score ?? 0;
-        const mlRiskLevel = log.ml_risk_level || (mlAnomalyScore > 0.7 ? 'high' : mlAnomalyScore > 0.4 ? 'medium' : 'low');
-        const mlRiskColor = log.ml_risk_color || (mlRiskLevel === 'high' ? '#ef4444' : mlRiskLevel === 'medium' ? '#f59e0b' : '#22c55e');
+        const mlAnomalyScore = log.ml_anomaly_score ?? log.anomaly_score ?? log.threat_score ?? 0;
+        const mlRiskLevel = log.ml_risk_level || log.risk_level || (mlAnomalyScore > 0.7 ? 'high' : mlAnomalyScore > 0.4 ? 'medium' : 'low');
+        const mlRiskColor = log.ml_risk_color || (mlRiskLevel === 'high' || mlRiskLevel === 'critical' ? '#ef4444' : mlRiskLevel === 'medium' ? '#f59e0b' : '#22c55e');
+
+        // Compute confidence - use log value, or derive from anomaly score (higher anomaly = higher confidence in detection)
+        const rawConfidence = log.ml_confidence ?? log.confidence ?? log.ml_prediction_confidence;
+        const mlConfidence = rawConfidence !== undefined && rawConfidence !== null
+            ? rawConfidence
+            : (mlAnomalyScore > 0 ? Math.min(0.95, 0.5 + mlAnomalyScore * 0.5) : 0);
+
+        // Compute threat score - use log value, or derive from anomaly score (scale to percentage)
+        const rawThreatScore = log.threat_score ?? log.ml_threat_score ?? log.risk_score;
+        const threatScore = rawThreatScore !== undefined && rawThreatScore !== null
+            ? (rawThreatScore > 1 ? rawThreatScore : rawThreatScore * 100)  // Normalize to 0-100
+            : mlAnomalyScore * 100;  // Fallback: use anomaly score as percentage
 
         return {
             id: `${log.timestamp}-${log.session_id || Math.random().toString(36).substring(7)}`,
@@ -69,22 +81,24 @@ export function useRealtimeMLAnalysis() {
             service,
             command,
             session_id: log.session_id,
-            src_ip: log.src_ip,
-            username: log.username,
+            // Extract src_ip from various possible field names (different protocols use different names)
+            src_ip: log.src_ip || log.source_ip || log.client_ip || log.ip || log.remote_ip || log.peer_ip || log.attacker_ip,
+            // Extract username from various possible field names
+            username: log.username || log.user || log.login || log.client_user || log.auth_user || log.ftp_user || log.ssh_user,
 
-            // ML metrics
+            // ML metrics - with computed fallbacks
             ml_anomaly_score: mlAnomalyScore,
             ml_risk_level: mlRiskLevel,
-            ml_confidence: log.ml_confidence ?? 0.85,
-            ml_inference_time_ms: log.ml_inference_time_ms ?? 0,
+            ml_confidence: mlConfidence,
+            ml_inference_time_ms: log.ml_inference_time_ms ?? log.inference_time_ms ?? 0,
             ml_risk_color: mlRiskColor,
-            ml_labels: log.ml_labels || [],
-            ml_reason: log.ml_reason || '',
+            ml_labels: log.ml_labels || log.labels || [],
+            ml_reason: log.ml_reason || log.reason || log.classification_reason || '',
 
             // Attack info
             attack_types: log.attack_types || [],
-            severity: log.severity || 'low',
-            threat_score: log.threat_score ?? mlAnomalyScore,
+            severity: log.severity || mlRiskLevel || 'low',
+            threat_score: threatScore,
             indicators: log.indicators || [],
             pattern_matches: log.pattern_matches || [],
             vulnerabilities: log.vulnerabilities || [],

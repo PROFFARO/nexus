@@ -114,9 +114,8 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
                                 outerRadius={100}
                                 paddingAngle={4}
                                 dataKey="value"
-                                label
-                                nameKey="name"
-                                labelLine
+                                label={({ name, value }) => `${name}: ${value}`}
+                                labelLine={{ stroke: '#64748b' }}
                             >
                                 {riskData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -126,10 +125,16 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
                                 contentStyle={{
                                     backgroundColor: 'hsl(var(--card))',
                                     border: '1px solid hsl(var(--border))',
-                                    borderRadius: '8px',
+                                    borderRadius: '0px',
+                                    color: 'hsl(var(--foreground))',
                                 }}
+                                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                                labelStyle={{ color: 'hsl(var(--foreground))' }}
                             />
-                            <Legend />
+                            <Legend
+                                wrapperStyle={{ color: '#94a3b8' }}
+                                formatter={(value) => <span style={{ color: '#94a3b8' }}>{value}</span>}
+                            />
                         </PieChart>
                     </ResponsiveContainer>
                 )}
@@ -153,19 +158,24 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
                             layout="vertical"
                             margin={{ top: 5, right: 30, left: 20, bottom: 5 }}
                         >
-                            <XAxis type="number" tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 12 }} />
+                            <XAxis type="number" tick={{ fill: '#94a3b8', fontSize: 12 }} axisLine={{ stroke: '#64748b' }} tickLine={{ stroke: '#64748b' }} />
                             <YAxis
                                 dataKey="name"
                                 type="category"
                                 width={120}
-                                tick={{ fill: 'hsl(var(--muted-foreground))', fontSize: 11 }}
+                                tick={{ fill: '#94a3b8', fontSize: 11 }}
+                                axisLine={{ stroke: '#64748b' }}
+                                tickLine={{ stroke: '#64748b' }}
                             />
                             <Tooltip
                                 contentStyle={{
                                     backgroundColor: 'hsl(var(--card))',
                                     border: '1px solid hsl(var(--border))',
-                                    borderRadius: '8px',
+                                    borderRadius: '0px',
+                                    color: 'hsl(var(--foreground))',
                                 }}
+                                itemStyle={{ color: 'hsl(var(--foreground))' }}
+                                labelStyle={{ color: 'hsl(var(--foreground))' }}
                             />
                             <Bar dataKey="value" radius={[0, 4, 4, 0]}>
                                 {attackTypeData.map((entry, index) => (

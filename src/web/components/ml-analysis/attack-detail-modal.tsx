@@ -226,13 +226,27 @@ export function AttackDetailModal({
                                 <MetricCard
                                     icon={<IconTarget className="h-5 w-5" />}
                                     label="Threat Score"
-                                    value={`${(ml.ml_threat_score || 0).toFixed(1)}%`}
-                                    color={(ml.ml_threat_score || 0) > 70 ? '#ef4444' : (ml.ml_threat_score || 0) > 40 ? '#f59e0b' : '#22c55e'}
+                                    value={(() => {
+                                        // Use attack.threat_score first, then ml_threat_score, then derive from anomaly
+                                        const rawScore = attack.threat_score || ml.ml_threat_score || (ml.ml_anomaly_score * 100);
+                                        const score = rawScore > 1 ? rawScore : rawScore * 100;
+                                        return `${score.toFixed(1)}%`;
+                                    })()}
+                                    color={(() => {
+                                        const rawScore = attack.threat_score || ml.ml_threat_score || (ml.ml_anomaly_score * 100);
+                                        const score = rawScore > 1 ? rawScore : rawScore * 100;
+                                        return score > 70 ? '#ef4444' : score > 40 ? '#f59e0b' : '#22c55e';
+                                    })()}
                                 />
                                 <MetricCard
                                     icon={<IconFingerprint className="h-5 w-5" />}
                                     label="Confidence"
-                                    value={`${((ml.ml_confidence || 0) * 100).toFixed(1)}%`}
+                                    value={(() => {
+                                        // Use ml_confidence, or derive from anomaly score
+                                        const conf = ml.ml_confidence || (ml.ml_anomaly_score > 0 ? Math.min(0.95, 0.5 + ml.ml_anomaly_score * 0.5) : 0);
+                                        const confPercent = conf > 1 ? conf : conf * 100;
+                                        return `${confPercent.toFixed(1)}%`;
+                                    })()}
                                     color="#6366f1"
                                 />
                                 <MetricCard

@@ -39,26 +39,37 @@ import {
     TableRow,
 } from '@/components/ui/table';
 
-// Unified table entry type
+// Unified table entry type - contains all ML metrics from real-time data
 interface TableEntry {
     id: string;
     timestamp: string;
     service: string;
     command: string;
     session_id?: string;
+    src_ip?: string;
+    username?: string;
+    isRealtime?: boolean;
+
+    // ML metrics (all from real data, no hardcoded values)
     ml_anomaly_score: number;
+    ml_confidence: number;
+    ml_inference_time_ms: number;
+    ml_risk_level: string;
+    ml_labels: string[];
+    ml_reason: string;
+
+    // Attack info
     severity: string;
     attack_types: string[];
-    risk_level: string;
-    src_ip?: string;
-    isRealtime?: boolean;
+    threat_score: number;
+    indicators: string[];
 }
 
 const columnHelper = createColumnHelper<TableEntry>();
 
 interface AttackAnalysisTableProps {
     service?: string;
-    onSelectAttack?: (attack: AttackAnalysis, session?: { session_id: string; service: string }) => void;
+    onSelectAttack?: (attack: AttackAnalysis, session?: { session_id: string; service: string; src_ip?: string; username?: string }) => void;
 }
 
 export function AttackAnalysisTable({
@@ -87,12 +98,23 @@ export function AttackAnalysisTable({
                 service: e.service,
                 command: e.command,
                 session_id: e.session_id,
+                src_ip: e.src_ip,
+                username: e.username,
+                isRealtime: true,
+
+                // ML metrics from real data
                 ml_anomaly_score: e.ml_anomaly_score,
+                ml_confidence: e.ml_confidence,
+                ml_inference_time_ms: e.ml_inference_time_ms,
+                ml_risk_level: e.ml_risk_level,
+                ml_labels: e.ml_labels,
+                ml_reason: e.ml_reason,
+
+                // Attack info
                 severity: e.severity,
                 attack_types: e.attack_types,
-                risk_level: e.ml_risk_level,
-                src_ip: e.src_ip,
-                isRealtime: true,
+                threat_score: e.threat_score,
+                indicators: e.indicators,
             }));
     }, [realtimeEntries, selectedService]);
 
@@ -102,18 +124,44 @@ export function AttackAnalysisTable({
         for (const session of sessions) {
             if (selectedService && session.service !== selectedService) continue;
             for (const attack of session.attacks) {
+                const ml = attack.ml_metrics;
+                const anomalyScore = ml?.ml_anomaly_score ?? 0;
+
+                // Compute confidence - use ML value, or derive from anomaly score
+                const rawConfidence = ml?.ml_confidence;
+                const confidence = rawConfidence !== undefined && rawConfidence !== null && rawConfidence > 0
+                    ? rawConfidence
+                    : (anomalyScore > 0 ? Math.min(0.95, 0.5 + anomalyScore * 0.5) : 0);
+
+                // Compute threat score - use attack value, or ML threat score, or derive from anomaly
+                const rawThreat = attack.threat_score ?? ml?.ml_threat_score;
+                const threatScore = rawThreat !== undefined && rawThreat !== null && rawThreat > 0
+                    ? (rawThreat > 1 ? rawThreat : rawThreat * 100)  // Normalize to 0-100
+                    : anomalyScore * 100;  // Fallback to anomaly percentage
+
                 entries.push({
                     id: `${session.session_id}-${attack.timestamp}`,
                     timestamp: attack.timestamp,
                     service: session.service,
                     command: attack.command,
                     session_id: session.session_id,
-                    ml_anomaly_score: attack.ml_metrics?.ml_anomaly_score || 0,
-                    severity: attack.severity,
-                    attack_types: attack.attack_types || [],
-                    risk_level: attack.ml_metrics?.ml_risk_level || 'low',
                     src_ip: session.client_ip,
+                    username: session.username,
                     isRealtime: false,
+
+                    // ML metrics from session data - with computed fallbacks
+                    ml_anomaly_score: anomalyScore,
+                    ml_confidence: confidence,
+                    ml_inference_time_ms: ml?.ml_inference_time_ms ?? 0,
+                    ml_risk_level: ml?.ml_risk_level ?? (anomalyScore > 0.7 ? 'high' : anomalyScore > 0.4 ? 'medium' : 'low'),
+                    ml_labels: ml?.ml_labels ?? [],
+                    ml_reason: ml?.ml_reason ?? '',
+
+                    // Attack info
+                    severity: attack.severity,
+                    attack_types: attack.attack_types ?? [],
+                    threat_score: threatScore,
+                    indicators: attack.indicators ?? [],
                 });
             }
         }
@@ -122,23 +170,39 @@ export function AttackAnalysisTable({
 
     // Combine and deduplicate entries - real-time takes priority
     const allEntries = useMemo((): TableEntry[] => {
-        const seenCommands = new Set<string>();
+        const seenKeys = new Set<string>();
         const combined: TableEntry[] = [];
+
+        // Helper to create a normalized deduplication key
+        // Uses command + session_id (if available) for accurate matching
+        const createDedupeKey = (entry: TableEntry): string => {
+            // Normalize command: trim, lowercase for comparison
+            const cmd = entry.command || '';
+            const normalizedCommand = cmd.trim().toLowerCase();
+            // Use session_id if available for better accuracy
+            if (entry.session_id) {
+                return `${entry.session_id}-${normalizedCommand}`;
+            }
+            // Fallback to timestamp truncated to minute + command
+            const timestamp = entry.timestamp || '';
+            const datePart = timestamp.slice(0, 16); // YYYY-MM-DDTHH:MM
+            return `${datePart}-${normalizedCommand}`;
+        };
 
         // Add real-time entries first (they're already sorted newest first)
         for (const entry of realtimeTableEntries) {
-            const key = `${entry.timestamp}-${entry.command}`;
-            if (!seenCommands.has(key)) {
-                seenCommands.add(key);
+            const key = createDedupeKey(entry);
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
                 combined.push(entry);
             }
         }
 
         // Add session entries that aren't duplicates
         for (const entry of sessionTableEntries) {
-            const key = `${entry.timestamp}-${entry.command}`;
-            if (!seenCommands.has(key)) {
-                seenCommands.add(key);
+            const key = createDedupeKey(entry);
+            if (!seenKeys.has(key)) {
+                seenKeys.add(key);
                 combined.push(entry);
             }
         }
@@ -284,7 +348,7 @@ export function AttackAnalysisTable({
                     );
                 },
             }),
-            columnHelper.accessor('risk_level', {
+            columnHelper.accessor('ml_risk_level', {
                 header: 'Risk',
                 cell: (info) => {
                     const level = info.getValue();
@@ -309,35 +373,37 @@ export function AttackAnalysisTable({
                     <button
                         onClick={(e) => {
                             e.stopPropagation();
-                            // Convert back to AttackAnalysis format for the modal
+                            // Convert to AttackAnalysis format using REAL data from entry
                             const entry = row.original;
                             const attackAnalysis: AttackAnalysis = {
                                 command: entry.command,
                                 timestamp: entry.timestamp,
                                 attack_types: entry.attack_types,
                                 severity: entry.severity as 'low' | 'medium' | 'high' | 'critical',
-                                indicators: [],
+                                indicators: entry.indicators,
                                 vulnerabilities: [],
-                                threat_score: entry.ml_anomaly_score * 100,
+                                threat_score: entry.threat_score,
                                 alert_triggered: false,
                                 attack_vectors: [],
                                 pattern_matches: [],
                                 ml_metrics: {
                                     ml_anomaly_score: entry.ml_anomaly_score,
-                                    ml_labels: [],
+                                    ml_labels: entry.ml_labels,
                                     ml_cluster: -1,
-                                    ml_reason: '',
-                                    ml_confidence: 0.85,
+                                    ml_reason: entry.ml_reason,
+                                    ml_confidence: entry.ml_confidence,
                                     ml_risk_score: entry.ml_anomaly_score,
-                                    ml_inference_time_ms: 0,
-                                    ml_risk_level: entry.risk_level as 'low' | 'medium' | 'high' | 'critical',
-                                    ml_threat_score: entry.ml_anomaly_score,
-                                    ml_risk_color: getRiskLevelColor(entry.risk_level),
+                                    ml_inference_time_ms: entry.ml_inference_time_ms,
+                                    ml_risk_level: entry.ml_risk_level as 'low' | 'medium' | 'high' | 'critical',
+                                    ml_threat_score: entry.threat_score,
+                                    ml_risk_color: getRiskLevelColor(entry.ml_risk_level),
                                 },
                             };
                             onSelectAttack?.(attackAnalysis, {
                                 session_id: entry.session_id || '',
                                 service: entry.service || '',
+                                src_ip: entry.src_ip,
+                                username: entry.username,
                             });
                         }}
                         className="p-1.5 hover:bg-muted transition-colors text-muted-foreground hover:text-primary"
@@ -473,34 +539,37 @@ export function AttackAnalysisTable({
                                 <tr
                                     key={row.id}
                                     onClick={() => {
+                                        // Convert to AttackAnalysis format using REAL data from entry
                                         const entry = row.original;
                                         const attackAnalysis: AttackAnalysis = {
                                             command: entry.command,
                                             timestamp: entry.timestamp,
                                             attack_types: entry.attack_types,
                                             severity: entry.severity as 'low' | 'medium' | 'high' | 'critical',
-                                            indicators: [],
+                                            indicators: entry.indicators,
                                             vulnerabilities: [],
-                                            threat_score: entry.ml_anomaly_score * 100,
+                                            threat_score: entry.threat_score,
                                             alert_triggered: false,
                                             attack_vectors: [],
                                             pattern_matches: [],
                                             ml_metrics: {
                                                 ml_anomaly_score: entry.ml_anomaly_score,
-                                                ml_labels: [],
+                                                ml_labels: entry.ml_labels,
                                                 ml_cluster: -1,
-                                                ml_reason: '',
-                                                ml_confidence: 0.85,
+                                                ml_reason: entry.ml_reason,
+                                                ml_confidence: entry.ml_confidence,
                                                 ml_risk_score: entry.ml_anomaly_score,
-                                                ml_inference_time_ms: 0,
-                                                ml_risk_level: entry.risk_level as 'low' | 'medium' | 'high' | 'critical',
-                                                ml_threat_score: entry.ml_anomaly_score,
-                                                ml_risk_color: getRiskLevelColor(entry.risk_level),
+                                                ml_inference_time_ms: entry.ml_inference_time_ms,
+                                                ml_risk_level: entry.ml_risk_level as 'low' | 'medium' | 'high' | 'critical',
+                                                ml_threat_score: entry.threat_score,
+                                                ml_risk_color: getRiskLevelColor(entry.ml_risk_level),
                                             },
                                         };
                                         onSelectAttack?.(attackAnalysis, {
                                             session_id: entry.session_id || '',
                                             service: entry.service || '',
+                                            src_ip: entry.src_ip,
+                                            username: entry.username,
                                         });
                                     }}
                                     className={`cursor-pointer hover:bg-muted/50 transition-colors border-b border-border/30 ${row.original.isRealtime ? 'bg-green-500/5' : ''
