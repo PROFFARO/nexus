@@ -109,11 +109,14 @@ export function AttackAnalysisTable({
             }),
             columnHelper.accessor('command', {
                 header: 'Command',
-                cell: (info) => (
-                    <code className="text-xs bg-muted px-2 py-1 rounded font-mono max-w-[300px] truncate block">
-                        {info.getValue().slice(0, 60)}{info.getValue().length > 60 ? '...' : ''}
-                    </code>
-                ),
+                cell: (info) => {
+                    const cmd = info.getValue() || '';
+                    return (
+                        <code className="text-xs bg-muted px-2 py-1 rounded font-mono max-w-[300px] truncate block">
+                            {cmd.slice(0, 60)}{cmd.length > 60 ? '...' : ''}
+                        </code>
+                    );
+                },
             }),
             columnHelper.accessor((row) => row.ml_metrics?.ml_anomaly_score ?? 0, {
                 id: 'ml_score',
@@ -168,12 +171,12 @@ export function AttackAnalysisTable({
             columnHelper.accessor('attack_types', {
                 header: 'Attack Types',
                 cell: (info) => {
-                    const types = info.getValue();
+                    const types = info.getValue() || [];
                     if (!types.length) return <span className="text-muted-foreground text-xs">—</span>;
                     return (
                         <div className="flex flex-wrap gap-1">
-                            {types.slice(0, 2).map((type) => (
-                                <Badge key={type} variant="secondary" className="text-xs">
+                            {types.slice(0, 2).map((type, idx) => (
+                                <Badge key={`${type}-${idx}`} variant="secondary" className="text-xs">
                                     {type.replace(/_/g, ' ')}
                                 </Badge>
                             ))}
@@ -276,8 +279,8 @@ export function AttackAnalysisTable({
                                 key={svc}
                                 onClick={() => setSelectedService(svc === 'all' ? undefined : svc)}
                                 className={`px-4 py-1.5 text-sm font-medium transition-all ${(selectedService === svc || (svc === 'all' && !selectedService))
-                                        ? 'bg-primary text-primary-foreground'
-                                        : 'bg-transparent hover:bg-muted text-muted-foreground'
+                                    ? 'bg-primary text-primary-foreground'
+                                    : 'bg-transparent hover:bg-muted text-muted-foreground'
                                     }`}
                             >
                                 {svc.toUpperCase()}

@@ -177,10 +177,10 @@ export function AttackDetailModal({
                                         <span className="text-sm font-medium">ML Analysis Reason</span>
                                     </div>
                                     <p className="text-sm text-muted-foreground">{ml.ml_reason}</p>
-                                    {ml.ml_labels.length > 0 && (
+                                    {(ml.ml_labels?.length || 0) > 0 && (
                                         <div className="flex flex-wrap gap-1 mt-3">
-                                            {ml.ml_labels.map((label) => (
-                                                <Badge key={label} variant="secondary" className="text-xs">
+                                            {(ml.ml_labels || []).map((label, idx) => (
+                                                <Badge key={`${label}-${idx}`} variant="secondary" className="text-xs">
                                                     {label}
                                                 </Badge>
                                             ))}
@@ -190,17 +190,17 @@ export function AttackDetailModal({
                             )}
 
                             {/* Attack Types & Indicators */}
-                            {(attack.attack_types.length > 0 || attack.indicators.length > 0) && (
+                            {((attack.attack_types?.length || 0) > 0 || (attack.indicators?.length || 0) > 0) && (
                                 <div className="grid gap-4 sm:grid-cols-2">
-                                    {attack.attack_types.length > 0 && (
+                                    {(attack.attack_types?.length || 0) > 0 && (
                                         <div>
                                             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                                 Attack Types
                                             </label>
                                             <div className="flex flex-wrap gap-2 mt-2">
-                                                {attack.attack_types.map((type) => (
+                                                {(attack.attack_types || []).map((type, idx) => (
                                                     <Badge
-                                                        key={type}
+                                                        key={`${type}-${idx}`}
                                                         variant="destructive"
                                                         className="text-xs"
                                                     >
@@ -210,20 +210,20 @@ export function AttackDetailModal({
                                             </div>
                                         </div>
                                     )}
-                                    {attack.indicators.length > 0 && (
+                                    {(attack.indicators?.length || 0) > 0 && (
                                         <div>
                                             <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                                 Indicators
                                             </label>
                                             <div className="flex flex-wrap gap-2 mt-2">
-                                                {attack.indicators.slice(0, 10).map((ind) => (
-                                                    <Badge key={ind} variant="outline" className="text-xs">
+                                                {(attack.indicators || []).slice(0, 10).map((ind, idx) => (
+                                                    <Badge key={`${ind}-${idx}`} variant="outline" className="text-xs">
                                                         {ind.replace(/_/g, ' ')}
                                                     </Badge>
                                                 ))}
-                                                {attack.indicators.length > 10 && (
+                                                {(attack.indicators?.length || 0) > 10 && (
                                                     <Badge variant="secondary" className="text-xs">
-                                                        +{attack.indicators.length - 10} more
+                                                        +{(attack.indicators?.length || 0) - 10} more
                                                     </Badge>
                                                 )}
                                             </div>
@@ -233,13 +233,13 @@ export function AttackDetailModal({
                             )}
 
                             {/* Pattern Matches */}
-                            {attack.pattern_matches.length > 0 && (
+                            {(attack.pattern_matches?.length || 0) > 0 && (
                                 <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                         Pattern Matches
                                     </label>
                                     <div className="mt-2 space-y-2">
-                                        {attack.pattern_matches.map((match, i) => (
+                                        {(attack.pattern_matches || []).map((match, i) => (
                                             <div
                                                 key={i}
                                                 className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/20 p-3"
@@ -265,13 +265,13 @@ export function AttackDetailModal({
                             )}
 
                             {/* Vulnerabilities */}
-                            {attack.vulnerabilities.length > 0 && (
+                            {(attack.vulnerabilities?.length || 0) > 0 && (
                                 <div>
                                     <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
                                         Vulnerabilities
                                     </label>
                                     <div className="mt-2 space-y-2">
-                                        {attack.vulnerabilities.map((vuln, i) => (
+                                        {(attack.vulnerabilities || []).map((vuln, i) => (
                                             <div
                                                 key={i}
                                                 className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-4"
