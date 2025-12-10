@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useSignIn } from "@clerk/nextjs";
+import { useSignIn, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
@@ -105,6 +105,7 @@ function FeatureCard({
 
 export default function SignInPage() {
     const { isLoaded, signIn, setActive } = useSignIn();
+    const { isSignedIn, isLoaded: authLoaded } = useAuth();
     const [email, setEmail] = useState("");
     const [password, setPassword] = useState("");
     const [showPassword, setShowPassword] = useState(false);
@@ -118,6 +119,22 @@ export default function SignInPage() {
     // Refs for vanish effect
     const emailInputRef = useRef<AnimatedAuthInputRef>(null);
     const passwordInputRef = useRef<AnimatedAuthInputRef>(null);
+
+    // Redirect if already signed in
+    useEffect(() => {
+        if (authLoaded && isSignedIn) {
+            router.push("/");
+        }
+    }, [authLoaded, isSignedIn, router]);
+
+    // Show loading while checking auth or redirecting
+    if (!authLoaded || isSignedIn) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+                <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
+            </div>
+        );
+    }
 
     // Validate single field immediately
     const validateSingleField = (field: "email" | "password", value: string) => {

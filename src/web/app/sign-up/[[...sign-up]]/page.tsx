@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import Link from "next/link";
-import { useSignUp } from "@clerk/nextjs";
+import { useSignUp, useAuth } from "@clerk/nextjs";
 import { useRouter } from "next/navigation";
 import { motion, AnimatePresence } from "framer-motion";
 import Image from "next/image";
@@ -108,6 +108,7 @@ function BenefitItem({
 
 export default function SignUpPage() {
     const { isLoaded, signUp, setActive } = useSignUp();
+    const { isSignedIn, isLoaded: authLoaded } = useAuth();
     const [firstName, setFirstName] = useState("");
     const [lastName, setLastName] = useState("");
     const [email, setEmail] = useState("");
@@ -127,6 +128,22 @@ export default function SignUpPage() {
     const lastNameInputRef = useRef<AnimatedAuthInputRef>(null);
     const emailInputRef = useRef<AnimatedAuthInputRef>(null);
     const passwordInputRef = useRef<AnimatedAuthInputRef>(null);
+
+    // Redirect if already signed in
+    useEffect(() => {
+        if (authLoaded && isSignedIn) {
+            router.push("/");
+        }
+    }, [authLoaded, isSignedIn, router]);
+
+    // Show loading while checking auth or redirecting
+    if (!authLoaded || isSignedIn) {
+        return (
+            <div className="min-h-screen flex items-center justify-center bg-[var(--background)]">
+                <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
+            </div>
+        );
+    }
 
     // Validate single field immediately
     const validateSingleField = (field: "firstName" | "lastName" | "email" | "password", value: string) => {

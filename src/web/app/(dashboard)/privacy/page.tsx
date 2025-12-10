@@ -53,7 +53,7 @@ export default function PrivacyPage() {
                 <section>
                     <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">6. Contact Us</h2>
                     <p>
-                        If you have any questions about this Privacy Policy, please contact us at privacy@nexus-security.io.
+                        If you have any questions about this Privacy Policy, please contact us at <a href="mailto:dayabindhani2005@gmail.com" className="text-blue-500 hover:underline">dayabindhani2005@gmail.com</a>.
                     </p>
                 </section>
             </div>

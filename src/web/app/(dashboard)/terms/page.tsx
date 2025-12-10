@@ -52,7 +52,7 @@ export default function TermsPage() {
                 <section>
                     <h2 className="text-2xl font-semibold mb-4 text-slate-900 dark:text-white">7. Contact Us</h2>
                     <p>
-                        If you have any questions about these Terms, please contact us at support@nexus-security.io.
+                        If you have any questions about these Terms, please contact us at <a href="mailto:dayabindhani2005@gmail.com" className="text-blue-500 hover:underline">dayabindhani2005@gmail.com</a>.
                     </p>
                 </section>
             </div>
