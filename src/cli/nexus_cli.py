@@ -935,6 +935,19 @@ except Exception as e:
                         })
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     continue
+            
+            # Find API process
+            for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+                try:
+                    cmdline = ' '.join(proc.info['cmdline'] or [])
+                    if "src.api.main" in cmdline:
+                        processes.append({
+                            'pid': proc.info['pid'],
+                            'name': "API Server",
+                            'cmdline': cmdline
+                        })
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
         except ImportError:
             pass
         
@@ -999,6 +1012,17 @@ except Exception as e:
                     print(f"  PID {proc['pid']}: {proc['name']}")
             else:
                 print("\n[INFO] No emulators running currently")
+                
+            # Check API status
+            import socket
+            try:
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.settimeout(1)
+                    result = s.connect_ex(('127.0.0.1', 8000))
+                    if result == 0:
+                         print(f"\n[INFO] API Server: [RUNNING] Port: 8000")
+            except:
+                pass
         
         
         return 0
@@ -1096,8 +1120,24 @@ except Exception as e:
             else:
                 failed_count += 1
         
+        # Start API Server
+        api_port = 8000
+        print(f"[INFO] Starting API Server on port {api_port}...")
+        try:
+            # Run as module to support relative imports
+            cmd = [sys.executable, "-m", "src.api.main"]
+            
+            import subprocess
+            # Run in background
+            subprocess.Popen(cmd, cwd=self.base_dir.parent)
+            print(f"[SUCCESS] API Server started on port {api_port}")
+            started_count += 1
+        except Exception as e:
+            print(f"[ERROR] Failed to start API Server: {e}")
+            failed_count += 1
+
         print(f"\n[SUMMARY]")
-        print(f"  Started: {started_count} service(s)")
+        print(f"  Started: {started_count} service(s) (including API)")
         if failed_count > 0:
             print(f"  Failed: {failed_count} service(s)")
         
