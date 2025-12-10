@@ -1,42 +1,20 @@
 'use client';
 
-import { useState, useEffect } from 'react';
-import {
-    IconRefresh,
-    IconServer,
-    IconSettings,
-} from '@tabler/icons-react';
+import { useState } from 'react';
+import { IconRefresh } from '@tabler/icons-react';
 import {
     MLStatsCards,
     AttackAnalysisTable,
     AttackDetailModal,
     MLMetricsCharts,
 } from '@/components/ml-analysis';
-import { AttackAnalysis, getActiveServices, ActiveService } from '@/lib/ml-data';
-import { Badge } from '@/components/ui/badge';
+import { AttackAnalysis } from '@/lib/ml-data';
 
 export default function MLAnalysisPage() {
     const [selectedAttack, setSelectedAttack] = useState<AttackAnalysis | null>(null);
     const [selectedSession, setSelectedSession] = useState<{ session_id: string; service: string } | undefined>();
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [activeServices, setActiveServices] = useState<ActiveService[]>([]);
-    const [serviceFilter, setServiceFilter] = useState<string | undefined>();
     const [isRefreshing, setIsRefreshing] = useState(false);
-
-    useEffect(() => {
-        async function fetchServices() {
-            try {
-                const services = await getActiveServices();
-                setActiveServices(services);
-            } catch (err) {
-                console.error('Failed to fetch active services:', err);
-            }
-        }
-
-        fetchServices();
-        const interval = setInterval(fetchServices, 30000);
-        return () => clearInterval(interval);
-    }, []);
 
     function handleSelectAttack(attack: AttackAnalysis, session?: { session_id: string; service: string }) {
         setSelectedAttack(attack);
@@ -64,34 +42,6 @@ export default function MLAnalysisPage() {
                     </div>
 
                     <div className="flex items-center gap-4">
-                        {/* Active Services Indicator */}
-                        <div className="flex items-center gap-2 border border-border/50 bg-card/50 px-4 py-2">
-                            <IconServer className="h-4 w-4 text-muted-foreground" />
-                            <span className="text-sm text-muted-foreground">Active:</span>
-                            {activeServices.length > 0 ? (
-                                <div className="flex gap-1">
-                                    {activeServices.map((svc) => (
-                                        <Badge
-                                            key={svc.service}
-                                            variant="outline"
-                                            className="uppercase text-xs cursor-pointer hover:bg-primary/10 rounded-none"
-                                            onClick={() => setServiceFilter(
-                                                serviceFilter === svc.service ? undefined : svc.service
-                                            )}
-                                            style={{
-                                                borderColor: serviceFilter === svc.service ? 'hsl(var(--primary))' : undefined,
-                                                backgroundColor: serviceFilter === svc.service ? 'hsl(var(--primary) / 0.1)' : undefined,
-                                            }}
-                                        >
-                                            {svc.service} ({svc.session_count})
-                                        </Badge>
-                                    ))}
-                                </div>
-                            ) : (
-                                <span className="text-xs text-muted-foreground">No sessions</span>
-                            )}
-                        </div>
-
                         <button
                             onClick={handleRefresh}
                             disabled={isRefreshing}
@@ -103,33 +53,14 @@ export default function MLAnalysisPage() {
                     </div>
                 </div>
 
-                {/* LLM Configuration Info */}
-                {activeServices.length > 0 && (
-                    <div className="flex flex-wrap gap-4">
-                        {activeServices.map((svc) => (
-                            <div
-                                key={svc.service}
-                                className="flex items-center gap-2 border border-border/30 bg-muted/30 px-3 py-1.5 text-xs"
-                            >
-                                <IconSettings className="h-3 w-3 text-muted-foreground" />
-                                <span className="uppercase font-medium">{svc.service}</span>
-                                <span className="text-muted-foreground">LLM:</span>
-                                <Badge variant="secondary" className="text-xs rounded-none">
-                                    {svc.config.llm_provider} / {svc.config.model_name}
-                                </Badge>
-                            </div>
-                        ))}
-                    </div>
-                )}
-
                 {/* Stats Cards */}
                 <section>
-                    <MLStatsCards service={serviceFilter} key={isRefreshing ? 'refresh' : 'normal'} />
+                    <MLStatsCards key={isRefreshing ? 'refresh' : 'normal'} />
                 </section>
 
                 {/* Charts */}
                 <section>
-                    <MLMetricsCharts service={serviceFilter} />
+                    <MLMetricsCharts />
                 </section>
 
                 {/* Attack Analysis Table */}
@@ -141,7 +72,6 @@ export default function MLAnalysisPage() {
                         </p>
                     </div>
                     <AttackAnalysisTable
-                        service={serviceFilter}
                         onSelectAttack={handleSelectAttack}
                     />
                 </section>

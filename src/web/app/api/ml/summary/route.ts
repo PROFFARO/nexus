@@ -179,11 +179,24 @@ function generateFallback(data: SummaryRequest): any {
     else if (anomalyScore > 0.6 || riskLevel === 'high') classification = 'MALICIOUS';
     else if (anomalyScore > 0.4 || riskLevel === 'medium') classification = 'SUSPICIOUS';
 
+    // Calculate dynamic confidence based on available data
+    let calculatedConfidence = data.ml_confidence || 0;
+    if (!calculatedConfidence || calculatedConfidence === 0) {
+        // Base confidence from anomaly score correlation
+        calculatedConfidence = 0.5 + (anomalyScore * 0.4);
+        // Boost if we have attack types detected
+        if (attackTypes.length > 0) calculatedConfidence += 0.1;
+        // Boost if we have pattern matches
+        if (data.pattern_matches && data.pattern_matches.length > 0) calculatedConfidence += 0.05;
+        // Cap at 0.95
+        calculatedConfidence = Math.min(0.95, calculatedConfidence);
+    }
+
     return {
         executive_summary: `${data.service?.toUpperCase()} honeypot captured command "${data.command.slice(0, 50)}..." with ${(anomalyScore * 100).toFixed(1)}% anomaly score. ${attackTypes.length > 0 ? `Detected attack types: ${attackTypes.join(', ')}.` : 'No specific attack patterns matched.'}`,
         threat_assessment: {
             classification,
-            confidence: data.ml_confidence || 0.75,
+            confidence: calculatedConfidence,
             reasoning: data.ml_reason || `Based on ML analysis with ${riskLevel} risk level and ${(anomalyScore * 100).toFixed(1)}% anomaly score.`
         },
         attack_analysis: {

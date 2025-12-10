@@ -104,18 +104,20 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
                         No risk data available
                     </div>
                 ) : (
-                    <ResponsiveContainer width="100%" height={250}>
-                        <PieChart>
+                    <ResponsiveContainer width="100%" height={320}>
+                        <PieChart margin={{ top: 20, right: 80, bottom: 20, left: 80 }}>
                             <Pie
                                 data={riskData}
                                 cx="50%"
-                                cy="50%"
-                                innerRadius={60}
-                                outerRadius={100}
+                                cy="45%"
+                                innerRadius={50}
+                                outerRadius={80}
                                 paddingAngle={4}
                                 dataKey="value"
-                                label={({ name, value }) => `${name}: ${value}`}
-                                labelLine={{ stroke: '#64748b' }}
+                                label={({ name, value, percent }) =>
+                                    value > 0 ? `${name}: ${value}` : ''
+                                }
+                                labelLine={{ stroke: '#64748b', strokeWidth: 1 }}
                             >
                                 {riskData.map((entry, index) => (
                                     <Cell key={`cell-${index}`} fill={entry.color} />
@@ -132,8 +134,10 @@ export function MLMetricsCharts({ service, refreshInterval = 5000 }: MLMetricsCh
                                 labelStyle={{ color: 'hsl(var(--foreground))' }}
                             />
                             <Legend
-                                wrapperStyle={{ color: '#94a3b8' }}
-                                formatter={(value) => <span style={{ color: '#94a3b8' }}>{value}</span>}
+                                verticalAlign="bottom"
+                                height={36}
+                                wrapperStyle={{ paddingTop: '16px' }}
+                                formatter={(value) => <span style={{ color: '#94a3b8', fontSize: '12px' }}>{value}</span>}
                             />
                         </PieChart>
                     </ResponsiveContainer>

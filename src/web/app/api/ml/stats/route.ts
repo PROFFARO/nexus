@@ -139,18 +139,34 @@ export async function GET(request: NextRequest) {
 
             for (const attack of attacks) {
                 attackCount++;
-                const mlScore = attack.ml_anomaly_score || 0;
+
+                // Get ML score from multiple possible fields
+                const mlScore = attack.ml_anomaly_score || attack.anomaly_score || attack.threat_score || 0;
                 totalMLScore += mlScore;
 
-                if (attack.ml_inference_time_ms) {
-                    totalInferenceTime += attack.ml_inference_time_ms;
+                if (attack.ml_inference_time_ms || attack.inference_time_ms) {
+                    totalInferenceTime += attack.ml_inference_time_ms || attack.inference_time_ms || 0;
                     inferenceCount++;
                 }
 
-                const riskLevel = attack.ml_risk_level || (mlScore > 0.7 ? 'high' : mlScore > 0.4 ? 'medium' : 'low');
+                // Determine risk level from multiple sources with fallback calculation
+                let riskLevel = attack.ml_risk_level || attack.risk_level || attack.severity;
+
+                // If no explicit risk level, calculate from anomaly score
+                if (!riskLevel || riskLevel === 'unknown') {
+                    if (mlScore > 0.7) riskLevel = 'high';
+                    else if (mlScore > 0.4) riskLevel = 'medium';
+                    else riskLevel = 'low';
+                }
+
+                // Normalize risk level naming
+                riskLevel = riskLevel.toLowerCase();
+                if (riskLevel === 'critical') riskLevel = 'high';
+
+                // Update risk distribution
                 stats.risk_distribution[riskLevel] = (stats.risk_distribution[riskLevel] || 0) + 1;
 
-                if (riskLevel === 'high' || riskLevel === 'critical') {
+                if (riskLevel === 'high') {
                     stats.high_risk_count++;
                 } else if (riskLevel === 'medium') {
                     stats.medium_risk_count++;
@@ -158,14 +174,20 @@ export async function GET(request: NextRequest) {
                     stats.low_risk_count++;
                 }
 
-                if (attack.attack_types) {
+                // Count attacks with attack_types
+                if (attack.attack_types && attack.attack_types.length > 0) {
                     stats.total_attacks++;
                     for (const type of attack.attack_types) {
                         stats.attack_type_distribution[type] = (stats.attack_type_distribution[type] || 0) + 1;
                     }
+                } else {
+                    // Still count as an attack if it has non-zero ML score
+                    if (mlScore > 0) {
+                        stats.total_attacks++;
+                    }
                 }
 
-                const severity = attack.severity || 'low';
+                const severity = attack.severity || riskLevel || 'low';
                 stats.severity_distribution[severity] = (stats.severity_distribution[severity] || 0) + 1;
             }
         }

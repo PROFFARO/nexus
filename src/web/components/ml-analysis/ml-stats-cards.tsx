@@ -22,30 +22,55 @@ interface StatsCardProps {
 
 function StatsCard({ title, value, subtitle, icon, color }: StatsCardProps) {
     return (
-        <div className="relative overflow-hidden border border-border/50 bg-card p-6 shadow-sm">
-            {/* Gradient background */}
+        <div
+            className="relative overflow-hidden bg-card border border-border/30 shadow-lg hover:shadow-xl transition-all duration-300 group"
+            style={{
+                minHeight: '140px',
+                background: 'linear-gradient(145deg, hsl(var(--card)) 0%, hsl(var(--card) / 0.8) 100%)',
+            }}
+        >
+            {/* Gradient accent line at top */}
             <div
-                className="absolute inset-0 opacity-5"
-                style={{
-                    background: `linear-gradient(135deg, ${color} 0%, transparent 60%)`,
-                }}
+                className="absolute top-0 left-0 right-0 h-1"
+                style={{ background: `linear-gradient(90deg, ${color}, ${color}80)` }}
             />
 
-            <div className="relative flex items-start justify-between">
-                <div className="space-y-2">
-                    <p className="text-sm font-medium text-muted-foreground">{title}</p>
-                    <p className="text-3xl font-bold tracking-tight" style={{ color }}>
+            {/* Subtle background glow */}
+            <div
+                className="absolute -right-8 -top-8 w-32 h-32 opacity-10 blur-2xl transition-opacity group-hover:opacity-20"
+                style={{ background: color }}
+            />
+
+            <div className="relative p-5 h-full flex flex-col justify-between">
+                {/* Header with icon */}
+                <div className="flex items-start justify-between mb-3">
+                    <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                        {title}
+                    </p>
+                    <div
+                        className="p-2.5 backdrop-blur-sm border border-white/10"
+                        style={{
+                            backgroundColor: `${color}15`,
+                            boxShadow: `0 0 20px ${color}20`,
+                        }}
+                    >
+                        <div style={{ color }} className="opacity-90">{icon}</div>
+                    </div>
+                </div>
+
+                {/* Value */}
+                <div className="space-y-1">
+                    <p
+                        className="text-3xl font-bold tracking-tight leading-none"
+                        style={{ color }}
+                    >
                         {value}
                     </p>
                     {subtitle && (
-                        <p className="text-xs text-muted-foreground">{subtitle}</p>
+                        <p className="text-[11px] text-muted-foreground/80 font-medium">
+                            {subtitle}
+                        </p>
                     )}
-                </div>
-                <div
-                    className="p-3"
-                    style={{ backgroundColor: `${color}15` }}
-                >
-                    <div style={{ color }}>{icon}</div>
                 </div>
             </div>
         </div>
@@ -165,11 +190,9 @@ export function MLStatsCards({ service, refreshInterval = 3000 }: MLStatsCardsPr
     ];
 
     return (
-        <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+        <div className="grid gap-5 grid-cols-2 md:grid-cols-3 xl:grid-cols-6">
             {cards.map((card) => (
-                <div key={card.title}>
-                    <StatsCard {...card} />
-                </div>
+                <StatsCard key={card.title} {...card} />
             ))}
         </div>
     );

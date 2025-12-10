@@ -138,41 +138,53 @@ export function AttackDetailModal({
 
     return (
         <>
-            {/* Backdrop */}
+            {/* Backdrop - covers entire viewport */}
             <div
                 onClick={onClose}
-                className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm"
-                style={{ animation: 'fadeIn 0.15s ease-out' }}
+                className="fixed inset-0 z-[999] bg-black/80"
+                style={{
+                    backdropFilter: 'blur(8px)',
+                    WebkitBackdropFilter: 'blur(8px)',
+                }}
             />
 
-            {/* Modal */}
+            {/* Modal Container */}
             <div
-                className="fixed z-50 bg-card border border-border shadow-2xl overflow-hidden flex flex-col"
+                className="fixed z-[1000] flex flex-col overflow-hidden bg-background border border-border shadow-2xl"
                 style={{
-                    top: '5%',
+                    top: '50%',
                     left: '50%',
-                    transform: 'translateX(-50%)',
-                    width: 'min(95vw, 900px)',
-                    maxHeight: '90vh',
-                    animation: 'slideIn 0.2s ease-out',
+                    transform: 'translate(-50%, -50%)',
+                    width: 'min(94vw, 900px)',
+                    maxHeight: '85vh',
                 }}
             >
+                {/* Top accent line */}
+                <div
+                    className="h-1 w-full"
+                    style={{ background: `linear-gradient(90deg, ${riskColor}, ${riskColor}40)` }}
+                />
+
                 {/* Header */}
-                <div className="flex items-center justify-between border-b border-border bg-muted/50 px-6 py-4 shrink-0">
+                <div className="flex items-center justify-between px-6 py-4 shrink-0 border-b border-border bg-muted/50">
                     <div className="flex items-center gap-4">
                         <div
-                            className="p-2.5"
+                            className="p-3 border border-border"
                             style={{ backgroundColor: `${riskColor}15` }}
                         >
                             <IconShieldExclamation className="h-6 w-6" style={{ color: riskColor }} />
                         </div>
                         <div>
-                            <h2 className="text-lg font-semibold tracking-tight">Attack Analysis</h2>
-                            <div className="flex items-center gap-3 mt-0.5">
-                                <Badge variant="outline" className="uppercase font-mono text-xs" style={{ borderColor: riskColor, color: riskColor }}>
+                            <h2 className="text-xl font-bold tracking-tight">Attack Analysis</h2>
+                            <div className="flex items-center gap-3 mt-1.5">
+                                <Badge
+                                    variant="outline"
+                                    className="uppercase font-mono text-xs px-2.5 py-0.5 border-2 font-semibold"
+                                    style={{ borderColor: riskColor, color: riskColor }}
+                                >
                                     {session?.service || 'UNKNOWN'}
                                 </Badge>
-                                <span className="text-sm text-muted-foreground">
+                                <span className="text-sm text-muted-foreground/80 font-medium">
                                     {formatTimestamp(attack.timestamp)}
                                 </span>
                             </div>
@@ -181,24 +193,25 @@ export function AttackDetailModal({
                     <button
                         onClick={onClose}
                         className="p-2 hover:bg-muted transition-colors"
+                        aria-label="Close modal"
                     >
-                        <IconX className="h-5 w-5" />
+                        <IconX className="h-5 w-5 text-muted-foreground hover:text-foreground" />
                     </button>
                 </div>
 
                 {/* Scrollable Content */}
-                <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-background">
                     {/* Command Section */}
                     <Section title="COMMAND" icon={<IconTerminal2 className="h-4 w-4" />}>
                         <div className="relative">
-                            <code className="block bg-zinc-950 border border-border p-4 font-mono text-sm text-green-400 overflow-x-auto whitespace-pre-wrap break-all">
+                            <code className="block bg-zinc-900 dark:bg-zinc-950 border border-border p-4 font-mono text-sm text-emerald-600 dark:text-emerald-400 overflow-x-auto whitespace-pre-wrap break-all">
                                 {attack.command}
                             </code>
                             <button
                                 onClick={copyCommand}
-                                className="absolute top-2 right-2 p-1.5 bg-zinc-800 hover:bg-zinc-700 transition-colors text-zinc-400 hover:text-white"
+                                className="absolute top-2 right-2 p-1.5 bg-zinc-700 hover:bg-zinc-600 transition-colors text-zinc-300 hover:text-white"
                             >
-                                {copied ? <IconClipboardCheck className="h-4 w-4 text-green-500" /> : <IconClipboard className="h-4 w-4" />}
+                                {copied ? <IconClipboardCheck className="h-4 w-4 text-emerald-400" /> : <IconClipboard className="h-4 w-4" />}
                             </button>
                         </div>
                     </Section>
@@ -258,9 +271,9 @@ export function AttackDetailModal({
                             </div>
 
                             {/* Risk Level Indicator */}
-                            <div className="mt-4 flex items-center gap-3 p-3 border border-border bg-muted/30">
+                            <div className="mt-4 flex items-center gap-3 p-3 border border-border bg-card">
                                 <div className="h-3 w-3 animate-pulse" style={{ backgroundColor: riskColor }} />
-                                <span className="text-sm font-medium">Risk Level:</span>
+                                <span className="text-sm font-medium text-foreground">Risk Level:</span>
                                 <span className="text-sm font-bold uppercase" style={{ color: riskColor }}>
                                     {ml.ml_risk_level || 'Unknown'}
                                 </span>
@@ -533,12 +546,12 @@ interface MetadataItemProps {
 
 function MetadataItem({ icon, label, value }: MetadataItemProps) {
     return (
-        <div className="p-3 bg-muted/30 border border-border">
+        <div className="p-3 bg-card border border-border">
             <div className="flex items-center gap-2 mb-1">
                 <span className="text-muted-foreground">{icon}</span>
                 <span className="text-xs text-muted-foreground">{label}</span>
             </div>
-            <p className="text-sm font-medium truncate" title={value}>{value}</p>
+            <p className="text-sm font-medium text-foreground truncate" title={value}>{value}</p>
         </div>
     );
 }
@@ -553,7 +566,7 @@ interface MetricCardProps {
 
 function MetricCard({ icon, label, value, color }: MetricCardProps) {
     return (
-        <div className="border border-border bg-muted/20 p-4">
+        <div className="border border-border bg-card p-4">
             <div className="flex items-center gap-2 mb-2">
                 <div style={{ color }}>{icon}</div>
                 <span className="text-xs text-muted-foreground">{label}</span>
