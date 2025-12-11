@@ -905,6 +905,66 @@ npm run build
 npm start
 ```
 
+**Or use the CLI (recommended):**
+
+```bash
+# Start web dashboard directly
+python -m src.cli.nexus_cli web
+
+# With custom port
+python -m src.cli.nexus_cli web --port 3001
+
+# Install dependencies and start
+python -m src.cli.nexus_cli web --install
+
+# Production mode
+python -m src.cli.nexus_cli web --build --prod
+```
+
+### Environment Configuration
+
+**Step 1:** Copy the example environment file:
+
+```bash
+cd src/web
+cp .env.example .env.local
+```
+
+**Step 2:** Edit `.env.local` and configure your API keys:
+
+```ini
+# FastAPI Backend URL
+NEXT_PUBLIC_API_URL=http://localhost:8000
+
+# LLM Provider Configuration
+# Choose one provider and set the corresponding API key
+
+# Option 1: Google Gemini (Recommended)
+LLM_PROVIDER=gemini
+GOOGLE_API_KEY=your_google_api_key_here
+
+# Option 2: OpenAI
+# LLM_PROVIDER=openai
+# OPENAI_API_KEY=sk-your-openai-key-here
+
+# Option 3: Azure OpenAI
+# LLM_PROVIDER=azure
+# AZURE_OPENAI_API_KEY=your-azure-key
+# AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com
+# AZURE_OPENAI_DEPLOYMENT=gpt-4o
+```
+
+### Get API Keys
+
+| Provider | Link | Free Tier |
+|----------|------|-----------|
+| **Google Gemini** | [Get API Key →](https://aistudio.google.com/app/apikey) | ✅ Free tier available |
+| **OpenAI** | [Get API Key →](https://platform.openai.com/api-keys) | ❌ Pay-as-you-go |
+| **Azure OpenAI** | [Apply for Access →](https://azure.microsoft.com/en-us/products/ai-services/openai-service) | ❌ Requires Azure subscription |
+| **Ollama (Local)** | [Download →](https://ollama.ai/download) | ✅ Free (runs locally) |
+
+> 💡 **Tip:** For local development without API costs, use **Ollama** with a local LLM like `llama3.2`.
+
 ### Dashboard Features
 
 - **Real-time Attack Feed** - Live WebSocket updates
