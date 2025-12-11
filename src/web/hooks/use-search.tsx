@@ -54,10 +54,10 @@ export function SearchProvider({ children }: { children: React.ReactNode }) {
         }
 
         const timer = setTimeout(() => {
-            const searchResults = search(query, 12);
+            const searchResults = search(query, 20);
             setResults(searchResults);
             setSelectedIndex(0);
-        }, 150);
+        }, 100);
 
         return () => clearTimeout(timer);
     }, [query]);

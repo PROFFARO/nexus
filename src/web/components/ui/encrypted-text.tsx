@@ -57,18 +57,25 @@ export const EncryptedText: React.FC<EncryptedTextProps> = ({
   const ref = useRef<HTMLSpanElement>(null);
   const isInView = useInView(ref, { once: true });
 
+  // State to track if component has mounted (for hydration safety)
+  const [hasMounted, setHasMounted] = useState(false);
   const [revealCount, setRevealCount] = useState<number>(0);
   const animationFrameRef = useRef<number | null>(null);
   const startTimeRef = useRef<number>(0);
   const lastFlipTimeRef = useRef<number>(0);
-  const scrambleCharsRef = useRef<string[]>(
-    text ? generateGibberishPreservingSpaces(text, charset).split("") : [],
-  );
+  // Initialize with the actual text (not scrambled) to avoid hydration mismatch
+  const scrambleCharsRef = useRef<string[]>(text ? text.split("") : []);
+
+  // Mark as mounted after hydration
+  useEffect(() => {
+    setHasMounted(true);
+  }, []);
 
   useEffect(() => {
-    if (!isInView) return;
+    // Only start animation after component has mounted and is in view
+    if (!hasMounted || !isInView) return;
 
-    // Reset state for a fresh animation whenever dependencies change
+    // Now it's safe to generate random scrambled text
     const initial = text
       ? generateGibberishPreservingSpaces(text, charset)
       : "";
@@ -122,7 +129,7 @@ export const EncryptedText: React.FC<EncryptedTextProps> = ({
         cancelAnimationFrame(animationFrameRef.current);
       }
     };
-  }, [isInView, text, revealDelayMs, charset, flipDelayMs]);
+  }, [hasMounted, isInView, text, revealDelayMs, charset, flipDelayMs]);
 
   if (!text) return null;
 
@@ -134,13 +141,22 @@ export const EncryptedText: React.FC<EncryptedTextProps> = ({
       role="text"
     >
       {text.split("").map((char, index) => {
+        // Before mount or before animation starts, show the real text
+        // This ensures server and client render the same content initially
+        if (!hasMounted || !isInView) {
+          return (
+            <span key={index} className={cn(revealedClassName)}>
+              {char}
+            </span>
+          );
+        }
+
         const isRevealed = index < revealCount;
         const displayChar = isRevealed
           ? char
           : char === " "
             ? " "
-            : (scrambleCharsRef.current[index] ??
-              generateRandomCharacter(charset));
+            : (scrambleCharsRef.current[index] ?? char);
 
         return (
           <span
