@@ -69,8 +69,8 @@ export default function DashboardLayout({
             ),
         },
         {
-            label: "Vulnerabilities",
-            href: "/vulnerabilities",
+            label: "Sessions",
+            href: "/sessions",
             icon: (
                 <IconShieldLock className="h-5 w-5 flex-shrink-0" />
             ),
