@@ -1,1011 +1,988 @@
-# 🚀 NEXUS: AI-Enhanced Honeypot Platform 🚀
-
 <div align="center">
 
-🔥 **Enterprise-grade cybersecurity honeypot with AI-powered adaptive responses, ML-driven threat detection, and real-time anomaly analysis** 🔥
+# 🛡️ NEXUS AI-Enhanced Honeypot System
 
-📚 **Documentation** 📚
-======================
-[Quick Start](#-quick-start) • [Features](#-core-features) • [Installation](#-installation--setup) • [CLI Guide](#-cli-reference) • [Configuration](#️-configuration) • [Contributing](#-contributing-to-nexus) • [Docs](#-documentation)
+### *Advanced Multi-Protocol Threat Intelligence Platform*
+
+[![MIT License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/Python-3.10+-blue.svg)](https://python.org)
+[![Next.js 15](https://img.shields.io/badge/Next.js-15-black.svg)](https://nextjs.org)
+[![LLM Powered](https://img.shields.io/badge/LLM-Powered-purple.svg)](#llm-integration)
+
+<img src="nexus-components-aarch.jpg" alt="NEXUS Architecture" width="700"/>
+
+**An AI-powered honeypot platform combining machine learning threat detection with LLM-driven adaptive responses across SSH, FTP, and MySQL protocols.**
+
+[Quick Start](#-quick-start) • [Architecture](#-system-architecture) • [ML Models](#-machine-learning-pipeline) • [Services](#-service-emulators) • [API](#-api-reference) • [Dashboard](#-web-dashboard)
 
 </div>
 
 ---
 
+## 📑 Table of Contents
+
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Quick Start](#-quick-start)
+- [System Architecture](#-system-architecture)
+- [Machine Learning Pipeline](#-machine-learning-pipeline)
+- [Service Emulators](#-service-emulators)
+- [Datasets](#-datasets)
+- [Configuration](#-configuration)
+- [CLI Reference](#-cli-reference)
+- [API Reference](#-api-reference)
+- [Web Dashboard](#-web-dashboard)
+- [Author](#-author)
+- [License](#-license)
+
+---
+
 ## 🎯 Overview
 
-NEXUS is a next-generation honeypot platform engineered for cybersecurity professionals and researchers. It combines artificial intelligence with machine learning to simulate realistic corporate environments, attract sophisticated attackers, and provide comprehensive threat analysis with forensic-grade evidence collection.
+NEXUS is a next-generation honeypot system that leverages **artificial intelligence** and **large language models** to create highly realistic service emulations. Unlike traditional honeypots with static responses, NEXUS generates dynamic, context-aware interactions that adapt to attacker behavior in real-time.
 
-**Key Differentiators:**
-- First AI-native honeypot built from ground up with LLM integration
-- Real-time ML anomaly detection with 6 advanced algorithms
-- Multi-protocol support: SSH, FTP, MySQL
-- Enterprise-ready with complete MLOps pipeline
-- Production-tested with comprehensive forensic capabilities
-
-## ✨ Core Features
-
-### 🤖 AI & Machine Learning
-- **Multi-LLM Support**: OpenAI, Google Gemini, Azure OpenAI, AWS Bedrock, Ollama (local)
-- **6 ML Algorithms**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost
-- **Real-time Anomaly Detection**: Dynamic threat scoring (0.0-1.0) for every interaction
-- **Behavioral Analysis**: Sophisticated attacker profiling and intent classification
-
-### 🌐 Protocol Support
-- **SSH Honeypot**: Full protocol emulation with command execution simulation
-- **FTP Honeypot**: Directory traversal, bounce attacks, file transfer monitoring
-- **MySQL**: Protocol-compliant database honeypot with query analysis
-
-### 🏢 Enterprise Capabilities
-- **Forensic Chain of Custody**: Legal-grade evidence documentation with integrity verification
-- **Session Recording**: Complete interaction logs with replay capability
-- **ML-Enhanced Reports**: JSON, HTML, and interactive analysis formats
-- **Scalable Architecture**: Horizontal scaling with load balancing support
-
-### 👨‍💻 Developer Experience
-- **Unified CLI Interface**: Single entry point for all services
-- **Comprehensive Logging**: Structured logging with multiple output formats
-- **Configuration Management**: INI-based configs with environment variable overrides
-- **MLOps Pipeline**: Train, evaluate, predict, and update models via CLI
-
----
-
-## 🧠 Machine Learning & Threat Detection
-
-### 🎯 Real-time Anomaly Detection
-
-NEXUS includes 6 advanced ML algorithms for comprehensive threat detection:
-
-| Algorithm | Type | Use Case | Accuracy |
-|-----------|------|----------|----------|
-| Isolation Forest | Anomaly Detection | Outlier detection in command patterns | 94.2% |
-| One-Class SVM | Anomaly Detection | Non-linear anomaly boundary detection | 91.8% |
-| Local Outlier Factor (LOF) | Anomaly Detection | Local density-based anomaly detection | 89.5% |
-| HDBSCAN | Clustering | Hierarchical density-based clustering | 87.3% |
-| K-Means | Clustering | Centroid-based attack pattern clustering | 85.7% |
-| XGBoost | Supervised Learning | Multi-class threat classification | 96.1% |
-
-### ⚡ ML-Enhanced CLI Commands
-
-```bash
-# ML Analysis for Logs
-python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
-python src/cli/nexus_cli.py logs mysql --filter anomalies --ml-analysis
-
-# ML-Enhanced Reports
-python src/cli/nexus_cli.py report ssh --ml-enhanced --include-ml-insights
-python src/cli/nexus_cli.py report ftp --ml-enhanced --anomaly-threshold 0.9
-
-# ML Operations
-python src/cli/nexus_cli.py ml train ssh --algorithm all
-python src/cli/nexus_cli.py ml predict ssh --input "rm -rf /"
-python src/cli/nexus_cli.py ml extract ftp --datasets-dir datasets
-python src/cli/nexus_cli.py ml update-models all --force
-```
-
-### 📊 ML Insights & Analytics
-
-- **Anomaly Scoring**: Real-time threat scoring (0.0-1.0) for every command/request
-- **Risk Assessment**: Dynamic risk levels (Low, Medium, High, Critical)
-- **Pattern Recognition**: Automatic detection of attack patterns and techniques
-- **Threat Intelligence**: ML-generated insights and recommendations
-- **Temporal Analysis**: Time-series analysis of attack patterns
-- **Geographic Indicators**: IP-based threat intelligence integration
-
-### ⚙️ ML Configuration Options
-
-| Option | Description | Default | Range |
-|--------|-------------|---------|-------|
-| `--ml-analysis` | Enable ML-based analysis | False | True/False |
-| `--anomaly-threshold` | Anomaly detection threshold | 0.7 | 0.0-1.0 |
-| `--ml-insights` | Show detailed ML insights | False | True/False |
-| `--high-risk-only` | Filter high-risk sessions only | False | True/False |
-| `--ml-enhanced` | Generate ML-enhanced reports | False | True/False |
-
-### 🎯 Pre-trained Models
-
-Pre-trained models are included for all 4 services:
-
-```
-models/
-├── ssh/                   # SSH-specific ML models
-│   ├── anomaly_detectors/ # Isolation Forest, One-Class SVM, LOF
-│   ├── clustering/        # HDBSCAN, K-Means
-│   ├── supervised/        # XGBoost classifier
-│   ├── embeddings/        # Command embeddings
-│   └── scalers/          # Feature scalers
-├── ftp/                   # FTP-specific ML models
-└── mysql/                 # MySQL-specific ML models
+```mermaid
+graph TB
+    subgraph Attackers
+        A1[🔴 Attacker 1]
+        A2[🔴 Attacker 2]
+        A3[🔴 Attacker N]
+    end
+    
+    subgraph NEXUS["🛡️ NEXUS Platform"]
+        SSH[SSH Honeypot<br/>Port 22/8022]
+        FTP[FTP Honeypot<br/>Port 21/2121]
+        MySQL[MySQL Honeypot<br/>Port 3306/3307]
+        
+        subgraph AI["🧠 AI Engine"]
+            ML[ML Detector]
+            LLM[LLM Response Generator]
+            EMB[Embedding Similarity]
+        end
+        
+        subgraph Storage["💾 Data Layer"]
+            VFS[Virtual Filesystem]
+            VDB[Virtual Database]
+            LOGS[Session Logs]
+        end
+    end
+    
+    subgraph Analysis["📊 Analysis"]
+        API[REST API]
+        WEB[Web Dashboard]
+        REPORTS[Security Reports]
+    end
+    
+    A1 --> SSH
+    A2 --> FTP
+    A3 --> MySQL
+    
+    SSH --> AI
+    FTP --> AI
+    MySQL --> AI
+    
+    AI --> Storage
+    Storage --> API
+    API --> WEB
+    API --> REPORTS
 ```
 
 ---
 
-## 🕸️ Service Emulators
+## ✨ Key Features
 
-### SSH Honeypot
-
-**Status**: Production-ready with full AI + ML integration
-
-**Key Features**:
-- AI-powered adaptive responses using multiple LLM providers
-- ML-powered real-time anomaly detection with 6 algorithms
-- Dynamic threat scoring (0.0-1.0) for every command
-- Real-time attack pattern recognition and classification
-- Vulnerability exploitation detection and analysis
-- ML-enhanced forensic analysis with behavioral profiling
-- Forensic chain of custody logging with complete audit trail
-- Session recording and replay capability
-- File upload/download monitoring with hash analysis
-- Behavioral analysis and sophisticated threat scoring
-- Corporate environment simulation (NexusGames Studio)
-- ML insights and recommendations in real-time
-
-**Location**: `src/service_emulators/SSH/`  
-**Default Port**: 8022 (configurable)  
-**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost
-
-### FTP Honeypot
-
-**Status**: Production-ready with full AI + ML integration and telnet support
-
-**Key Features**:
-- AI-powered adaptive FTP responses using multiple LLM providers
-- ML-powered real-time anomaly detection for FTP commands
-- Dynamic threat scoring for file operations and commands
-- Real-time FTP attack pattern recognition and vulnerability detection
-- Directory traversal, bounce attack, and brute force detection
-- ML-enhanced file transfer analysis with behavioral profiling
-- Forensic chain of custody logging with complete session recording
-- File transfer monitoring with hash analysis and malware detection
-- Telnet client compatibility with command aliases (ls/dir)
-- Proper FTP data connection handling for standard clients
-- Dynamic directory listing generation based on attack context
-- Multi-line AI response support for complex interactions
-- Standard FTP protocol compliance with consistent status codes
-- ML insights for FTP attack patterns and recommendations
-
-**Location**: `src/service_emulators/FTP/`  
-**Default Port**: 2121 (configurable)  
-**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost  
-**Client Support**: Standard FTP clients, telnet, FileZilla, WinSCP, command-line tools
-
-
-### 🗄️ MySQL Database Honeypot
-
-**Status**: Production-ready with full AI + ML integration and MySQL protocol implementation
-
-**Key Features**:
-- AI-powered adaptive MySQL responses using multiple LLM providers
-- ML-powered real-time SQL injection detection and classification
-- Dynamic threat scoring for SQL queries and database operations
-- Real-time SQL injection and attack pattern recognition
-- Advanced vulnerability exploitation detection and logging
-- ML-enhanced SQL query analysis with behavioral profiling
-- Forensic chain of custody logging with complete session recording
-- MySQL protocol compliance with proper handshake and authentication
-- Support for standard MySQL clients (mysql, phpMyAdmin, Workbench)
-- Dynamic database and table simulation based on attack context
-- Multi-user authentication with configurable accounts
-- Comprehensive SQL query analysis and threat scoring
-- Corporate database environment simulation (NexusGames Studio)
-- ML insights for database attack patterns and recommendations
-
-**Location**: `src/service_emulators/MySQL/`  
-**Default Port**: 3306 (configurable)  
-**AI Models**: OpenAI, Azure OpenAI, Google Gemini, AWS Bedrock, Ollama  
-**ML Models**: Isolation Forest, One-Class SVM, LOF, HDBSCAN, K-Means, XGBoost  
-**Client Support**: Standard MySQL clients, command-line tools, Workbench applications
-
-
----
-
-## 📦 Installation & Setup
-
-### ✅ Prerequisites
-
-| Requirement | Version | Purpose | Installation |
-|-------------|---------|---------|-------------|
-| **Python** | 3.8+ (3.11+ recommended) | Core runtime | [Download Python](https://python.org/downloads/) |
-| **Git** | Latest | Repository cloning and contribution | [Download Git](https://git-scm.com/downloads) |
-| **LLM API Key** | N/A | AI responses | Choose from [supported providers](#-supported-llm-providers) |
-| **MySQL Client** | 8.0+ (optional) | Testing MySQL honeypot | `pip install mysql-connector-python` |
-| **Docker** | 20.0+ (optional) | Containerized deployment | [Docker Installation](https://docs.docker.com/get-docker/) |
-
-### 🤖 Supported LLM Providers
-
-| Provider | Models | Cost | Setup Difficulty | Recommended Use |
-|----------|--------|------|------------------|----------------|
-| OpenAI | GPT-4o, GPT-4o-mini, GPT-3.5-turbo | $$$ | Easy | Production, high-quality responses |
-| Google Gemini | Gemini-2.0-flash-exp, Gemini-1.5-pro | $$ | Easy | Cost-effective, fast responses |
-| Ollama | llama3.2, CodeLlama, Mistral | Free | Medium | Local deployment, privacy |
-| Azure OpenAI | GPT-4o, GPT-3.5-turbo | $$$ | Medium | Enterprise, compliance |
-| AWS Bedrock | Claude-3.5-Sonnet, Titan | $$$ | Hard | AWS ecosystem integration |
-
-### 📥 Clone Repository
-
-```bash
-git clone https://github.com/PROFFARO/nexus-development.git
-cd nexus-development
-```
-
-### 📚 Install Dependencies
-
-```bash
-# Install all required packages
-pip install -r requirements.txt
-
-# Or install with virtual environment (recommended)
-python -m venv nexus-env
-source nexus-env/bin/activate  # On Windows: nexus-env\Scripts\activate
-pip install -r requirements.txt
-```
-
-### 🔧 Configure Environment
-
-```bash
-# Copy environment template for each service
-cp src/service_emulators/SSH/.env.example src/service_emulators/SSH/.env
-cp src/service_emulators/FTP/.env.example src/service_emulators/FTP/.env
-cp src/service_emulators/MySQL/.env.example src/service_emulators/MySQL/.env
-
-# Edit .env files with your API keys
-# Example for OpenAI:
-# OPENAI_API_KEY=your_openai_api_key_here
-```
+| Category | Features |
+|----------|----------|
+| **🤖 AI-Powered** | LLM-driven responses (OpenAI, Azure, Ollama, Gemini, AWS Bedrock) |
+| **🔬 ML Detection** | Real-time anomaly detection with Isolation Forest, HDBSCAN, SVM |
+| **🌐 Multi-Protocol** | SSH, FTP, MySQL protocol emulation with realistic filesystems |
+| **📊 Analytics** | Real-time dashboard, attack visualization, security reports |
+| **🔒 Security** | Prompt injection protection, rate limiting, IP reputation |
+| **📝 Forensics** | Complete session recording, chain of custody, file capture |
 
 ---
 
 ## 🚀 Quick Start
 
-### ⚡ 30-Second Demo
+### Prerequisites
+
+- **Python 3.10+**
+- **Node.js 18+** (for web dashboard)
+- **LLM Provider** (Ollama recommended for local deployment)
+
+### Installation
 
 ```bash
-# 1. Start SSH honeypot with ML analysis (most popular)
-python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai
+# 1. Clone the repository
+git clone https://github.com/PROFFARO/nexus-development.git
+cd nexus-development
 
-# 2. In another terminal, test it
-ssh admin@localhost -p 8022
-# Password: admin (or any password - it accepts all)
+# 2. Create virtual environment
+python -m venv venv
+source venv/bin/activate  # Windows: venv\Scripts\activate
 
-# 3. Try some commands and see AI responses with ML scoring!
-ls                    # Normal command (low anomaly score)
-whoami               # Standard command (low anomaly score)
-cat /etc/passwd      # Suspicious command (medium anomaly score)
-rm -rf /             # Malicious command (high anomaly score)
+# 3. Install dependencies
+pip install -r requirements.txt
 
-# 4. View ML analysis of your session
-python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
+# 4. Configure environment
+cp configs/ssh_config.ini src/service_emulators/SSH/config.ini
+cp configs/ftp_config.ini src/service_emulators/FTP/config.ini
+cp configs/mysql_config.ini src/service_emulators/MySQL/config.ini
+
+# 5. Setup LLM provider (example: Ollama)
+# Install Ollama from https://ollama.ai
+ollama pull llama3.2
+
+# 6. Train ML models
+python train_service-ml.py --service all --verbose
+
+# 7. Start services
+python -m src.cli.nexus_cli start-all
 ```
 
-### 🎛️ Centralized CLI Interface
-
-The NEXUS CLI provides a unified interface for all honeypot services with ML integration:
+### Quick Test
 
 ```bash
-# Service Management
-python src/cli/nexus_cli.py list                    # List all available services
-python src/cli/nexus_cli.py status                  # Check service status
-python src/cli/nexus_cli.py start-all               # Start all services in parallel
-python src/cli/nexus_cli.py stop-all                # Emergency stop all services
+# Test SSH honeypot
+ssh root@localhost -p 8022
 
-# Start Individual Services
-python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai
-python src/cli/nexus_cli.py ftp --port 2121 --llm-provider gemini
-python src/cli/nexus_cli.py mysql --port 3306 --llm-provider openai
+# Test FTP honeypot
+ftp localhost 2121
 
-# ML-Enhanced Log Analysis
-python src/cli/nexus_cli.py logs ssh --ml-analysis --ml-insights
-python src/cli/nexus_cli.py logs mysql --filter anomalies --ml-analysis
-
-# ML-Enhanced Reports
-python src/cli/nexus_cli.py report ssh --ml-enhanced --include-ml-insights
-python src/cli/nexus_cli.py report ftp --ml-enhanced --anomaly-threshold 0.9
-
-# ML Operations
-python src/cli/nexus_cli.py ml train ssh --algorithm all
-python src/cli/nexus_cli.py ml predict ssh --input "rm -rf /"
-
-# Advanced Configuration
-python src/cli/nexus_cli.py ssh --port 8022 --llm-provider openai \
-  --model-name gpt-4o --temperature 0.3 --max-tokens 2000 \
-  --user-account admin=admin123 --user-account root=toor
+# Test MySQL honeypot
+mysql -h 127.0.0.1 -P 3307 -u root -p
 ```
 
 ---
 
-## 📖 CLI Reference
+## 🏗️ System Architecture
 
-### 🔧 Main Commands
+### Project Structure
 
-```bash
-python src/cli/nexus_cli.py <command> [options]
+```
+nexus-development/
+├── 📂 configs/                    # Global configuration files
+│   ├── ftp_config.ini
+│   ├── mysql_config.ini
+│   └── ssh_config.ini
+├── 📂 datasets/                   # Training datasets (63 files, ~2GB)
+├── 📂 models/                     # Trained ML models
+│   ├── ftp/                       # FTP-specific models
+│   ├── mysql/                     # MySQL-specific models
+│   └── ssh/                       # SSH-specific models
+├── 📂 src/
+│   ├── 📂 ai/                     # ML/AI core modules
+│   │   ├── config.py              # ML configuration
+│   │   ├── data_processor.py      # Dataset loading & preprocessing
+│   │   ├── detectors.py           # Anomaly & threat detection
+│   │   ├── embeddings.py          # FAISS similarity search
+│   │   ├── features.py            # Feature extraction
+│   │   ├── ml_logger.py           # Verbose ML logging
+│   │   └── training.py            # Model training pipeline
+│   ├── 📂 api/                    # FastAPI backend
+│   │   ├── main.py                # API entry point
+│   │   ├── routes.py              # WebSocket endpoints
+│   │   └── ml_routes.py           # ML analysis endpoints
+│   ├── 📂 cli/                    # Command-line interface
+│   │   └── nexus_cli.py           # Unified CLI (1800+ lines)
+│   ├── 📂 logs/                   # Centralized logging
+│   │   └── log_viewer.py          # Log analysis tools
+│   ├── 📂 service_emulators/      # Protocol implementations
+│   │   ├── 📂 FTP/
+│   │   ├── 📂 MySQL/
+│   │   └── 📂 SSH/
+│   └── 📂 web/                    # Next.js dashboard
+├── 📄 train_service-ml.py         # ML training script
+└── 📄 requirements.txt            # Python dependencies
 ```
 
-| Command | Description | Example |
-|---------|-------------|---------|
-| `list` | List all available services | `nexus_cli.py list` |
-| `status` | Check service status | `nexus_cli.py status [service]` |
-| `start-all` | Start all services | `nexus_cli.py start-all --llm-provider openai` |
-| `stop-all` | Stop all services | `nexus_cli.py stop-all --force` |
-| `ssh` | Start SSH honeypot | `nexus_cli.py ssh --port 8022` |
-| `ftp` | Start FTP honeypot | `nexus_cli.py ftp --port 2121` |
-| `mysql` | Start MySQL honeypot | `nexus_cli.py mysql --port 3306` |
-| `report` | Generate security reports | `nexus_cli.py report ssh --output reports/` |
-| `logs` | View session logs | `nexus_cli.py logs ssh --conversation` |
-| `ml` | ML operations (train/predict/eval) | `nexus_cli.py ml train ssh --algorithm all` |
+### Component Interaction Flow
 
-### 🧠 ML Commands
+```mermaid
+sequenceDiagram
+    participant A as Attacker
+    participant S as Service Server
+    participant CE as Command Executor
+    participant VFS as Virtual Filesystem
+    participant ML as ML Detector
+    participant LLM as LLM Guard
+    participant LOG as Session Logger
 
-```bash
-python src/cli/nexus_cli.py ml <subcommand> [options]
+    A->>S: Connect & Authenticate
+    S->>LOG: Log connection
+    S->>A: Banner/MOTD
+    
+    loop Command Session
+        A->>S: Send command
+        S->>CE: Execute(command)
+        CE->>CE: Validate & detect injection
+        
+        alt Valid Command
+            CE->>VFS: Check filesystem operation
+            alt VFS Can Handle
+                VFS-->>CE: Result
+            else Needs LLM
+                CE->>LLM: Validate input
+                LLM->>LLM: Check injection patterns
+                LLM-->>CE: Enhanced prompt
+                CE->>S: Get LLM response
+                S-->>CE: Response
+                CE->>LLM: Validate output
+                LLM-->>CE: Cleaned response
+            end
+        else Invalid/Injection
+            CE-->>CE: Generate error response
+        end
+        
+        CE->>ML: Analyze command
+        ML-->>LOG: ML metrics
+        CE-->>S: Response
+        S-->>A: Output
+        S->>LOG: Log command + ML results
+    end
 ```
-
-| ML Command | Description | Example |
-|------------|-------------|---------|
-| `extract` | Extract features from datasets | `nexus_cli.py ml extract ssh --datasets-dir datasets` |
-| `train` | Train ML models | `nexus_cli.py ml train ssh --algorithm all` |
-| `eval` | Evaluate trained models | `nexus_cli.py ml eval ssh --test-data test.json` |
-| `predict` | Make predictions | `nexus_cli.py ml predict ssh --input "rm -rf /"` |
-| `update-models` | Update/retrain models | `nexus_cli.py ml update-models all --force` |
-
-#### ML Training Options
-
-| Flag | Description | Default | Options |
-|------|-------------|---------|---------|
-| `--algorithm` | ML algorithm to train | `all` | `isolation_forest`, `one_class_svm`, `lof`, `hdbscan`, `kmeans`, `xgboost`, `all` |
-| `--data` | Training data file path | Auto-detected | Path to JSON file |
-| `--test-size` | Test set size ratio | `0.2` | `0.0-1.0` |
-
-#### ML Prediction Options
-
-| Flag | Description | Required | Example |
-|------|-------------|----------|---------|
-| `--input` | Input data or command | ✅ | `"rm -rf /"` or `data.json` |
-| `--output` | Output file for predictions | ❌ | `predictions.json` |
-
-### 📊 ML-Enhanced Log Analysis
-
-```bash
-python src/cli/nexus_cli.py logs <service> [ML_OPTIONS]
-```
-
-| ML Flag | Description | Default | Range |
-|---------|-------------|---------|-------|
-| `--ml-analysis` | Enable ML-based analysis | `False` | `True/False` |
-| `--anomaly-threshold` | Anomaly detection threshold | `0.7` | `0.0-1.0` |
-| `--ml-insights` | Show detailed ML insights | `False` | `True/False` |
-| `--high-risk-only` | Show only high-risk sessions | `False` | `True/False` |
-| `--filter anomalies` | Filter anomalous entries only | `False` | `True/False` |
-
-### 📄 ML-Enhanced Report Generation
-
-```bash
-python src/cli/nexus_cli.py report <service> [ML_OPTIONS]
-```
-
-| ML Flag | Description | Default | Range |
-|---------|-------------|---------|-------|
-| `--ml-enhanced` | Generate ML-enhanced reports | `False` | `True/False` |
-| `--include-ml-insights` | Include detailed ML insights | `False` | `True/False` |
-| `--anomaly-threshold` | Anomaly threshold for reports | `0.7` | `0.0-1.0` |
-
-### 🚩 Service-Specific Flags
-
-#### 🔐 SSH Honeypot Flags
-
-```bash
-python src/cli/nexus_cli.py ssh [OPTIONS]
-```
-
-| Flag | Short | Type | Description | Example |
-|------|-------|------|-------------|---------|
-| `--config` | `-c` | str | Configuration file path | `-c custom.ini` |
-| `--port` | `-P` | int | SSH port (default: 8022) | `-P 2222` |
-| `--host-key` | `-k` | str | SSH host private key file | `-k /path/to/key` |
-| `--server-version` | `-v` | str | SSH server version string | `-v "OpenSSH_8.0"` |
-| `--log-file` | `-L` | str | Log file path | `-L ssh.log` |
-| `--sensor-name` | `-S` | str | Sensor name for logging | `-S "SSH-Sensor-01"` |
-| `--llm-provider` | | str | LLM provider (openai/azure/ollama/aws/gemini) | `--llm-provider openai` |
-| `--model-name` | | str | LLM model name | `--model-name gpt-4o-mini` |
-| `--temperature` | | float | LLM temperature (0.0-2.0) | `--temperature 0.3` |
-| `--max-tokens` | | int | Maximum tokens for LLM | `--max-tokens 2000` |
-| `--base-url` | | str | Base URL for Ollama/custom | `--base-url http://localhost:11434` |
-| `--user-account` | `-u` | str | User account (username=password) | `-u admin=admin123` |
-| `--prompt` | `-p` | str | System prompt text | `-p "Custom prompt"` |
-| `--prompt-file` | `-f` | str | System prompt file | `-f prompt.txt` |
-
-**Azure OpenAI Specific:**
-- `--azure-deployment`: Azure OpenAI deployment name
-- `--azure-endpoint`: Azure OpenAI endpoint
-- `--azure-api-version`: Azure OpenAI API version
-
-**AWS Specific:**
-- `--aws-region`: AWS region
-- `--aws-profile`: AWS credentials profile
-
-#### 📁 FTP Honeypot Flags
-
-```bash
-python src/cli/nexus_cli.py ftp [OPTIONS]
-```
-
-| Flag | Short | Type | Description | Example |
-|------|-------|------|-------------|---------|
-| `--config` | `-c` | str | Configuration file path | `-c custom.ini` |
-| `--port` | `-P` | int | FTP port (default: 2121) | `-P 2122` |
-| `--log-file` | `-L` | str | Log file path | `-L ftp.log` |
-| `--sensor-name` | `-S` | str | Sensor name for logging | `-S "FTP-Sensor-01"` |
-| `--llm-provider` | `-l` | str | LLM provider | `-l gemini` |
-| `--model-name` | `-m` | str | LLM model name | `-m gemini-2.0-flash-exp` |
-| `--temperature` | `-r` | float | LLM temperature | `-r 0.2` |
-| `--max-tokens` | `-t` | int | Maximum tokens | `-t 1500` |
-| `--user-account` | `-u` | str | User account | `-u webmaster=nexus2024` |
-| `--prompt` | `-p` | str | System prompt | `-p "Custom FTP prompt"` |
-| `--prompt-file` | `-f` | str | Prompt file | `-f ftp_prompt.txt` |
-
-#### 🗄️ MySQL Honeypot Flags
-
-```bash
-python src/cli/nexus_cli.py mysql [OPTIONS]
-```
-
-| Flag | Type | Description | Example |
-|------|------|-------------|---------|
-| `--config` | str | Configuration file path | `--config custom.ini` |
-| `--port` | int | MySQL port (default: 3306) | `--port 3307` |
-| `--log-file` | str | Log file path | `--log-file mysql.log` |
-| `--sensor-name` | str | Sensor name | `--sensor-name "MySQL-Sensor-01"` |
-| `--llm-provider` | str | LLM provider | `--llm-provider openai` |
-| `--model-name` | str | LLM model name | `--model-name gpt-4o-mini` |
-| `--temperature` | float | LLM temperature | `--temperature 0.2` |
-| `--max-tokens` | int | Maximum tokens | `--max-tokens 2500` |
-| `--user-account` | str | User account | `--user-account root=* --user-account admin=admin` |
-
-### � Report Generation
-
-```bash
-python src/cli/nexus_cli.py report <service> [OPTIONS]
-```
-
-| Flag | Type | Description | Example |
-|------|------|-------------|---------|
-| `--output` | str | Output directory (default: reports) | `--output /path/to/reports` |
-| `--sessions-dir` | str | Sessions directory | `--sessions-dir custom/sessions` |
-| `--format` | str | Report format (json/html/both) | `--format both` |
-| `--period` | str | Analysis period | `--period 7d` |
-| `--severity` | str | Minimum severity (all/low/medium/high/critical) | `--severity high` |
-
-### 📋 Log Analysis
-
-```bash
-python src/cli/nexus_cli.py logs <service> [OPTIONS]
-```
-
-| Flag | Short | Type | Description | Example |
-|------|-------|------|-------------|---------|
-| `--session-id` | `-i` | str | Specific session ID | `-i session_123` |
-| `--log-file` | `-f` | str | Log file path | `-f custom.log` |
-| `--decode` | `-d` | bool | Decode base64 details | `-d` |
-| `--conversation` | `-c` | bool | Show full conversation | `-c` |
-| `--save` | `-s` | str | Save analysis to file | `-s analysis.txt` |
-| `--format` | | str | Output format (text/json) | `--format json` |
-| `--filter` | | str | Filter entries (all/commands/responses/attacks) | `--filter attacks` |
-
-### 🎛️ Management Commands
-
-#### 📊 Service Status
-```bash
-python src/cli/nexus_cli.py status [service]
-```
-
-#### ▶️ Start All Services
-```bash
-python src/cli/nexus_cli.py start-all [OPTIONS]
-```
-
-| Flag | Description | Example |
-|------|-------------|---------|
-| `--config-dir` | Directory containing service configs | `--config-dir configs/` |
-| `--llm-provider` | LLM provider for all services | `--llm-provider openai` |
-| `--model-name` | LLM model name for all services | `--model-name gpt-4o-mini` |
-
-#### ⏹️ Stop All Services
-```bash
-python src/cli/nexus_cli.py stop-all [OPTIONS]
-```
-
-| Flag | Description | Example |
-|------|-------------|---------|
-| `--force` | Force stop processes | `--force` |
 
 ---
 
-## 📊 Monitoring & Analysis
+## 🧠 Machine Learning Pipeline
 
-### 📄 Generate Reports
+### Algorithm Overview
 
-```bash
-# Generate reports for all services
-python src/cli/nexus_cli.py report ssh --output reports/ --format both
-python src/cli/nexus_cli.py report ftp --output reports/ --format html
-python src/cli/nexus_cli.py report mysql --output reports/ --format both
+NEXUS employs a **multi-model ensemble** approach for comprehensive threat detection:
 
-# Advanced filtering
-python src/cli/nexus_cli.py report ssh --severity critical --period 7d
-python src/cli/nexus_cli.py report ftp --sessions-dir custom/sessions
+```mermaid
+graph LR
+    subgraph Input
+        CMD[Command/Query]
+    end
+    
+    subgraph Feature["Feature Extraction"]
+        TF[TF-IDF Vectorization]
+        NUM[Numerical Features]
+        EMB[Sentence Embeddings]
+    end
+    
+    subgraph Models["ML Models"]
+        IF[Isolation Forest]
+        SVM[One-Class SVM]
+        HDB[HDBSCAN Clustering]
+        RF[Random Forest]
+        FAISS[FAISS Similarity]
+    end
+    
+    subgraph Output
+        SCORE[Anomaly Score]
+        LABEL[Attack Labels]
+        RISK[Risk Level]
+    end
+    
+    CMD --> TF
+    CMD --> NUM
+    CMD --> EMB
+    
+    TF --> IF
+    TF --> SVM
+    NUM --> IF
+    NUM --> SVM
+    EMB --> HDB
+    EMB --> FAISS
+    TF --> RF
+    
+    IF --> SCORE
+    SVM --> SCORE
+    HDB --> LABEL
+    FAISS --> SCORE
+    RF --> LABEL
+    
+    SCORE --> RISK
+    LABEL --> RISK
 ```
 
-Reports include:
-- **Executive Summary**: High-level attack statistics
-- **Detailed Analysis**: Attack patterns, vulnerabilities, and IOCs
-- **Visualizations**: Charts and graphs for trend analysis
-- **Recommendations**: Actionable security improvements
-- **Forensic Timeline**: Complete attack reconstruction
+### Algorithms Deep Dive
+
+#### 1. Isolation Forest (Anomaly Detection)
+
+**Mathematical Foundation:**
+
+Isolation Forest exploits the property that anomalies are "few and different" - they are more susceptible to isolation.
+
+$$\text{Anomaly Score} = 2^{-\frac{E(h(x))}{c(n)}}$$
+
+Where:
+- $E(h(x))$ = average path length to isolate point $x$
+- $c(n)$ = average path length in unsuccessful search in BST
+- $c(n) = 2H(n-1) - \frac{2(n-1)}{n}$, where $H(i) = \ln(i) + \gamma$ (Euler's constant)
+
+**Implementation:**
+```python
+# src/ai/training.py
+def _train_isolation_forest(self, X: np.ndarray):
+    model = IsolationForest(
+        n_estimators=100,       # Number of isolation trees
+        contamination=0.1,      # Expected anomaly fraction
+        max_samples='auto',     # Samples per tree
+        random_state=42
+    )
+    model.fit(X)
+    return model
+```
+
+| Parameter | Value | Rationale |
+|-----------|-------|-----------|
+| `n_estimators` | 100 | Balance between accuracy and speed |
+| `contamination` | 0.1 | ~10% expected attack traffic |
+| `max_samples` | auto | $\min(256, n_{samples})$ for efficiency |
+
+---
+
+#### 2. One-Class SVM (Novelty Detection)
+
+**Mathematical Foundation:**
+
+One-Class SVM learns a decision boundary in feature space using the kernel trick:
+
+$$\min_{w,\xi,\rho} \frac{1}{2}||w||^2 + \frac{1}{\nu n}\sum_{i=1}^{n}\xi_i - \rho$$
+
+Subject to: $w \cdot \Phi(x_i) \geq \rho - \xi_i$, $\xi_i \geq 0$
+
+Using RBF kernel: $K(x,x') = \exp(-\gamma||x-x'||^2)$
+
+**Implementation:**
+```python
+def _train_one_class_svm(self, X: np.ndarray):
+    model = OneClassSVM(
+        kernel='rbf',           # Radial Basis Function
+        nu=0.1,                 # Upper bound on anomaly fraction
+        gamma='scale'           # 1/(n_features * X.var())
+    )
+    model.fit(X)
+    return model
+```
+
+---
+
+#### 3. HDBSCAN (Hierarchical Density-Based Clustering)
+
+**Mathematical Foundation:**
+
+HDBSCAN extends DBSCAN with hierarchical clustering to find clusters of varying densities:
+
+1. **Core Distance:** $d_{core}(x) = d(x, x^{(k)})$ (distance to k-th nearest neighbor)
+
+2. **Mutual Reachability Distance:**
+$$d_{mreach}(a,b) = \max(d_{core}(a), d_{core}(b), d(a,b))$$
+
+3. **Cluster Stability:**
+$$S(C) = \sum_{x \in C}(\lambda_{max}(x,C) - \lambda_{min}(C))$$
+
+**Implementation:**
+```python
+def _train_hdbscan(self, X: np.ndarray):
+    model = hdbscan.HDBSCAN(
+        min_cluster_size=5,         # Minimum points per cluster
+        min_samples=3,              # Core point density
+        cluster_selection_epsilon=0.5,
+        metric='euclidean'
+    )
+    model.fit(X)
+    return model
+```
+
+---
+
+#### 4. FAISS Similarity Search
+
+**Mathematical Foundation:**
+
+FAISS enables fast approximate nearest neighbor search using:
+
+- **L2 Distance:** $d(x,y) = ||x-y||_2$
+- **Inner Product:** $s(x,y) = x \cdot y$
+
+Uses **IVF (Inverted File) Index** with product quantization for billion-scale search.
+
+**Implementation:**
+```python
+# src/ai/embeddings.py
+def build_faiss_index(self, texts: List[str]):
+    embeddings = self.encode_batch(texts)
+    dimension = embeddings.shape[1]  # 384 for MiniLM
+    
+    index = faiss.IndexFlatL2(dimension)
+    index.add(embeddings.astype('float32'))
+    return index
+```
+
+---
+
+### Model Artifacts
+
+Each service generates 9 model files:
+
+| File | Size (SSH) | Purpose |
+|------|------------|---------|
+| `embeddings.cache` | 28MB | Cached sentence embeddings |
+| `faiss.index` | 130MB | Similarity search index |
+| `hdbscan_clustering.pkl` | 7.5MB | Behavior clustering model |
+| `isolation_forest_anomaly.pkl` | 60KB | Anomaly detection model |
+| `one_class_svm_anomaly.pkl` | 223KB | Novelty detection model |
+| `supervised_classifier.pkl` | 73KB | Attack classification model |
+| `scaler.pkl` | 129B | Feature normalization |
+| `label_encoder.pkl` | 399B | Label encoding |
+| `vectorizer.pkl` | 457B | TF-IDF vectorizer |
+
+---
+
+### Training Pipeline
+
+```bash
+# Train all services with verbose output
+python train_service-ml.py --service all --verbose 2
+
+# Train specific service
+python train_service-ml.py --service ssh --algorithms isolation_forest,hdbscan
+
+# Available algorithms
+# - isolation_forest  : Anomaly detection
+# - one_class_svm     : Novelty detection
+# - hdbscan           : Density clustering
+# - dbscan            : Density clustering
+# - kmeans            : Centroid clustering
+# - random_forest     : Supervised classification
+```
+
+### Metric Evaluation
+
+| Metric | Formula | Target |
+|--------|---------|--------|
+| **Precision** | $\frac{TP}{TP+FP}$ | > 0.85 |
+| **Recall** | $\frac{TP}{TP+FN}$ | > 0.90 |
+| **F1 Score** | $2 \cdot \frac{P \cdot R}{P+R}$ | > 0.87 |
+| **Silhouette** | $\frac{b-a}{\max(a,b)}$ | > 0.5 |
+
+---
+
+## 🔌 Service Emulators
+
+### Architecture Pattern
+
+All services follow a **3-Layer Command Dispatch** pattern:
+
+```mermaid
+graph TB
+    subgraph Layer1["Layer 1: Deterministic Execution"]
+        VFS[Virtual Filesystem / Database]
+        PARSE[Command Parser]
+    end
+    
+    subgraph Layer2["Layer 2: Validation & Error Handling"]
+        VALID[Syntax Validation]
+        INJ[Injection Detection]
+        ERR[Error Simulation]
+    end
+    
+    subgraph Layer3["Layer 3: LLM Fallback"]
+        GUARD[LLM Guard]
+        LLM[LLM Response]
+        CLEAN[Output Cleaning]
+    end
+    
+    CMD[Incoming Command] --> PARSE
+    PARSE --> VFS
+    VFS -->|Success| RESP[Response]
+    VFS -->|Not Handled| VALID
+    
+    VALID -->|Invalid| ERR
+    VALID -->|Valid| INJ
+    INJ -->|Detected| ERR
+    INJ -->|Clean| GUARD
+    
+    GUARD --> LLM
+    LLM --> CLEAN
+    CLEAN --> RESP
+    ERR --> RESP
+```
+
+---
+
+### SSH Honeypot
+
+**Location:** `src/service_emulators/SSH/`
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| Server | `ssh_server.py` | 3,294 | AsyncSSH protocol handler |
+| Executor | `command_executor.py` | 6,287 | Command routing & execution |
+| Filesystem | `virtual_filesystem.py` | 1,071 | Ubuntu 20.04 LTS emulation |
+| LLM Guard | `llm_guard.py` | 343 | Injection protection |
+| Reports | `report_generator.py` | - | HTML security reports |
+
+**Supported Commands (100+):**
+
+```
+File Operations    : ls, cat, head, tail, less, more, find, grep, cp, mv, rm
+Directory         : cd, pwd, mkdir, rmdir, tree
+System Info       : uname, hostname, whoami, id, uptime, ps, top, df, du
+Network           : netstat, ss, ip, ifconfig, ping, curl, wget
+Package           : apt, apt-get, dpkg (simulated)
+Text Processing   : awk, sed, cut, sort, uniq, wc
+Archives          : tar, gzip, zip, unzip
+Permissions       : chmod, chown, chgrp
+```
+
+**Virtual Filesystem Structure:**
+
+```
+/
+├── bin/          # Essential binaries
+├── etc/          # Configuration files (passwd, shadow, hosts, ssh/)
+├── home/         # User directories with game development content
+├── opt/games/    # NexusGames Studio projects
+├── srv/          # Game assets and builds
+├── tmp/          # Temporary files
+├── var/          # Logs and build artifacts
+└── backup/       # "Misconfigured" database backups (honeypot)
+```
+
+---
+
+### FTP Honeypot
+
+**Location:** `src/service_emulators/FTP/`
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| Server | `ftp_server.py` | 2,800 | Async FTP protocol handler |
+| Executor | `command_executor.py` | 1,245 | 3-layer command dispatch |
+| Filesystem | `virtual_filesystem.py` | 1,314 | FTP-specific VFS |
+| LLM Guard | `llm_guard.py` | 501 | FTP response validation |
+
+**FTP Command Support:**
+
+| Category | Commands |
+|----------|----------|
+| Authentication | `USER`, `PASS`, `QUIT` |
+| Navigation | `PWD`, `CWD`, `CDUP` |
+| Listing | `LIST`, `NLST`, `MLST`, `MLSD` |
+| Transfer | `RETR`, `STOR`, `APPE` |
+| File Ops | `DELE`, `RMD`, `MKD`, `RNFR`, `RNTO` |
+| Info | `SIZE`, `MDTM`, `STAT`, `FEAT`, `HELP` |
+| Transfer Mode | `TYPE`, `MODE`, `STRU`, `PASV`, `PORT` |
+
+---
+
+### MySQL Honeypot
+
+**Location:** `src/service_emulators/MySQL/`
+
+| Component | File | Lines | Purpose |
+|-----------|------|-------|---------|
+| Server | `mysql_server.py` | 3,764 | mysql_mimic protocol |
+| Executor | `mysql_command_executor.py` | 1,644 | 50+ SQL command handlers |
+| Database | `mysql_database.py` | 1,915 | Virtual database system |
+| LLM Guard | `mysql_llm_guard.py` | 654 | SQL injection detection |
+
+**SQL Command Support:**
+
+```sql
+-- Metadata Commands
+SHOW DATABASES, SHOW TABLES, SHOW COLUMNS, SHOW CREATE TABLE
+SHOW VARIABLES, SHOW STATUS, SHOW PROCESSLIST, SHOW GRANTS
+
+-- DDL
+CREATE DATABASE, CREATE TABLE, DROP TABLE, ALTER TABLE
+
+-- DML
+SELECT, INSERT, UPDATE, DELETE, TRUNCATE
+
+-- System
+USE, SET, DESCRIBE, EXPLAIN
+```
+
+**Virtual Database Schema (Gaming Industry):**
+
+```
+nexus_games/
+├── users           (id, username, email, password_hash, created_at)
+├── characters      (id, user_id, name, class, level, experience)
+├── inventory       (id, character_id, item_type, item_name, quantity)
+├── transactions    (id, user_id, amount, currency, timestamp)
+├── game_sessions   (id, user_id, start_time, end_time, score)
+└── achievements    (id, character_id, achievement_name, unlocked_at)
+```
+
+---
+
+## 📊 Datasets
+
+### Overview
+
+NEXUS includes **63 datasets** (~2GB) for training ML models:
+
+```mermaid
+pie title Dataset Distribution by Type
+    "CICIDS2017 Network" : 8
+    "Cowrie SSH Logs" : 16
+    "Labelled Honeypot" : 12
+    "Brute Force" : 1
+    "CVE Database" : 1
+    "Dionaea" : 1
+    "Other" : 24
+```
+
+### CICIDS2017 Network Intrusion Dataset
+
+| File | Size | Attack Types |
+|------|------|--------------|
+| `Monday-WorkingHours.pcap_ISCX.csv` | 268MB | Benign traffic |
+| `Tuesday-WorkingHours.pcap_ISCX.csv` | 174MB | FTP-Patator, SSH-Patator |
+| `Wednesday-workingHours.pcap_ISCX.csv` | 285MB | DoS, Heartbleed |
+| `Thursday-Morning-WebAttacks.pcap_ISCX.csv` | 92MB | Web attacks, XSS, SQL Injection |
+| `Thursday-Afternoon-Infilteration.pcap_ISCX.csv` | 108MB | Infiltration |
+| `Friday-Morning.pcap_ISCX.csv` | 75MB | Botnet |
+| `Friday-Afternoon-DDos.pcap_ISCX.csv` | 96MB | DDoS |
+| `Friday-Afternoon-PortScan.pcap_ISCX.csv` | 101MB | Port Scan |
+
+**Features (80+):** Flow duration, packet counts, byte counts, flags, IAT statistics, etc.
+
+### Cowrie SSH Honeypot Logs
+
+16 JSON log files from Nov 2022 deployment:
+
+```json
+{
+  "eventid": "cowrie.command.input",
+  "session": "abc123",
+  "timestamp": "2022-11-14T10:30:45.123456Z",
+  "src_ip": "192.168.1.100",
+  "input": "cat /etc/passwd",
+  "success": true
+}
+```
+
+### Additional Datasets
+
+| Dataset | Size | Description |
+|---------|------|-------------|
+| `brute_force_data.json` | 4.8MB | Login attempt patterns |
+| `ssh_anomaly_dataset.csv` | 3.5MB | Labeled SSH anomalies |
+| `cve.csv` | 39MB | CVE vulnerability database |
+| `dionaeaClean2.csv` | 2MB | Dionaea honeypot captures |
 
 ---
 
 ## ⚙️ Configuration
 
-### 🤖 LLM Provider Configuration
+### Configuration Files
 
-NEXUS supports multiple AI providers. Configure in `.env` files for each service:
+| File | Location | Purpose |
+|------|----------|---------|
+| `ssh_config.ini` | `configs/` | SSH honeypot settings |
+| `ftp_config.ini` | `configs/` | FTP honeypot settings |
+| `mysql_config.ini` | `configs/` | MySQL honeypot settings |
 
-<details>
-<summary><strong>OpenAI Configuration</strong></summary>
+### Key Configuration Sections
 
-```bash
-# .env file
-OPENAI_API_KEY=your_openai_api_key_here
+#### `[honeypot]` - General Settings
 
-# config.ini
-[llm]
+```ini
+log_file = ../../logs/ssh_log.log
+sensor_name = nexus-ssh-honeypot
+sessions_dir = sessions
+attack_logging = true
+behavioral_analysis = true
+forensic_chain = true
+adaptive_responses = true
+```
+
+#### `[llm]` - LLM Provider Configuration
+
+```ini
+# OpenAI
 llm_provider = openai
-model_name = gpt-4o-mini
-temperature = 0.2
-max_tokens = 2000
-```
+model_name = gpt-4o
 
-**Usage:**
-```bash
-python src/cli/nexus_cli.py ssh --llm-provider openai --model-name gpt-4o-mini
-```
+# Azure OpenAI
+llm_provider = azure
+azure_deployment = gpt-4o
+azure_endpoint = https://your-endpoint.openai.azure.com
 
-</details>
-
-<details>
-<summary><strong>Google Gemini Configuration</strong></summary>
-
-```bash
-# .env file
-GOOGLE_API_KEY=your_google_api_key_here
-
-# config.ini
-[llm]
-llm_provider = gemini
-model_name = gemini-2.0-flash-exp
-temperature = 0.2
-max_tokens = 1500
-```
-
-**Usage:**
-```bash
-python src/cli/nexus_cli.py ftp --llm-provider gemini --model-name gemini-2.0-flash-exp
-```
-
-</details>
-
-<details>
-<summary><strong>Ollama (Local) Configuration</strong></summary>
-
-```bash
-# config.ini
-[llm]
+# Ollama (Local)
 llm_provider = ollama
 model_name = llama3.2
 base_url = http://localhost:11434
-temperature = 0.2
-max_tokens = 2000
-```
 
-**Usage:**
-```bash
-python src/cli/nexus_cli.py ssh --llm-provider ollama --model-name llama3.2 --base-url http://localhost:11434
-```
-
-</details>
-
-<details>
-<summary><strong>Azure OpenAI Configuration</strong></summary>
-
-```bash
-# .env file
-AZURE_OPENAI_API_KEY=your_azure_api_key_here
-AZURE_OPENAI_ENDPOINT=https://your-resource.openai.azure.com/
-AZURE_OPENAI_DEPLOYMENT=your-deployment-name
-AZURE_OPENAI_API_VERSION=2024-02-01
-
-# config.ini
-[llm]
-llm_provider = azure
-model_name = gpt-4o
-azure_deployment = your-deployment-name
-azure_endpoint = https://your-resource.openai.azure.com/
-azure_api_version = 2024-02-01
-```
-
-**Usage:**
-```bash
-python src/cli/nexus_cli.py mysql --llm-provider azure --model-name gpt-4o \
-  --azure-deployment your-deployment --azure-endpoint https://your-resource.openai.azure.com/
-```
-
-</details>
-
-<details>
-<summary><strong>AWS Bedrock Configuration</strong></summary>
-
-```bash
-# .env file
-AWS_ACCESS_KEY_ID=your_aws_access_key
-AWS_SECRET_ACCESS_KEY=your_aws_secret_key
-AWS_DEFAULT_REGION=us-east-1
-
-# config.ini
-[llm]
-llm_provider = aws
+# AWS Bedrock
+llm_provider = AWS
 model_name = anthropic.claude-3-5-sonnet-20240620-v1:0
 aws_region = us-east-1
-aws_credentials_profile = default
+
+# Google Gemini
+llm_provider = gemini
+model_name = gemini-2.5-flash
+
+# Common settings
+temperature = 0.2
+max_response_tokens = 2048
+context_awareness = true
 ```
 
-**Usage:**
-```bash
-python src/cli/nexus_cli.py mysql --llm-provider aws --model-name anthropic.claude-3-5-sonnet-20240620-v1:0 \
-  --aws-region us-east-1
+#### `[ml]` - Machine Learning Settings
+
+```ini
+enabled = true
+anomaly_threshold = 0.95
+max_inference_ms = 15
+fallback_on_error = true
+embedding_model = sentence-transformers/all-MiniLM-L6-v2
+batch_size = 32
+cache_embeddings = true
 ```
 
-</details>
+#### `[security]` - Rate Limiting & Protection
 
-### 🔧 Service-Specific Configuration
-
-Each service has detailed configuration options in their respective `config.ini` files:
-
-- **SSH**: `src/service_emulators/SSH/config.ini`
-- **FTP**: `src/service_emulators/FTP/config.ini`
-- **MySQL**: `src/service_emulators/MySQL/config.ini`
-
-### 👤 Custom User Accounts
-
-Add honeypot accounts to attract attackers:
-
-```bash
-# SSH with multiple accounts
-python src/cli/nexus_cli.py ssh -u admin=admin123 -u root=password -u guest=guest
-
-# FTP with web accounts
-python src/cli/nexus_cli.py ftp -u webmaster=nexus2024 -u developer=devpass
-
-# MySQL with database accounts
-python src/cli/nexus_cli.py mysql -u root=* -u admin=admin -u developer=dev123
-
-```
-
----
-
-## 📊 Data Collection & Analysis
-
-### 📝 Session Data Collection
-
-NEXUS collects comprehensive data for security analysis:
-
-- **Complete Command History**: Every command with AI analysis
-- **Attack Pattern Detection**: Real-time classification of attack techniques
-- **Vulnerability Exploitation**: Detailed logging of exploitation attempts
-- **File Transfer Activities**: Hash analysis and malware detection
-- **Behavioral Analysis**: Sophisticated attacker profiling and intent analysis
-- **Network Forensics**: Complete connection logs and data transfer analysis
-
-### 🔗 Forensic Evidence Chain
-
-- **Session Recordings**: Complete interaction logs with replay capability
-- **File Artifacts**: Upload/download artifacts with integrity verification
-- **Attack Timeline**: Chronological reconstruction of attack sequences
-- **Chain of Custody**: Legal-grade evidence documentation
-- **Integrity Verification**: Cryptographic hashing of all evidence
-
-### 📄 Report Generation
-
-Generate comprehensive security reports:
-
-```bash
-# Generate reports for all services
-python src/cli/nexus_cli.py report ssh --output reports/ --format both
-python src/cli/nexus_cli.py report ftp --output reports/ --format html
-python src/cli/nexus_cli.py report mysql --output reports/ --format both
-
-# Advanced filtering
-python src/cli/nexus_cli.py report ssh --severity critical --period 7d
-python src/cli/nexus_cli.py report ftp --sessions-dir custom/sessions
-```
-
-Reports include:
-- **Executive Summary**: High-level attack statistics
-- **Detailed Analysis**: Attack patterns, vulnerabilities, and IOCs
-- **Visualizations**: Charts and graphs for trend analysis
-- **Recommendations**: Actionable security improvements
-- **Forensic Timeline**: Complete attack reconstruction
-
----
-
-## 🚀 Advanced Usage
-
-### 💬 Custom AI Prompts
-
-Customize AI behavior with custom prompts:
-
-```bash
-# Use custom prompt file
-python src/cli/nexus_cli.py ssh --prompt-file custom_prompt.txt
-
-# Use inline prompt
-python src/cli/nexus_cli.py ftp --prompt "You are a secure FTP server..."
-```
-
-### 🤖 Multiple LLM Providers
-
-Switch between providers easily:
-
-```bash
-# Use different providers for different services
-python src/cli/nexus_cli.py ssh --llm-provider openai --model-name gpt-4o
-python src/cli/nexus_cli.py ftp --llm-provider gemini --model-name gemini-2.0-flash-exp
-python src/cli/nexus_cli.py mysql --llm-provider azure --model-name gpt-4o
-```
-
-### 🏢 Enterprise Deployment
-
-Deploy multiple services with centralized configuration:
-
-```bash
-# Start all services with unified configuration
-python src/cli/nexus_cli.py start-all --config-dir configs/ --llm-provider openai --model-name gpt-4o-mini
-
-# Check status of all services
-python src/cli/nexus_cli.py status
-
-# Generate comprehensive reports
-for service in ssh ftp ssh mysql; do
-  python src/cli/nexus_cli.py report $service --output reports/ --format both
-done
+```ini
+rate_limiting = true
+max_connections_per_ip = 5
+connection_timeout = 300
+intrusion_detection = true
+automated_blocking = false
 ```
 
 ---
 
-## 🛡️ Security Considerations
+## 💻 CLI Reference
 
-### ⚠️ Important Security Notes
+### Command Structure
 
-- **Isolated Environment**: Deploy honeypots in isolated network segments
-- **API Key Security**: Store API keys securely and rotate regularly
-- **Data Privacy**: Session data may contain sensitive attacker information
-- **Legal Compliance**: Ensure compliance with local laws and regulations
-- **Resource Monitoring**: Monitor disk usage for file uploads and logs
-- **Network Security**: Use proper firewall rules and access controls
+```bash
+python -m src.cli.nexus_cli <command> [options]
+```
 
-### ✅ Best Practices
+### Available Commands
 
-1. **Network Isolation**: Deploy in DMZ or isolated VLAN
-2. **Regular Updates**: Keep dependencies and AI models updated
-3. **Log Rotation**: Implement log rotation to manage disk space
-4. **Backup Strategy**: Regular backups of session data and configurations
-5. **Monitoring**: Set up alerts for high-severity attacks
-6. **Legal Review**: Consult legal team before deployment
+| Command | Description |
+|---------|-------------|
+| `start-all` | Start all honeypot services |
+| `stop-all` | Stop all running services |
+| `status` | Show service status |
+| `ssh` | Start SSH honeypot |
+| `ftp` | Start FTP honeypot |
+| `mysql` | Start MySQL honeypot |
+| `report` | Generate security reports |
+| `logs` | View and analyze logs |
+| `ml` | ML operations (train, eval, predict) |
 
-### Roadmap
+### ML Subcommands
 
-#### Short-term (Next 3 months)
+```bash
+# Extract features from datasets
+python -m src.cli.nexus_cli ml extract --service ssh --verbose
 
-- **Multi-honeypot correlation analysis with ML**
-- **Automated response orchestration based on ML scores**
-- **Threat intelligence feeds integration with ML enhancement**
+# Train models
+python -m src.cli.nexus_cli ml train --service all --algorithms isolation_forest,hdbscan
 
-#### Mid-term (Next 6 months)
+# Evaluate models
+python -m src.cli.nexus_cli ml eval --service ssh
 
-- **Advanced temporal ML analysis and prediction**
-- **Cloud deployment templates with auto-scaling ML**
-- **Enterprise management console with ML dashboards**
+# Make predictions
+python -m src.cli.nexus_cli ml predict --service ssh --input "cat /etc/shadow"
 
-#### Long-term (Next 12 months)
+# Update models with new data
+python -m src.cli.nexus_cli ml update-models --service all
+```
 
-- **Integration with popular SIEM systems**
-- **Support for additional AI providers**
-- **Advanced anomaly detection with graph-based ML**
+### Service Start Examples
 
-### File Structure
+```bash
+# Start SSH on custom port
+python -m src.cli.nexus_cli ssh --port 2222 --host 0.0.0.0
 
-```markdown
-nexus-development/
-├── src/
-│   ├── ai/
-│   ├── cli/
-│   │   └── nexus_cli.py       # Main CLI application with ML commands
-│   ├── logs/
-│   │   └── log_viewer.py      # Session log viewer with ML analysis
-│   ├── container/
-│   ├── visualization/
-│   └── service_emulators/
-│       ├── SSH/
-│       │   └── config.ini     # SSH honeypot configuration
-│       ├── FTP/
-│       │   └── config.ini     # FTP honeypot configuration
-│       └── MySQL/
-│           └── config.ini     # MySQL honeypot configuration
-├── models/
-│   ├── ssh/
-│   │   ├── anomaly_detectors/ # Isolation Forest, One-Class SVM, LOF
-│   │   ├── clustering/        # HDBSCAN, K-Means
-│   │   ├── supervised/        # XGBoost classifier
-│   │   ├── embeddings/        # Command embeddings
-│   │   └── scalers/          # Feature scalers
-│   ├── ftp/
-│   ├── mysql/
-├── datasets/
-├── configs/
-│   ├── ssh/
-│   │   └── config.ini
-│   ├── ftp/
-│   │   └── config.ini
-│   └── mysql/
-│       └── config.ini
-├── tests/
-├── research-papers/
-├── requirements.txt           # Python dependencies (includes ML libraries)
-├── LICENSE                    # MIT License
-└── README.md                 # This comprehensive guide
+# Start FTP with specific config
+python -m src.cli.nexus_cli ftp --config /path/to/config.ini
+
+# Generate HTML report for SSH
+python -m src.cli.nexus_cli report --service ssh --format html --output report.html
 ```
 
 ---
 
-## 🤝 Contributing to NEXUS
+## 🌐 API Reference
 
-We welcome contributions! Here's how to get started:
+### Base URL
 
-### 🛠️ Development Setup
-
-```bash
-# Clone and setup development environment
-git clone https://github.com/PROFFARO/nexus-development.git
-cd nexus-development
-python -m venv dev-env
-source dev-env/bin/activate  # On Windows: dev-env\Scripts\activate
-pip install -r requirements.txt
-
-# Install development dependencies
-pip install pytest black flake8 mypy
+```
+http://localhost:8000/api/v1
 ```
 
-### 📝 Contribution Guidelines
+### Endpoints
 
-1. **Code Style**: Follow PEP 8 and use Black for formatting
-2. **Testing**: Add tests for new features
-3. **Documentation**: Update README and docstrings
-4. **Security**: Ensure sensitive data is properly excluded
-5. **Logging**: Add comprehensive logging for new features
-6. **AI Integration**: Test with multiple LLM providers
+#### WebSocket - Real-Time Attacks
 
-### ➕ Adding New Services
+```
+WS /ws/attacks
+```
 
-1. Create service directory under `src/service_emulators/`
-2. Implement core honeypot functionality
-3. Add AI integration using existing patterns
-4. Create configuration files and templates
-5. Add CLI integration
-6. Implement report generation
-7. Add comprehensive testing
+Streams attack events in real-time:
+
+```json
+{
+  "event_type": "attack",
+  "service": "ssh",
+  "session_id": "abc123",
+  "timestamp": "2024-01-15T10:30:00Z",
+  "command": "cat /etc/shadow",
+  "ml_score": 0.87,
+  "attack_types": ["credential_access", "privilege_escalation"]
+}
+```
+
+#### GET /ml/stats
+
+Returns aggregated ML statistics:
+
+```json
+{
+  "total_sessions": 150,
+  "total_commands": 3420,
+  "total_attacks": 234,
+  "avg_anomaly_score": 0.42,
+  "high_risk_count": 45,
+  "medium_risk_count": 89,
+  "low_risk_count": 100
+}
+```
+
+#### GET /ml/sessions
+
+List all analyzed sessions with ML metrics.
+
+#### GET /ml/sessions/{session_id}
+
+Get detailed ML analysis for a specific session.
+
+#### GET /ml/attacks
+
+List detected attacks with filters:
+
+```bash
+GET /ml/attacks?service=ssh&severity=high&min_score=0.8&limit=50
+```
+
+#### GET /services/active
+
+Check which services are currently running.
 
 ---
 
-## 📄 License
+## 📈 Web Dashboard
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for details.
+### Technology Stack
 
-### ⚠️ Disclaimer
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Next.js | 15 | React framework |
+| TypeScript | 5 | Type safety |
+| Tailwind CSS | 3.4 | Styling |
+| shadcn/ui | - | UI components |
+| Recharts | - | Data visualization |
+| Framer Motion | - | Animations |
 
-- This software is provided "as is" without warranty
-- Users are responsible for legal compliance in their jurisdiction
-- Proper network isolation required for production deployments
-- AI responses may reveal honeypot nature to sophisticated attackers
+### Setup
+
+```bash
+cd src/web
+
+# Install dependencies
+npm install
+
+# Development server
+npm run dev
+
+# Production build
+npm run build
+npm start
+```
+
+### Dashboard Features
+
+- **Real-time Attack Feed** - Live WebSocket updates
+- **Session Explorer** - Detailed session analysis
+- **ML Metrics** - Anomaly scores and risk levels
+- **Service Status** - Health monitoring
+- **Attack Visualization** - Charts and heatmaps
+- **Report Generation** - Export security reports
 
 ---
 
-## 🆘 Support & Troubleshooting
+## 🔐 LLM Integration
 
-### 🔧 Common Issues
+### Prompt Injection Protection
 
-<details>
-<summary><strong>API Key Issues</strong></summary>
+The `LLMGuard` class implements multi-layer protection:
 
-```bash
-# Check API key configuration
-cat src/service_emulators/SSH/.env
-cat src/service_emulators/FTP/.env
-cat src/service_emulators/MySQL/.env
-
-# Test API connectivity
-python -c "import openai; print('OpenAI API key valid')"
+```python
+INJECTION_PATTERNS = [
+    r"ignore\s+(previous|all|the)\s+(instructions?|prompts?)",
+    r"you\s+are\s+(now|actually)\s+",
+    r"pretend\s+(to\s+be|you're)",
+    r"jailbreak",
+    r"DAN\s+mode",
+    # ... 50+ patterns
+]
 ```
 
-</details>
+### Response Validation
 
-<details>
-<summary><strong>Port Conflicts</strong></summary>
+1. **Input Validation** - Sanitize commands before LLM
+2. **Context Enhancement** - Add filesystem state to prompts
+3. **Output Validation** - Check for hallucinations
+4. **Meta-commentary Removal** - Strip AI explanations
 
-```bash
-# Check port availability
-netstat -an | grep :8022  # SSH
-netstat -an | grep :2121  # FTP
-netstat -an | grep :3306  # MySQL
+---
 
-# Use different ports
-python src/cli/nexus_cli.py ssh --port 2222
-python src/cli/nexus_cli.py ftp --port 2122
-python src/cli/nexus_cli.py mysql --port 3307
+## 👤 Author
+
+<div align="center">
+
+**PROFFARO - NEXUS Development Team**
+
+[![GitHub](https://img.shields.io/badge/GitHub-PROFFARO-black?style=for-the-badge&logo=github)](https://github.com/PROFFARO)
+
+*AI-Enhanced Cybersecurity Research & Development*
+
+</div>
+
+---
+
+## 📜 License
+
+This project is licensed under the **MIT License** with additional terms for honeypot software.
+
+```
+MIT License
+
+Copyright (c) 2024 PROFFARO - NEXUS Development Team
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction...
 ```
 
-</details>
+**Additional Terms:**
+- ✅ Educational and research use encouraged
+- ✅ Responsible disclosure required
+- ⚠️ Legal compliance required in your jurisdiction
+- ❌ No malicious use permitted
 
-<details>
-<summary><strong>Permission Issues</strong></summary>
-
-```bash
-# Check file permissions
-ls -la src/service_emulators/SSH/
-ls -la src/service_emulators/FTP/
-ls -la src/service_emulators/MySQL/
-
-# Fix permissions if needed
-chmod +x src/cli/nexus_cli.py
-chmod 600 src/service_emulators/*/server.key
-```
-
-</details>
-
-### 💬 Getting Help
-
-- **Issues**: Report bugs on [GitHub Issues](https://github.com/PROFFARO/nexus-development/issues)
-- **Discussions**: Join [GitHub Discussions](https://github.com/PROFFARO/nexus-development/discussions) for questions
-- **Documentation**: Check service-specific README files
-- **Logs**: Enable debug logging for troubleshooting
-
-### 🧪 Testing Connectivity
-
-```bash
-# Test SSH honeypot
-ssh admin@localhost -p 8022
-
-# Test FTP honeypot
-telnet localhost 2121
-# Or use FTP client: ftp localhost 2121
-
-# Test MySQL honeypot
-mysql -h localhost -P 3306 -u root -p
-# Or: mysql -h localhost -P 3306 -u admin -padmin
-```
+See [LICENSE](LICENSE) for complete terms.
 
 ---
 
 <div align="center">
 
-**🕸️ NEXUS - Next-Generation AI-Enhanced Honeypot Platform**
+**[⬆ Back to Top](#-nexus-ai-enhanced-honeypot-system)**
 
-**Made with ❤️ by PROFFARO**  
-*Licensed under MIT License - See [LICENSE](LICENSE) for details*
-
-[![GitHub Stars](https://img.shields.io/github/stars/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
-[![GitHub Forks](https://img.shields.io/github/forks/PROFFARO/nexus-development?style=social)](https://github.com/PROFFARO/nexus-development)
-[![GitHub Issues](https://img.shields.io/github/issues/PROFFARO/nexus-development)](https://github.com/PROFFARO/nexus-development/issues)
-[![GitHub License](https://img.shields.io/github/license/PROFFARO/nexus-development)](https://github.com/PROFFARO/nexus-development/blob/main/LICENSE)
+Made with 💜 by PROFFARO
 
 </div>
