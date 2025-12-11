@@ -115,8 +115,8 @@ graph TB
 
 ```bash
 # 1. Clone the repository
-git clone https://github.com/PROFFARO/nexus-development.git
-cd nexus-development
+git clone https://github.com/PROFFARO/nexus.git
+cd nexus
 
 # 2. Create virtual environment
 python -m venv venv
@@ -161,7 +161,7 @@ mysql -h 127.0.0.1 -P 3307 -u root -p
 ### Project Structure
 
 ```
-nexus-development/
+nexus/
 ├── 📂 configs/                    # Global configuration files
 │   ├── ftp_config.ini
 │   ├── mysql_config.ini
