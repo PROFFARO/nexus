@@ -134,6 +134,7 @@ def parse_session_file(session_dir: Path, service: str) -> Optional[SessionSumma
         
         # Try different file patterns based on service
         data = None
+        meta_data = None  # Additional metadata (for FTP)
         
         if service == "mysql":
             # MySQL uses session_data.json or session_summary.json
@@ -143,9 +144,22 @@ def parse_session_file(session_dir: Path, service: str) -> Optional[SessionSumma
                     with open(filepath, "r", encoding="utf-8") as f:
                         data = json.load(f)
                     break
+        elif service == "ftp":
+            # FTP: read meta.json for client info, then session files
+            meta_path = session_dir / "meta.json"
+            if meta_path.exists():
+                with open(meta_path, "r", encoding="utf-8") as f:
+                    meta_data = json.load(f)
+            
+            for filename in ["session_summary.json", "session_replay.json", "forensic_chain.json"]:
+                filepath = session_dir / filename
+                if filepath.exists():
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                    break
         else:
-            # SSH and FTP use session_summary.json or forensic_chain.json
-            for filename in ["session_summary.json", "forensic_chain.json"]:
+            # SSH uses forensic_chain.json primarily
+            for filename in ["forensic_chain.json", "session_summary.json"]:
                 filepath = session_dir / filename
                 if filepath.exists():
                     with open(filepath, "r", encoding="utf-8") as f:
@@ -225,8 +239,61 @@ def parse_session_file(session_dir: Path, service: str) -> Optional[SessionSumma
         else:
             risk_level = "low"
         
-        # Extract client info
+        # Extract client info - try multiple sources
         client_info = data.get("client_info", {})
+        client_ip = client_info.get("ip", "")
+        
+        # For FTP, get from meta.json first
+        if not client_ip and meta_data:
+            client_ip = meta_data.get("client_ip", "") or meta_data.get("src_ip", "")
+        
+        # Try to get from root level
+        if not client_ip:
+            client_ip = data.get("src_ip", "") or data.get("client_ip", "")
+        
+        # For forensic_chain.json (SSH/FTP), extract from connection_established event
+        if not client_ip and "events" in data:
+            for event in data.get("events", []):
+                if event.get("event_type") == "connection_established":
+                    event_data = event.get("data", {})
+                    client_ip = event_data.get("src_ip", "")
+                    break
+        
+        # Try to extract IP from session directory name (e.g., session_20251211_001731_127.0.0.1)
+        if not client_ip:
+            parts = session_id.split("_")
+            if len(parts) >= 4:
+                # Last part might be IP address
+                potential_ip = parts[-1]
+                if potential_ip.count(".") == 3:  # Simple IP check
+                    client_ip = potential_ip
+        
+        # Extract username - try multiple sources
+        username = data.get("username", "")
+        
+        # For FTP, get from meta.json
+        if not username and meta_data:
+            username = meta_data.get("username", "") or ""
+        
+        # For SSH/FTP with forensic_chain, check various event types
+        if not username and "events" in data:
+            for event in data.get("events", []):
+                event_type = event.get("event_type", "")
+                event_data = event.get("data", {})
+                
+                # Check authentication events
+                if event_type in ["authentication", "authentication_success", "login", "session_start"]:
+                    username = event_data.get("username", "")
+                    if username:
+                        break
+                
+                # Check if username is in connection event
+                if event_type == "connection_established" and not username:
+                    username = event_data.get("username", "")
+        
+        # For SSH, if still no username and there are attack events (user was active), default to 'guest'
+        if not username and service == "ssh" and (attack_count > 0 or total_commands > 0):
+            username = "guest"
         
         return SessionSummary(
             session_id=session_id,
@@ -240,8 +307,8 @@ def parse_session_file(session_dir: Path, service: str) -> Optional[SessionSumma
             max_ml_score=round(max_ml_score, 4),
             risk_level=risk_level,
             attacks=attacks,
-            client_ip=client_info.get("ip", data.get("src_ip", "")),
-            username=data.get("username", ""),
+            client_ip=client_ip,
+            username=username,
         )
         
     except Exception as e:
