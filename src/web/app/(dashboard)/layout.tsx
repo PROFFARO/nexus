@@ -11,15 +11,19 @@ import {
     IconSun,
     IconMoon,
     IconFileText,
-    IconLock
+    IconLock,
+    IconSearch
 } from "@tabler/icons-react";
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
+import { CommandSearch } from "@/components/search";
+import { SearchProvider, useSearch } from "@/hooks/use-search";
 
-export default function DashboardLayout({
+// Inner component that uses the search context
+function DashboardLayoutInner({
     children,
 }: {
     children: React.ReactNode;
@@ -28,6 +32,7 @@ export default function DashboardLayout({
     const pathname = usePathname();
     const { setTheme, resolvedTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
+    const { open: openSearch } = useSearch();
 
     useEffect(() => {
         setMounted(true);
@@ -95,12 +100,12 @@ export default function DashboardLayout({
     return (
         <div
             className={cn(
-                "rounded-md flex flex-col md:flex-row bg-gray-100 dark:bg-neutral-900 w-full flex-1 mx-auto border border-neutral-200 dark:border-neutral-700 overflow-hidden",
+                "rounded-md flex flex-col md:flex-row bg-gray-100 dark:bg-neutral-900 w-full flex-1 mx-auto border border-neutral-200 dark:border-neutral-700 overflow-hidden relative z-20",
                 "h-screen"
             )}
         >
             <Sidebar open={open} setOpen={setOpen}>
-                <SidebarBody className="justify-between gap-10 bg-white/50 dark:bg-neutral-900/50 backdrop-blur-xl border-r border-neutral-200/50 dark:border-white/5 py-4 px-3">
+                <SidebarBody className="justify-between gap-10 bg-white/95 dark:bg-neutral-950/95 backdrop-blur-xl border-r border-neutral-200/50 dark:border-white/10 py-4 px-3 z-50 isolate">
                     <div className="flex flex-col flex-1 overflow-y-auto overflow-x-hidden">
                         {/* Logo Section */}
                         <div className="flex items-center gap-2 px-1 py-1 overflow-hidden">
@@ -118,7 +123,41 @@ export default function DashboardLayout({
                             </motion.span>
                         </div>
 
-                        <div className="mt-10 flex flex-col gap-2">
+                        {/* Search Button */}
+                        <button
+                            onClick={(e) => {
+                                e.preventDefault();
+                                openSearch();
+                            }}
+                            className="mt-6 w-full flex items-center justify-start gap-2 py-2 px-2 cursor-pointer group text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5 rounded transition-all duration-200"
+                        >
+                            <IconSearch className="h-5 w-5 flex-shrink-0 group-hover:text-primary transition-colors" />
+                            <motion.span
+                                animate={{
+                                    display: open ? "inline-block" : "none",
+                                    opacity: open ? 1 : 0,
+                                }}
+                                className="text-sm group-hover:translate-x-1 transition duration-150 whitespace-pre inline-block"
+                            >
+                                Search
+                            </motion.span>
+                            <motion.div
+                                animate={{
+                                    display: open ? "flex" : "none",
+                                    opacity: open ? 1 : 0,
+                                }}
+                                className="ml-auto flex items-center gap-0.5"
+                            >
+                                <kbd className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-200 dark:bg-neutral-800 rounded text-neutral-500 dark:text-neutral-400">
+                                    Ctrl
+                                </kbd>
+                                <kbd className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-200 dark:bg-neutral-800 rounded text-neutral-500 dark:text-neutral-400">
+                                    K
+                                </kbd>
+                            </motion.div>
+                        </button>
+
+                        <div className="mt-4 flex flex-col gap-2">
                             {links.map((link, idx) => {
                                 const isActive = pathname === link.href;
                                 return (
@@ -163,6 +202,22 @@ export default function DashboardLayout({
                     {children}
                 </div>
             </main>
+
+            {/* Global Command Search */}
+            <CommandSearch />
         </div>
+    );
+}
+
+// Wrapper component that provides the SearchProvider
+export default function DashboardLayout({
+    children,
+}: {
+    children: React.ReactNode;
+}) {
+    return (
+        <SearchProvider>
+            <DashboardLayoutInner>{children}</DashboardLayoutInner>
+        </SearchProvider>
     );
 }

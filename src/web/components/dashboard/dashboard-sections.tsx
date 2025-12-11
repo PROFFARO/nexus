@@ -14,7 +14,8 @@ import {
     IconLock,
     IconTerminal2,
     IconFileDatabase,
-    IconCpu
+    IconCpu,
+    IconFilter
 } from "@tabler/icons-react";
 import {
     BarChart,
@@ -60,9 +61,9 @@ import {
 // ============================================================================
 export function HeroSection() {
     return (
-        <section className="relative w-full min-h-[60vh] flex flex-col items-center justify-center overflow-hidden py-20">
+        <section className="relative w-full min-h-[60vh] flex flex-col items-center justify-center py-20 px-4">
             {/* Sparkles Effect */}
-            <div className="w-full absolute inset-0 h-full">
+            <div className="w-full absolute inset-0 h-full overflow-hidden">
                 <SparklesCore
                     id="hero-sparkles"
                     background="transparent"
@@ -75,32 +76,36 @@ export function HeroSection() {
             </div>
 
             {/* Main Title */}
-            <div className="relative z-10 text-center">
+            <div className="relative z-10 text-center px-4">
                 <motion.h1
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ duration: 0.8 }}
-                    className="text-7xl md:text-9xl font-black tracking-tighter mb-4"
+                    className="text-7xl md:text-9xl font-black tracking-tight"
                 >
-                    <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent">
+                    <span className="bg-gradient-to-r from-cyan-400 via-blue-500 to-purple-600 bg-clip-text text-transparent inline-block">
                         NEXUS
                     </span>
                 </motion.h1>
 
-                {/* Sparkles under title */}
-                <div className="w-[300px] md:w-[500px] h-20 relative mx-auto">
-                    <div className="absolute inset-x-10 top-0 bg-gradient-to-r from-transparent via-cyan-500 to-transparent h-[2px] w-3/4 blur-sm" />
-                    <div className="absolute inset-x-10 top-0 bg-gradient-to-r from-transparent via-cyan-500 to-transparent h-px w-3/4" />
-                    <div className="absolute inset-x-32 top-0 bg-gradient-to-r from-transparent via-blue-500 to-transparent h-[5px] w-1/4 blur-sm" />
-                    <div className="absolute inset-x-32 top-0 bg-gradient-to-r from-transparent via-blue-500 to-transparent h-px w-1/4" />
+                {/* Sparkles under title - full width with gradient fade for organic spread */}
+                <div className="w-full max-w-4xl h-32 relative mx-auto -mt-2 overflow-visible" style={{ maskImage: 'radial-gradient(ellipse 80% 100% at 50% 0%, black 30%, transparent 70%)', WebkitMaskImage: 'radial-gradient(ellipse 80% 100% at 50% 0%, black 30%, transparent 70%)' }}>
+                    {/* Main glow line */}
+                    <div className="absolute inset-x-0 top-0 bg-gradient-to-r from-transparent via-cyan-400 to-transparent h-[3px] w-full blur-md opacity-80" />
+                    <div className="absolute inset-x-0 top-0 bg-gradient-to-r from-transparent via-cyan-300 to-transparent h-[2px] w-full" />
+                    {/* Center accent glow */}
+                    <div className="absolute left-1/4 right-1/4 top-0 bg-gradient-to-r from-transparent via-blue-400 to-transparent h-[6px] blur-md opacity-90" />
+                    <div className="absolute left-1/4 right-1/4 top-0 bg-gradient-to-r from-transparent via-blue-300 to-transparent h-[2px]" />
+                    {/* Extra bright center spot */}
+                    <div className="absolute left-1/3 right-1/3 top-0 bg-cyan-300 h-[4px] blur-lg opacity-70" />
                     <SparklesCore
                         id="title-sparkles"
                         background="transparent"
-                        minSize={0.4}
-                        maxSize={1}
-                        particleDensity={1200}
+                        minSize={0.5}
+                        maxSize={2}
+                        particleDensity={600}
                         className="w-full h-full"
-                        particleColor="#06b6d4"
+                        particleColor="#22d3ee"
                     />
                 </div>
 
@@ -139,7 +144,7 @@ function StatBadge({ icon, value, label }: { icon: React.ReactNode; value: strin
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="flex items-center gap-3 px-5 py-3 rounded-full bg-white/10 dark:bg-black/20 backdrop-blur-sm border border-neutral-200/20 dark:border-white/10"
+            className="flex items-center gap-4 px-6 py-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md transition-shadow"
         >
             <span className="text-cyan-500">{icon}</span>
             <div className="text-left">
@@ -325,7 +330,7 @@ function FlowCard({ title, items, icon }: { title: string; items: string[]; icon
             initial={{ opacity: 0, y: 20 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
-            className="p-6 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10 backdrop-blur-sm"
+            className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md transition-shadow"
         >
             <div className="flex items-center gap-3 mb-4 text-cyan-500">
                 {icon}
@@ -334,7 +339,7 @@ function FlowCard({ title, items, icon }: { title: string; items: string[]; icon
             <ul className="space-y-2">
                 {items.map((item, i) => (
                     <li key={i} className="text-sm text-neutral-600 dark:text-neutral-400 flex items-center gap-2">
-                        <span className="w-1.5 h-1.5 rounded-full bg-cyan-500/50" />
+                        <span className="w-1.5 h-1.5 bg-cyan-500" />
                         {item}
                     </li>
                 ))}
@@ -396,7 +401,7 @@ export function MLSection() {
                 {/* Visualizations */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
                     {/* Accuracy Bar Chart */}
-                    <div className="p-6 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10">
+                    <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
                         <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Algorithm Accuracy</h3>
                         <ResponsiveContainer width="100%" height={250}>
                             <BarChart data={accuracyData} layout="vertical">
@@ -417,7 +422,7 @@ export function MLSection() {
                     </div>
 
                     {/* Algorithm Type Distribution */}
-                    <div className="p-6 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10">
+                    <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
                         <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Algorithm Types</h3>
                         <ResponsiveContainer width="100%" height={250}>
                             <PieChart>
@@ -443,7 +448,7 @@ export function MLSection() {
                     </div>
 
                     {/* Radar Chart */}
-                    <div className="p-6 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10">
+                    <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
                         <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Performance Radar</h3>
                         <ResponsiveContainer width="100%" height={250}>
                             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
@@ -526,7 +531,7 @@ function StatsCard({ title, value, subtitle, icon }: { title: string; value: str
             initial={{ opacity: 0, scale: 0.95 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            className="p-5 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10"
+            className="p-5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md transition-shadow"
         >
             <div className="flex items-start justify-between">
                 <div>
@@ -590,24 +595,62 @@ export function DatasetsSection() {
                     </p>
                 </motion.div>
 
-                {/* Category Filter */}
-                <div className="flex flex-wrap justify-center gap-2 mb-12">
-                    {categories.map(cat => (
-                        <HoverBorderGradient
-                            key={cat}
-                            as="button"
-                            onClick={() => setActiveCategory(cat)}
-                            className={cn(
-                                "text-sm transition-colors",
-                                activeCategory === cat
-                                    ? "bg-cyan-500/20"
-                                    : "bg-transparent hover:bg-white/5"
-                            )}
-                        >
-                            {cat}
-                        </HoverBorderGradient>
-                    ))}
-                </div>
+                {/* Category Filter - Premium Card Container */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    className="mb-12 p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-lg"
+                >
+                    {/* Filter Header */}
+                    <div className="flex items-center justify-between mb-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+                        <div className="flex items-center gap-2">
+                            <IconFilter className="w-5 h-5 text-cyan-500" />
+                            <span className="text-sm font-semibold text-neutral-700 dark:text-neutral-300">Filter by Category</span>
+                        </div>
+                        <span className="text-xs text-neutral-500 dark:text-neutral-500">
+                            {categories.length} categories available
+                        </span>
+                    </div>
+
+                    {/* All Button + Category Groups */}
+                    <div className="space-y-4">
+                        {/* Primary "All" Button */}
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={() => setActiveCategory("All")}
+                                className={cn(
+                                    "px-6 py-2.5 text-sm font-semibold transition-all duration-200 border-2",
+                                    activeCategory === "All"
+                                        ? "bg-gradient-to-r from-cyan-500 to-blue-500 text-white border-transparent shadow-lg shadow-cyan-500/30"
+                                        : "bg-neutral-50 dark:bg-neutral-800 text-neutral-700 dark:text-neutral-300 border-neutral-200 dark:border-neutral-600 hover:border-cyan-500 hover:text-cyan-500"
+                                )}
+                            >
+                                All Categories
+                            </button>
+                            <div className="h-6 w-px bg-neutral-200 dark:bg-neutral-700" />
+                            <span className="text-xs text-neutral-400 dark:text-neutral-500">or select specific:</span>
+                        </div>
+
+                        {/* Category Grid - Organized in Rows */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2">
+                            {categories.filter(cat => cat !== "All").map(cat => (
+                                <button
+                                    key={cat}
+                                    onClick={() => setActiveCategory(cat)}
+                                    className={cn(
+                                        "px-4 py-2 text-xs font-medium transition-all duration-200 text-center",
+                                        activeCategory === cat
+                                            ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500 shadow-sm"
+                                            : "bg-neutral-50 dark:bg-neutral-800 text-neutral-600 dark:text-neutral-400 border border-neutral-200 dark:border-neutral-700 hover:bg-neutral-100 dark:hover:bg-neutral-750 hover:border-neutral-300 dark:hover:border-neutral-600"
+                                    )}
+                                >
+                                    {cat}
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                </motion.div>
 
                 {/* Dataset Grid */}
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mb-16">
@@ -619,7 +662,7 @@ export function DatasetsSection() {
                 {/* Dataset Statistics */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mt-16">
                     {/* Size by Category */}
-                    <div className="p-6 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10">
+                    <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
                         <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Data Size by Category (MB)</h3>
                         <ResponsiveContainer width="100%" height={300}>
                             <BarChart data={categoryStats}>
@@ -659,16 +702,16 @@ function DatasetCard({ dataset, index }: { dataset: Dataset; index: number }) {
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ delay: index * 0.05 }}
-            className="p-5 rounded-xl bg-white/5 dark:bg-black/20 border border-neutral-200/20 dark:border-white/10 hover:border-cyan-500/30 transition-colors"
+            className="p-5 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 hover:border-cyan-500 shadow-sm hover:shadow-md transition-all"
         >
             <div className="flex items-start justify-between mb-3">
                 <div className="flex items-center gap-2">
                     <IconDatabase className="w-5 h-5 text-cyan-500" />
-                    <span className="text-xs px-2 py-1 rounded-full bg-cyan-500/10 text-cyan-400">
+                    <span className="text-xs px-2 py-1 bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 font-medium">
                         {dataset.format}
                     </span>
                 </div>
-                <span className="text-sm font-medium text-neutral-400">{dataset.size}</span>
+                <span className="text-sm font-medium text-neutral-600 dark:text-neutral-400">{dataset.size}</span>
             </div>
             <h4 className="font-semibold text-neutral-900 dark:text-white mb-2 text-sm truncate" title={dataset.name}>
                 {dataset.name}
@@ -676,8 +719,8 @@ function DatasetCard({ dataset, index }: { dataset: Dataset; index: number }) {
             <p className="text-xs text-neutral-500 dark:text-neutral-400 line-clamp-2">
                 {dataset.description}
             </p>
-            <div className="mt-3 pt-3 border-t border-white/5">
-                <span className="text-xs text-neutral-500">{dataset.category}</span>
+            <div className="mt-3 pt-3 border-t border-neutral-100 dark:border-neutral-800">
+                <span className="text-xs text-neutral-500 dark:text-neutral-500">{dataset.category}</span>
             </div>
         </motion.div>
     );
@@ -747,6 +790,12 @@ function ServiceCard({ service, index }: { service: ServiceConfig; index: number
         mysql: "#10b981"
     };
 
+    const serviceColorClasses: Record<string, string> = {
+        ssh: "text-cyan-500 bg-cyan-500/10 dark:bg-cyan-500/20",
+        ftp: "text-purple-500 bg-purple-500/10 dark:bg-purple-500/20",
+        mysql: "text-emerald-500 bg-emerald-500/10 dark:bg-emerald-500/20"
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -758,16 +807,13 @@ function ServiceCard({ service, index }: { service: ServiceConfig; index: number
                 <div className="relative z-20">
                     {/* Header */}
                     <div className="flex items-center gap-4 mb-4">
-                        <div
-                            className="p-3 rounded-lg"
-                            style={{ backgroundColor: `${serviceColors[service.id]}20` }}
-                        >
+                        <div className={cn("p-3", serviceColorClasses[service.id])}>
                             {serviceIcons[service.id]}
                         </div>
                         <div>
                             <h3 className="text-xl font-bold text-white">{service.name}</h3>
                             <div className="flex items-center gap-2 mt-1">
-                                <span className="text-xs px-2 py-0.5 rounded-full bg-green-500/20 text-green-400">
+                                <span className="text-xs px-2 py-0.5 bg-green-500/20 text-green-400 font-medium">
                                     {service.status}
                                 </span>
                             </div>
@@ -802,7 +848,7 @@ function ServiceCard({ service, index }: { service: ServiceConfig; index: number
                             {service.features.slice(0, 5).map((feature, i) => (
                                 <span
                                     key={i}
-                                    className="text-xs px-2 py-1 rounded-full bg-white/5 text-neutral-400"
+                                    className="text-xs px-2 py-1 bg-white/5 text-neutral-400"
                                 >
                                     {feature.split(" ").slice(0, 3).join(" ")}
                                 </span>
@@ -817,7 +863,7 @@ function ServiceCard({ service, index }: { service: ServiceConfig; index: number
                             {service.aiModels.slice(0, 3).map((model, i) => (
                                 <span
                                     key={i}
-                                    className="text-xs px-2 py-1 rounded-full bg-purple-500/10 text-purple-400"
+                                    className="text-xs px-2 py-1 bg-purple-500/10 text-purple-400"
                                 >
                                     {model.split(" ")[0]}
                                 </span>
