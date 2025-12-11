@@ -185,6 +185,29 @@ class NexusCLI:
         start_parser.add_argument('--llm-provider', choices=['openai', 'azure', 'ollama', 'aws', 'gemini'], help='LLM provider for all services')
         start_parser.add_argument('--model-name', help='LLM model name for all services')
         
+        # Web dashboard command
+        web_parser = subparsers.add_parser('web', help='Start the Next.js web dashboard')
+        web_parser.add_argument('-p', '--port', type=int, default=3000, 
+                               help='Port to run the web server on (default: 3000)')
+        web_parser.add_argument('-H', '--host', default='localhost',
+                               help='Host to bind to (default: localhost, use 0.0.0.0 for all interfaces)')
+        web_parser.add_argument('--build', action='store_true',
+                               help='Build for production before starting')
+        web_parser.add_argument('--install', action='store_true',
+                               help='Run npm install before starting')
+        web_parser.add_argument('--dev', action='store_true', default=True,
+                               help='Run in development mode (default)')
+        web_parser.add_argument('--prod', action='store_true',
+                               help='Run in production mode (requires --build first or existing build)')
+        
+        # API server command
+        api_parser = subparsers.add_parser('api', help='Start the FastAPI backend server')
+        api_parser.add_argument('-p', '--port', type=int, default=8000,
+                               help='Port to run the API server on (default: 8000)')
+        api_parser.add_argument('-H', '--host', default='0.0.0.0',
+                               help='Host to bind to (default: 0.0.0.0)')
+        api_parser.add_argument('--reload', action='store_true',
+                               help='Enable auto-reload for development')
         
         return parser
 
@@ -411,6 +434,128 @@ class NexusCLI:
             print("\nMySQL honeypot stopped")
         except Exception as e:
             print(f"Error running MySQL honeypot: {e}")
+            return 1
+        
+        return 0
+
+    def run_web_dashboard(self, args):
+        """Run the Next.js web dashboard"""
+        web_dir = self.base_dir / 'web'
+        
+        if not web_dir.exists():
+            print(f"[ERROR] Web directory not found at {web_dir}")
+            return 1
+        
+        # Check if node_modules exists
+        node_modules = web_dir / 'node_modules'
+        if not node_modules.exists() or args.install:
+            print("[INFO] Installing npm dependencies...")
+            try:
+                install_result = subprocess.run(
+                    ['npm', 'install'],
+                    cwd=web_dir,
+                    shell=True
+                )
+                if install_result.returncode != 0:
+                    print("[ERROR] npm install failed")
+                    return 1
+                print("[SUCCESS] Dependencies installed")
+            except FileNotFoundError:
+                print("[ERROR] npm not found. Please install Node.js and npm first.")
+                return 1
+            except Exception as e:
+                print(f"[ERROR] Failed to install dependencies: {e}")
+                return 1
+        
+        # Build for production if requested
+        if args.build:
+            print("[INFO] Building for production...")
+            try:
+                build_result = subprocess.run(
+                    ['npm', 'run', 'build'],
+                    cwd=web_dir,
+                    shell=True
+                )
+                if build_result.returncode != 0:
+                    print("[ERROR] Build failed")
+                    return 1
+                print("[SUCCESS] Production build completed")
+            except Exception as e:
+                print(f"[ERROR] Build failed: {e}")
+                return 1
+        
+        # Determine which command to run
+        if args.prod:
+            cmd = ['npm', 'run', 'start']
+            mode = "production"
+        else:
+            cmd = ['npm', 'run', 'dev']
+            mode = "development"
+        
+        # Set environment variables for port and host
+        env = os.environ.copy()
+        env['PORT'] = str(args.port)
+        env['HOSTNAME'] = args.host
+        
+        print(f"\n{'='*60}")
+        print(f"  NEXUS Web Dashboard")
+        print(f"{'='*60}")
+        print(f"  Mode: {mode}")
+        print(f"  URL:  http://{args.host}:{args.port}")
+        print(f"{'='*60}")
+        print(f"  Press Ctrl+C to stop the server")
+        print(f"{'='*60}\n")
+        
+        try:
+            subprocess.run(cmd, cwd=web_dir, env=env, shell=True)
+        except KeyboardInterrupt:
+            print("\n[INFO] Web dashboard stopped")
+        except Exception as e:
+            print(f"[ERROR] Failed to start web dashboard: {e}")
+            return 1
+        
+        return 0
+
+    def run_api_server(self, args):
+        """Run the FastAPI backend server"""
+        api_dir = self.base_dir / 'api'
+        
+        if not api_dir.exists():
+            print(f"[ERROR] API directory not found at {api_dir}")
+            return 1
+        
+        # Check if uvicorn is available
+        try:
+            import uvicorn
+        except ImportError:
+            print("[ERROR] uvicorn not found. Install with: pip install uvicorn")
+            return 1
+        
+        cmd = [
+            sys.executable, '-m', 'uvicorn',
+            'main:app',
+            '--host', args.host,
+            '--port', str(args.port)
+        ]
+        
+        if args.reload:
+            cmd.append('--reload')
+        
+        print(f"\n{'='*60}")
+        print(f"  NEXUS API Server")
+        print(f"{'='*60}")
+        print(f"  URL:  http://{args.host}:{args.port}")
+        print(f"  Docs: http://{args.host}:{args.port}/docs")
+        print(f"{'='*60}")
+        print(f"  Press Ctrl+C to stop the server")
+        print(f"{'='*60}\n")
+        
+        try:
+            subprocess.run(cmd, cwd=api_dir)
+        except KeyboardInterrupt:
+            print("\n[INFO] API server stopped")
+        except Exception as e:
+            print(f"[ERROR] Failed to start API server: {e}")
             return 1
         
         return 0
@@ -840,6 +985,10 @@ except Exception as e:
             return self.start_all(args)
         elif args.command == 'ml':
             return self.handle_ml_command(args)
+        elif args.command == 'web':
+            return self.run_web_dashboard(args)
+        elif args.command == 'api':
+            return self.run_api_server(args)
         else:
             print(f"Unknown command: {args.command}")
             return 1
