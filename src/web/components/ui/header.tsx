@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { UserButton } from "@clerk/nextjs";
 import {
     Search,
     Bell,
@@ -195,17 +194,6 @@ export function Header() {
                 <button className="rounded-lg p-2 text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]">
                     <Settings className="h-5 w-5" />
                 </button>
-
-                {/* User Avatar (Clerk) */}
-                <div className="ml-2">
-                    <UserButton
-                        appearance={{
-                            elements: {
-                                avatarBox: "h-9 w-9",
-                            },
-                        }}
-                    />
-                </div>
             </div>
         </header>
     );

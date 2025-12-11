@@ -3,11 +3,9 @@ import React, { useState, useEffect } from "react";
 import { Sidebar, SidebarBody, SidebarLink } from "@/components/ui/sidebar";
 import {
     IconSettings,
-    IconUserBolt,
     IconTerminal2,
     IconShieldLock,
     IconLayoutDashboard,
-    IconLogout,
     IconBrain,
     IconMessages,
     IconSun,
@@ -18,8 +16,7 @@ import {
 import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
-import { UserButton, useClerk, useUser } from "@clerk/nextjs";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { useTheme } from "next-themes";
 
 export default function DashboardLayout({
@@ -28,10 +25,7 @@ export default function DashboardLayout({
     children: React.ReactNode;
 }) {
     const [open, setOpen] = useState(false);
-    const { signOut } = useClerk();
-    const { user } = useUser();
     const pathname = usePathname();
-    const router = useRouter();
     const { setTheme, resolvedTheme } = useTheme();
     const [mounted, setMounted] = useState(false);
 
@@ -158,54 +152,6 @@ export default function DashboardLayout({
                                     className="text-neutral-600 dark:text-neutral-400 group-hover:bg-neutral-100 dark:group-hover:bg-white/5 rounded px-2"
                                 />
                             </div>
-
-
-                        </div>
-                    </div>
-
-                    {/* User Profile */}
-                    <div className="border-t border-neutral-200/50 dark:border-white/5 pt-4">
-                        <div
-                            className={cn(
-                                "flex items-center gap-3 px-1 rounded p-2 transition-colors",
-                                "hover:bg-neutral-300 dark:hover:bg-white/5"
-                            )}
-                        >
-                            <div onClick={(e) => e.stopPropagation()} className="flex items-center justify-center">
-                                <UserButton afterSignOutUrl="/sign-in" appearance={{
-                                    elements: {
-                                        avatarBox: "h-8 w-8 ring-2 ring-white/20"
-                                    }
-                                }} />
-                            </div>
-                            <motion.div
-                                animate={{
-                                    display: open ? "flex" : "none",
-                                    opacity: open ? 1 : 0,
-                                }}
-                                className="flex flex-col overflow-hidden items-start text-left"
-                            >
-                                <span className="text-sm font-semibold text-neutral-800 dark:text-neutral-200 truncate max-w-[150px]">
-                                    {user?.fullName || "User"}
-                                </span>
-                                <span className="text-xs text-neutral-500 dark:text-neutral-400 truncate max-w-[150px]">
-                                    {user?.primaryEmailAddress?.emailAddress}
-                                </span>
-                            </motion.div>
-
-                            <motion.button
-                                animate={{
-                                    display: open ? "flex" : "none",
-                                    opacity: open ? 1 : 0,
-                                }}
-                                onClick={(e) => {
-                                    e.stopPropagation();
-                                    signOut({ redirectUrl: '/sign-in' });
-                                }}
-                                className="ml-auto cursor-pointer p-1.5 rounded-lg text-neutral-500 hover:bg-neutral-200 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-colors"
-                            >
-                                <IconLogout className="h-5 w-5" />
-                            </motion.button>
                         </div>
                     </div>
                 </SidebarBody>

@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Outfit } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
-import { ClerkWrapper } from "@/components/clerk-wrapper";
 import "./globals.css";
 
 const outfit = Outfit({
@@ -36,11 +35,10 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange={false}
         >
-          <ClerkWrapper>
-            {children}
-          </ClerkWrapper>
+          {children}
         </ThemeProvider>
       </body>
     </html>
   );
 }
+

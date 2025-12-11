@@ -9,7 +9,7 @@ import {
     IconServer,
     IconChartBar,
 } from '@tabler/icons-react';
-import { MLStats, getMLStats } from '@/lib/ml-data';
+import { MLStats, getMLStats, formatAnomalyScore } from '@/lib/ml-data';
 
 interface StatsCardProps {
     title: string;
@@ -191,10 +191,10 @@ export function MLStatsCards({ service, refreshInterval = 3000, realtimeStats, e
         },
         {
             title: 'Avg Anomaly Score',
-            value: `${(stats.avg_anomaly_score * 100).toFixed(1)}%`,
+            value: formatAnomalyScore(stats.avg_anomaly_score),
             subtitle: 'Across all commands',
             icon: <IconChartBar className="h-6 w-6" />,
-            color: stats.avg_anomaly_score > 0.5 ? '#f59e0b' : '#22c55e',
+            color: (stats.avg_anomaly_score > 1 ? stats.avg_anomaly_score : stats.avg_anomaly_score * 100) > 50 ? '#f59e0b' : '#22c55e',
         },
         {
             title: 'High Risk',
