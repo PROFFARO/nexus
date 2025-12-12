@@ -185,8 +185,6 @@ config.conf
 
 # Session Data and Logs
 sessions/
-datasets/
-research-papers/
 *.log
 forensic_chain.json
 session_summary.json
