@@ -1200,57 +1200,62 @@ function MLAlgorithmCard({ algorithm, index }: { algorithm: MLAlgorithm; index: 
     // Render metrics based on algorithm type
     const renderMetrics = () => {
         if (algorithm.type === "Clustering") {
+            // Get silhouette scores for display
+            const ftpSilhouette = algorithm.serviceMetrics?.ftp?.silhouette_score;
+            const mysqlSilhouette = algorithm.serviceMetrics?.mysql?.silhouette_score;
+            const sshSilhouette = algorithm.serviceMetrics?.ssh?.silhouette_score;
+
             return (
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                        <span className="text-slate-500">Clusters:</span>
-                        <span className="ml-2 text-purple-400 font-semibold">{algorithm.clusters ?? "N/A"}</span>
+                <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">Max Clusters:</span>
+                        <span className="text-purple-400 font-semibold">{algorithm.clusters ?? "N/A"}</span>
                     </div>
-                    <div>
-                        <span className="text-slate-500">Silhouette:</span>
-                        <span className="ml-2 text-purple-400 font-semibold">
-                            {typeof algorithm.silhouette_score === "number"
-                                ? algorithm.silhouette_score.toFixed(3)
-                                : "N/A"}
-                        </span>
+                    <div className="pt-2 border-t border-white/5 space-y-1">
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">FTP:</span>
+                            <span className="text-green-400">
+                                {algorithm.serviceMetrics?.ftp?.clusters ?? "—"} <span className="text-slate-500">|</span> {typeof ftpSilhouette === "number" ? ftpSilhouette.toFixed(2) : "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">MySQL:</span>
+                            <span className="text-emerald-400">
+                                {algorithm.serviceMetrics?.mysql?.clusters ?? "—"} <span className="text-slate-500">|</span> {typeof mysqlSilhouette === "number" ? mysqlSilhouette.toFixed(2) : "—"}
+                            </span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">SSH:</span>
+                            <span className="text-yellow-400">
+                                {algorithm.serviceMetrics?.ssh?.clusters ?? 0} <span className="text-slate-500">|</span> {typeof sshSilhouette === "number" ? sshSilhouette.toFixed(2) : "—"}
+                            </span>
+                        </div>
                     </div>
-                    <div className="col-span-2">
-                        <span className="text-slate-500">FTP:</span>
-                        <span className="ml-2 text-green-400">
-                            {algorithm.serviceMetrics?.ftp?.clusters ?? "—"} clusters
-                        </span>
-                        <span className="mx-2 text-slate-600">|</span>
-                        <span className="text-slate-500">MySQL:</span>
-                        <span className="ml-2 text-emerald-400">
-                            {algorithm.serviceMetrics?.mysql?.clusters ?? "—"} clusters
-                        </span>
-                    </div>
+                    <div className="text-[13px] text-slate-400 text-right font-medium">clusters <span className="text-cyan-500/70">|</span> silhouette</div>
                 </div>
             );
         }
 
         if (algorithm.type === "Supervised Learning") {
             return (
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                    <div>
-                        <span className="text-slate-500">Accuracy:</span>
-                        <span className="ml-2 text-green-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
+                <div className="space-y-2 text-xs">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">Best Accuracy:</span>
+                        <span className="text-green-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
                     </div>
-                    <div>
-                        <span className="text-slate-500">AUC Score:</span>
-                        <span className="ml-2 text-green-400 font-semibold">
-                            {typeof algorithm.auc_score === "number"
-                                ? algorithm.auc_score.toFixed(3)
-                                : "N/A"}
-                        </span>
-                    </div>
-                    <div>
-                        <span className="text-slate-500">FTP:</span>
-                        <span className="ml-2 text-green-400">{algorithm.serviceMetrics?.ftp?.accuracy ?? "Training"}</span>
-                    </div>
-                    <div>
-                        <span className="text-slate-500">MySQL:</span>
-                        <span className="ml-2 text-emerald-400">{algorithm.serviceMetrics?.mysql?.accuracy ?? "Training"}</span>
+                    <div className="pt-2 border-t border-white/5 space-y-1">
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">FTP:</span>
+                            <span className="text-green-400">{algorithm.serviceMetrics?.ftp?.accuracy ?? "—"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">MySQL:</span>
+                            <span className="text-emerald-400">{algorithm.serviceMetrics?.mysql?.accuracy ?? "—"}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span className="text-slate-500">SSH:</span>
+                            <span className="text-yellow-400">{algorithm.serviceMetrics?.ssh?.accuracy ?? "Pending"}</span>
+                        </div>
                     </div>
                 </div>
             );
@@ -1258,22 +1263,24 @@ function MLAlgorithmCard({ algorithm, index }: { algorithm: MLAlgorithm; index: 
 
         // Anomaly Detection
         return (
-            <div className="grid grid-cols-2 gap-2 text-xs">
-                <div>
-                    <span className="text-slate-500">Accuracy:</span>
-                    <span className="ml-2 text-cyan-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
+            <div className="space-y-2 text-xs">
+                <div className="flex justify-between">
+                    <span className="text-slate-500">Best Accuracy:</span>
+                    <span className="text-cyan-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
                 </div>
-                <div>
-                    <span className="text-slate-500">Precision:</span>
-                    <span className="ml-2 text-slate-400">{algorithm.precision ?? "N/A"}</span>
-                </div>
-                <div>
-                    <span className="text-slate-500">Recall:</span>
-                    <span className="ml-2 text-slate-400">{algorithm.recall ?? "N/A"}</span>
-                </div>
-                <div>
-                    <span className="text-slate-500">F1:</span>
-                    <span className="ml-2 text-slate-400">{algorithm.f1Score ?? "N/A"}</span>
+                <div className="pt-2 border-t border-white/5 space-y-1">
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">FTP:</span>
+                        <span className="text-green-400">{algorithm.serviceMetrics?.ftp?.accuracy ?? "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">MySQL:</span>
+                        <span className="text-emerald-400">{algorithm.serviceMetrics?.mysql?.accuracy ?? "—"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                        <span className="text-slate-500">SSH:</span>
+                        <span className="text-yellow-400">{algorithm.serviceMetrics?.ssh?.accuracy ?? "Pending"}</span>
+                    </div>
                 </div>
             </div>
         );
