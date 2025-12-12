@@ -51,7 +51,7 @@ shap>=0.42.0
 
 # Security and Cryptography
 cryptography>=41.0.0
-hashlib-compat>=1.0.1
+# REMOVED: hashlib-compat>=1.0.1 (This package is causing the installation error)
 python-jose>=3.3.0
 
 # Network and Protocol Analysis
@@ -61,7 +61,7 @@ ipaddress>=1.0.23
 geoip2>=4.7.0
 
 # Database and Storage
-sqlite3
+# sqlite3
 sqlalchemy>=2.0.0
 redis>=4.6.0
 elasticsearch>=8.8.0
@@ -88,7 +88,7 @@ volatility3>=2.4.0
 # Reporting and Documentation
 reportlab>=4.0.0
 weasyprint>=59.0
-jinja2>=3.1.0
+# jinja2>=3.1.0 (DUPLICATE REMOVED)
 markdown>=3.4.0
 
 # Monitoring and Metrics
@@ -131,7 +131,7 @@ typing-extensions>=4.7.0
 
 # Additional System Dependencies
 json5>=0.9.14
-os-sys>=2.1.4
+# os-sys>=2.1.4
 
 # Memory and Performance
 memory-profiler>=0.61.0
