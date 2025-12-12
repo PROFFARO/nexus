@@ -11,7 +11,7 @@ import argparse
 from pathlib import Path
 import json
 import time
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 import os
 
 # Add src to path
@@ -55,10 +55,10 @@ class ComprehensiveTrainer:
         logging.info(f"Initialized trainer with datasets from: {self.datasets_dir}")
         self.ml_logger.log_step(f"Models directory: {models_dir.absolute()}", level="debug")
     
-    def train_all_services(self, algorithms: List[str] = None) -> Dict[str, Any]:
+    def train_all_services(self, algorithms: Optional[List[str]] = None) -> Dict[str, Any]:
         """Train models for all services with detailed progress output"""
         if algorithms is None:
-            algorithms = ['isolation_forest', 'one_class_svm', 'hdbscan', 'xgboost']
+            algorithms = ['isolation_forest', 'one_class_svm', 'lof', 'kmeans',  'hdbscan', 'xgboost']
         
         # Start operation tracking
         self.ml_logger.start_operation("Model Training Pipeline", total_phases=len(self.services) + 1)
@@ -67,7 +67,7 @@ class ComprehensiveTrainer:
         start_time = time.time()
         
         # Phase 1: Initialization
-        self.ml_logger.start_phase("Initialization", "Setting up training environment")
+        self.ml_logger.start_phase("Initialization", description="Setting up training environment")
         self.ml_logger.log_step(f"Datasets directory: {self.datasets_dir}", level="info")
         self.ml_logger.log_step(f"Services to train: {', '.join(self.services)}", level="info")
         self.ml_logger.log_step(f"Algorithms: {', '.join(algorithms)}", level="info")
@@ -77,7 +77,7 @@ class ComprehensiveTrainer:
         for i, service in enumerate(self.services):
             self.ml_logger.start_phase(
                 f"Training {service.upper()} Service",
-                f"Phase {i+2}/{len(self.services)+1}"
+                description=f"Phase {i+2}/{len(self.services)+1}"
             )
             self.ml_logger.set_service(service)
             
@@ -171,7 +171,9 @@ class ComprehensiveTrainer:
             
             # Train models based on specified algorithms
             for algorithm in algorithms:
-                algo_train_start = self.ml_logger.log_algorithm_start(algorithm, service)
+                algo_train_start = self.ml_logger.log_algorithm_start(
+                    algorithm, samples=len(train_data), service=service
+                )
                 logging.info(f"[ALGO] Training {algorithm} for {service}...")
                 
                 try:
@@ -358,7 +360,7 @@ class ComprehensiveTrainer:
     
     def quick_test_models(self):
         """Quick test of trained models with sample data"""
-        self.ml_logger.start_phase("Model Testing", "Running quick validation tests")
+        self.ml_logger.start_phase("Model Testing", description="Running quick validation tests")
         logging.info("\n[TEST] Running quick model tests...")
         
         test_cases = {
@@ -479,7 +481,7 @@ Examples:
     
     # Resolve algorithms
     if 'all' in args.algorithms:
-        algorithms = ['isolation_forest', 'one_class_svm', 'hdbscan', 'xgboost']
+        algorithms = ['isolation_forest', 'one_class_svm', 'lof', 'kmeans', 'hdbscan', 'xgboost']
     else:
         algorithms = args.algorithms
     

@@ -156,11 +156,11 @@ function StatBadge({ icon, value, label }: { icon: React.ReactNode; value: strin
 }
 
 // ============================================================================
-// SECTION 1: ARCHITECTURE DIAGRAM
+// SECTION 1: ARCHITECTURE DIAGRAM - ANIMATED FLOW VISUALIZATION
 // ============================================================================
 export function ArchitectureSection() {
     return (
-        <section className="w-full py-20 px-4">
+        <section className="w-full py-20 px-4 overflow-hidden">
             <div className="max-w-7xl mx-auto">
                 {/* Section Header */}
                 <motion.div
@@ -181,111 +181,381 @@ export function ArchitectureSection() {
                     </p>
                 </motion.div>
 
-                {/* Architecture Diagram */}
+                {/* Animated Architecture Flow Diagram */}
                 <div className="relative">
-                    <div className="grid grid-cols-1 md:grid-cols-7 gap-4 items-center">
-                        {/* Attackers */}
-                        <ArchitectureNode
-                            icon={<IconTerminal2 className="w-8 h-8" />}
-                            title="Attackers"
-                            description="External threat actors"
-                            color="red"
-                            delay={0}
-                        />
-
-                        {/* Arrow */}
-                        <ArrowConnector />
-
-                        {/* Service Layer */}
-                        <ArchitectureNode
-                            icon={<IconServer className="w-8 h-8" />}
-                            title="Service Emulators"
-                            description="SSH • FTP • MySQL"
-                            color="blue"
-                            delay={0.1}
-                        />
-
-                        {/* Arrow */}
-                        <ArrowConnector />
-
-                        {/* AI/ML Layer */}
-                        <div className="flex flex-col gap-4">
-                            <ArchitectureNode
-                                icon={<IconBrain className="w-8 h-8" />}
-                                title="AI Layer"
-                                description="LLM Responses"
-                                color="purple"
-                                delay={0.2}
-                                small
-                            />
-                            <ArchitectureNode
-                                icon={<IconCpu className="w-8 h-8" />}
-                                title="ML Detection"
-                                description="6 Algorithms"
-                                color="cyan"
-                                delay={0.25}
-                                small
-                            />
+                    {/* Main Architecture Container with Glow Effect */}
+                    <div className="relative bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 border border-neutral-800 rounded-2xl p-8 overflow-hidden">
+                        {/* Background Grid Pattern */}
+                        <div className="absolute inset-0 opacity-10">
+                            <div className="absolute inset-0" style={{
+                                backgroundImage: `radial-gradient(circle at 1px 1px, rgba(6, 182, 212, 0.3) 1px, transparent 0)`,
+                                backgroundSize: '40px 40px'
+                            }} />
                         </div>
 
-                        {/* Arrow */}
-                        <ArrowConnector />
+                        {/* Animated Background Glow */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-cyan-500/5 rounded-full blur-3xl animate-pulse" />
 
-                        {/* Output */}
-                        <ArchitectureNode
-                            icon={<IconChartBar className="w-8 h-8" />}
-                            title="Analysis & Reports"
-                            description="Forensics • Alerts"
-                            color="green"
-                            delay={0.3}
-                        />
-                    </div>
+                        {/* Architecture Flow */}
+                        <div className="relative z-10">
+                            {/* Top Row: Attackers -> Honeypots */}
+                            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-center mb-12">
+                                {/* Attackers Section */}
+                                <div className="lg:col-span-2">
+                                    <motion.div
+                                        initial={{ opacity: 0, x: -50 }}
+                                        whileInView={{ opacity: 1, x: 0 }}
+                                        viewport={{ once: true }}
+                                        transition={{ duration: 0.6 }}
+                                        className="relative"
+                                    >
+                                        <div className="text-center mb-4">
+                                            <span className="text-xs font-semibold text-red-400 uppercase tracking-wider">Threat Actors</span>
+                                        </div>
+                                        <div className="flex flex-col gap-3">
+                                            {["Attacker 1", "Attacker 2", "Attacker N"].map((attacker, i) => (
+                                                <motion.div
+                                                    key={attacker}
+                                                    initial={{ opacity: 0, y: 20 }}
+                                                    whileInView={{ opacity: 1, y: 0 }}
+                                                    viewport={{ once: true }}
+                                                    transition={{ delay: i * 0.1 + 0.2 }}
+                                                    className="flex items-center gap-2 px-3 py-2 bg-red-500/10 border border-red-500/30 rounded-lg backdrop-blur-sm"
+                                                >
+                                                    <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                                                    <span className="text-xs text-red-300">{attacker}</span>
+                                                </motion.div>
+                                            ))}
+                                        </div>
+                                    </motion.div>
+                                </div>
 
-                    {/* Detailed Flow Description */}
-                    <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
-                        <FlowCard
-                            title="AI-Powered Responses"
-                            items={["OpenAI GPT-4o", "Google Gemini", "AWS Bedrock", "Azure OpenAI", "Ollama (Local)"]}
-                            icon={<IconBrain className="w-6 h-6" />}
-                        />
-                        <FlowCard
-                            title="Real-time ML Detection"
-                            items={["Isolation Forest", "One-Class SVM", "LOF", "HDBSCAN", "K-Means", "XGBoost"]}
-                            icon={<IconCpu className="w-6 h-6" />}
-                        />
-                        <FlowCard
-                            title="Forensic Capabilities"
-                            items={["Chain of Custody", "Session Recording", "Attack Timeline", "Evidence Hashing", "Replay Capability"]}
-                            icon={<IconLock className="w-6 h-6" />}
-                        />
+                                {/* Animated Connection Lines */}
+                                <div className="lg:col-span-1 hidden lg:flex items-center justify-center">
+                                    <AnimatedConnectionLine direction="right" color="red" />
+                                </div>
+
+                                {/* NEXUS Platform - Honeypots */}
+                                <div className="lg:col-span-6">
+                                    <motion.div
+                                        initial={{ opacity: 0, scale: 0.95 }}
+                                        whileInView={{ opacity: 1, scale: 1 }}
+                                        viewport={{ once: true }}
+                                        transition={{ duration: 0.6, delay: 0.3 }}
+                                        className="relative"
+                                    >
+                                        {/* Platform Header */}
+                                        <div className="flex items-center justify-center gap-2 mb-6">
+                                            <IconShieldCheck className="w-6 h-6 text-cyan-400" />
+                                            <span className="text-lg font-bold text-white">NEXUS Platform</span>
+                                        </div>
+
+                                        {/* Platform Container */}
+                                        <div className="relative p-6 bg-gradient-to-br from-cyan-500/10 to-blue-500/5 border border-cyan-500/30 rounded-xl backdrop-blur-sm">
+                                            {/* Glow Effect */}
+                                            <div className="absolute inset-0 bg-gradient-to-r from-cyan-500/5 to-blue-500/5 rounded-xl blur-xl" />
+
+                                            {/* Honeypot Services Row */}
+                                            <div className="relative grid grid-cols-3 gap-4 mb-6">
+                                                <HoneypotNode
+                                                    icon={<IconTerminal2 className="w-6 h-6" />}
+                                                    name="SSH"
+                                                    port="22/8022"
+                                                    color="cyan"
+                                                    delay={0.4}
+                                                    status="trained"
+                                                />
+                                                <HoneypotNode
+                                                    icon={<IconDatabase className="w-6 h-6" />}
+                                                    name="FTP"
+                                                    port="21/2121"
+                                                    color="purple"
+                                                    delay={0.5}
+                                                    status="active"
+                                                />
+                                                <HoneypotNode
+                                                    icon={<IconServer className="w-6 h-6" />}
+                                                    name="MySQL"
+                                                    port="3306/3307"
+                                                    color="emerald"
+                                                    delay={0.6}
+                                                    status="active"
+                                                />
+                                            </div>
+
+                                            {/* Animated Data Flow Lines to AI Engine */}
+                                            <div className="flex justify-center mb-4">
+                                                <AnimatedDataFlow />
+                                            </div>
+
+                                            {/* AI/ML Engine */}
+                                            <div className="grid grid-cols-3 gap-4">
+                                                <EngineNode
+                                                    icon={<IconCpu className="w-5 h-5" />}
+                                                    name="ML Detector"
+                                                    detail="6 Algorithms"
+                                                    color="blue"
+                                                    delay={0.7}
+                                                />
+                                                <EngineNode
+                                                    icon={<IconBrain className="w-5 h-5" />}
+                                                    name="LLM Response"
+                                                    detail="GPT-4o, Gemini"
+                                                    color="purple"
+                                                    delay={0.8}
+                                                />
+                                                <EngineNode
+                                                    icon={<IconNetwork className="w-5 h-5" />}
+                                                    name="Embeddings"
+                                                    detail="Similarity Search"
+                                                    color="cyan"
+                                                    delay={0.9}
+                                                />
+                                            </div>
+
+                                            {/* Data Storage Layer */}
+                                            <div className="mt-6 pt-4 border-t border-white/10">
+                                                <div className="text-center mb-3">
+                                                    <span className="text-xs text-neutral-400 uppercase tracking-wider">Data Layer</span>
+                                                </div>
+                                                <div className="grid grid-cols-3 gap-3">
+                                                    <DataNode name="Virtual FS" icon={<IconFileDatabase className="w-4 h-4" />} />
+                                                    <DataNode name="Virtual DB" icon={<IconDatabase className="w-4 h-4" />} />
+                                                    <DataNode name="Session Logs" icon={<IconLock className="w-4 h-4" />} />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </motion.div>
+                                </div>
+
+                                {/* Animated Connection Lines */}
+                                <div className="lg:col-span-1 hidden lg:flex items-center justify-center">
+                                    <AnimatedConnectionLine direction="right" color="green" />
+                                </div>
+
+                                {/* Analysis Section */}
+                                <div className="lg:col-span-2">
+                                    <motion.div
+                                        initial={{ opacity: 0, x: 50 }}
+                                        whileInView={{ opacity: 1, x: 0 }}
+                                        viewport={{ once: true }}
+                                        transition={{ duration: 0.6, delay: 0.5 }}
+                                        className="relative"
+                                    >
+                                        <div className="text-center mb-4">
+                                            <span className="text-xs font-semibold text-green-400 uppercase tracking-wider">Analysis Output</span>
+                                        </div>
+                                        <div className="flex flex-col gap-3">
+                                            <AnalysisNode
+                                                icon={<IconChartBar className="w-5 h-5" />}
+                                                name="REST API"
+                                                detail="Real-time Data"
+                                                delay={0.6}
+                                            />
+                                            <AnalysisNode
+                                                icon={<svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="18" height="18" rx="2" /><path d="M3 9h18M9 21V9" /></svg>}
+                                                name="Web Dashboard"
+                                                detail="SIEM Interface"
+                                                delay={0.7}
+                                            />
+                                            <AnalysisNode
+                                                icon={<IconFileDatabase className="w-5 h-5" />}
+                                                name="Security Reports"
+                                                detail="JSON, HTML, PDF"
+                                                delay={0.8}
+                                            />
+                                        </div>
+                                    </motion.div>
+                                </div>
+                            </div>
+
+                            {/* Technical Details Legend */}
+                            <motion.div
+                                initial={{ opacity: 0, y: 20 }}
+                                whileInView={{ opacity: 1, y: 0 }}
+                                viewport={{ once: true }}
+                                transition={{ delay: 0.8 }}
+                                className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4"
+                            >
+                                <TechStat label="Training Samples" value="14,563+" icon="📊" />
+                                <TechStat label="ML Algorithms" value="6 Active" icon="🤖" />
+                                <TechStat label="AI Providers" value="5 Integrated" icon="🧠" />
+                                <TechStat label="Attack Detection" value="Real-time" icon="⚡" />
+                            </motion.div>
+                        </div>
                     </div>
+                </div>
+
+                {/* Detailed Flow Cards */}
+                <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <FlowCard
+                        title="AI-Powered Responses"
+                        items={["OpenAI GPT-4o", "Google Gemini", "AWS Bedrock", "Azure OpenAI", "Ollama (Local)"]}
+                        icon={<IconBrain className="w-6 h-6" />}
+                    />
+                    <FlowCard
+                        title="Real-time ML Detection"
+                        items={["Isolation Forest", "One-Class SVM", "LOF", "HDBSCAN", "K-Means", "XGBoost"]}
+                        icon={<IconCpu className="w-6 h-6" />}
+                    />
+                    <FlowCard
+                        title="Forensic Capabilities"
+                        items={["Chain of Custody", "Session Recording", "Attack Timeline", "Evidence Hashing", "Replay Capability"]}
+                        icon={<IconLock className="w-6 h-6" />}
+                    />
                 </div>
             </div>
         </section>
     );
 }
 
-function ArchitectureNode({
+// Animated Data Flow Component
+function AnimatedDataFlow() {
+    return (
+        <motion.div className="relative h-8 w-full flex items-center justify-center">
+            {/* Flow Lines */}
+            <div className="absolute inset-0 flex items-center justify-center">
+                <motion.div
+                    initial={{ scaleY: 0 }}
+                    whileInView={{ scaleY: 1 }}
+                    viewport={{ once: true }}
+                    transition={{ duration: 0.5, delay: 0.6 }}
+                    className="w-px h-full bg-gradient-to-b from-cyan-500/50 to-purple-500/50"
+                />
+            </div>
+            {/* Animated Pulse */}
+            <motion.div
+                animate={{ y: [0, 20, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                className="absolute w-2 h-2 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/50"
+            />
+        </motion.div>
+    );
+}
+
+// Animated Connection Line
+function AnimatedConnectionLine({ direction, color }: { direction: "right" | "down"; color: "red" | "green" | "cyan" }) {
+    const colorClasses = {
+        red: "from-red-500/50 to-orange-500/50",
+        green: "from-blue-500/50 to-green-500/50",
+        cyan: "from-cyan-500/50 to-blue-500/50"
+    };
+
+    const packetColors = {
+        red: "bg-red-400 shadow-red-400/50",
+        green: "bg-green-400 shadow-green-400/50",
+        cyan: "bg-cyan-400 shadow-cyan-400/50"
+    };
+
+    return (
+        <div className="relative w-full h-1 flex items-center">
+            {/* Base Line */}
+            <motion.div
+                initial={{ scaleX: 0 }}
+                whileInView={{ scaleX: 1 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5 }}
+                className={cn("w-full h-0.5 bg-gradient-to-r", colorClasses[color])}
+            />
+            {/* Animated Data Packet */}
+            <motion.div
+                animate={{ x: ["0%", "400%", "0%"] }}
+                transition={{ duration: 3, repeat: Infinity, ease: "easeInOut" }}
+                className={cn("absolute left-0 w-3 h-3 rounded-full shadow-lg", packetColors[color])}
+            />
+            {/* Arrow */}
+            <div className={cn("absolute right-0 w-0 h-0 border-t-4 border-b-4 border-l-8 border-transparent",
+                color === "red" ? "border-l-red-500/50" : color === "green" ? "border-l-green-500/50" : "border-l-cyan-500/50"
+            )} />
+        </div>
+    );
+}
+
+// Honeypot Node Component
+function HoneypotNode({
     icon,
-    title,
-    description,
+    name,
+    port,
     color,
     delay,
-    small = false
+    status
 }: {
     icon: React.ReactNode;
-    title: string;
-    description: string;
-    color: string;
+    name: string;
+    port: string;
+    color: "cyan" | "purple" | "emerald";
     delay: number;
-    small?: boolean;
+    status: "active" | "trained" | "training";
 }) {
-    const colorClasses: Record<string, string> = {
-        red: "from-red-500/20 to-red-600/10 border-red-500/30 text-red-500",
-        blue: "from-blue-500/20 to-blue-600/10 border-blue-500/30 text-blue-500",
-        purple: "from-purple-500/20 to-purple-600/10 border-purple-500/30 text-purple-500",
-        cyan: "from-cyan-500/20 to-cyan-600/10 border-cyan-500/30 text-cyan-500",
-        green: "from-green-500/20 to-green-600/10 border-green-500/30 text-green-500"
+    const colorClasses = {
+        cyan: "from-cyan-500/20 to-cyan-600/10 border-cyan-500/40 text-cyan-400",
+        purple: "from-purple-500/20 to-purple-600/10 border-purple-500/40 text-purple-400",
+        emerald: "from-emerald-500/20 to-emerald-600/10 border-emerald-500/40 text-emerald-400"
+    };
+
+    const glowColors = {
+        cyan: "shadow-cyan-500/20",
+        purple: "shadow-purple-500/20",
+        emerald: "shadow-emerald-500/20"
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay }}
+            whileHover={{ scale: 1.05, y: -5 }}
+            className={cn(
+                "relative p-4 rounded-xl bg-gradient-to-br border backdrop-blur-sm transition-all duration-300 cursor-pointer",
+                "shadow-lg hover:shadow-xl",
+                colorClasses[color],
+                glowColors[color]
+            )}
+        >
+            {/* Pulse Effect */}
+            <motion.div
+                animate={{ scale: [1, 1.2, 1], opacity: [0.5, 0.2, 0.5] }}
+                transition={{ duration: 2, repeat: Infinity }}
+                className={cn("absolute -inset-1 rounded-xl blur-xl",
+                    color === "cyan" ? "bg-cyan-500/10" : color === "purple" ? "bg-purple-500/10" : "bg-emerald-500/10"
+                )}
+            />
+            <div className="relative flex flex-col items-center text-center gap-2">
+                <div className={cn("p-2 rounded-lg bg-black/30", colorClasses[color].split(" ").slice(-1)[0])}>
+                    {icon}
+                </div>
+                <h4 className="font-bold text-white text-sm">{name} Honeypot</h4>
+                <span className="text-xs text-neutral-400">Port: {port}</span>
+                <div className="flex items-center gap-1.5">
+                    <div className={cn("w-1.5 h-1.5 rounded-full animate-pulse",
+                        status === "active" ? "bg-green-400" : status === "trained" ? "bg-cyan-400" : "bg-yellow-400"
+                    )} />
+                    <span className="text-[10px] text-neutral-500 uppercase">{status}</span>
+                </div>
+            </div>
+        </motion.div>
+    );
+}
+
+// Engine Node Component
+function EngineNode({
+    icon,
+    name,
+    detail,
+    color,
+    delay
+}: {
+    icon: React.ReactNode;
+    name: string;
+    detail: string;
+    color: "blue" | "purple" | "cyan";
+    delay: number;
+}) {
+    const colorClasses = {
+        blue: "border-blue-500/30 text-blue-400",
+        purple: "border-purple-500/30 text-purple-400",
+        cyan: "border-cyan-500/30 text-cyan-400"
     };
 
     return (
@@ -293,33 +563,68 @@ function ArchitectureNode({
             initial={{ opacity: 0, scale: 0.9 }}
             whileInView={{ opacity: 1, scale: 1 }}
             viewport={{ once: true }}
-            transition={{ delay, duration: 0.5 }}
-            className={cn(
-                "relative p-4 rounded-xl bg-gradient-to-br border backdrop-blur-sm",
-                colorClasses[color],
-                small ? "py-3" : "py-6"
-            )}
+            transition={{ delay }}
+            className={cn("p-3 rounded-lg bg-black/30 border text-center", colorClasses[color])}
         >
-            <div className={cn("flex flex-col items-center text-center gap-2", colorClasses[color].split(" ").pop())}>
+            <div className="flex items-center justify-center gap-2 mb-1">
                 {icon}
-                <h3 className={cn("font-semibold text-neutral-900 dark:text-white", small ? "text-sm" : "text-base")}>{title}</h3>
-                <p className={cn("text-neutral-500 dark:text-neutral-400", small ? "text-xs" : "text-sm")}>{description}</p>
+                <span className="text-xs font-semibold text-white">{name}</span>
+            </div>
+            <span className="text-[10px] text-neutral-500">{detail}</span>
+        </motion.div>
+    );
+}
+
+// Data Node Component
+function DataNode({ name, icon }: { name: string; icon: React.ReactNode }) {
+    return (
+        <div className="flex items-center justify-center gap-2 px-3 py-2 bg-neutral-800/50 rounded-lg border border-neutral-700/50">
+            <span className="text-cyan-400">{icon}</span>
+            <span className="text-[10px] text-neutral-400">{name}</span>
+        </div>
+    );
+}
+
+// Analysis Node Component
+function AnalysisNode({
+    icon,
+    name,
+    detail,
+    delay
+}: {
+    icon: React.ReactNode;
+    name: string;
+    detail: string;
+    delay: number;
+}) {
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay }}
+            className="flex items-center gap-3 px-4 py-3 bg-green-500/10 border border-green-500/30 rounded-lg backdrop-blur-sm"
+        >
+            <div className="p-2 rounded-lg bg-green-500/20 text-green-400">
+                {icon}
+            </div>
+            <div>
+                <h5 className="text-sm font-semibold text-white">{name}</h5>
+                <span className="text-[10px] text-neutral-400">{detail}</span>
             </div>
         </motion.div>
     );
 }
 
-function ArrowConnector() {
+// Tech Stat Component
+function TechStat({ label, value, icon }: { label: string; value: string; icon: string }) {
     return (
-        <div className="hidden md:flex items-center justify-center">
-            <motion.div
-                initial={{ scaleX: 0 }}
-                whileInView={{ scaleX: 1 }}
-                viewport={{ once: true }}
-                transition={{ duration: 0.5 }}
-                className="w-full h-0.5 bg-gradient-to-r from-cyan-500/50 to-blue-500/50"
-            />
-            <div className="w-2 h-2 rotate-45 border-r-2 border-t-2 border-cyan-500/50 -ml-1" />
+        <div className="flex items-center gap-3 px-4 py-3 bg-white/5 rounded-lg border border-white/10">
+            <span className="text-2xl">{icon}</span>
+            <div>
+                <p className="text-sm font-bold text-white">{value}</p>
+                <p className="text-[10px] text-neutral-400">{label}</p>
+            </div>
         </div>
     );
 }
@@ -349,13 +654,411 @@ function FlowCard({ title, items, icon }: { title: string; items: string[]; icon
 }
 
 // ============================================================================
+// SECTION 1.5: COMMAND PROCESSING FLOW - 3-LAYER ARCHITECTURE
+// ============================================================================
+export function CommandProcessingSection() {
+    return (
+        <section className="w-full py-20 px-4 overflow-hidden">
+            <div className="max-w-7xl mx-auto">
+                {/* Section Header */}
+                <motion.div
+                    initial={{ opacity: 0, y: 20 }}
+                    whileInView={{ opacity: 1, y: 0 }}
+                    viewport={{ once: true }}
+                    className="text-center mb-16"
+                >
+                    <h2 className="text-4xl md:text-5xl font-bold mb-4">
+                        <span className="bg-gradient-to-r from-purple-400 via-pink-500 to-red-500 bg-clip-text text-transparent">
+                            Command Processing
+                        </span>
+                    </h2>
+                    <p className="text-neutral-600 dark:text-neutral-400 max-w-2xl mx-auto">
+                        3-layer intelligent command execution with deterministic processing, validation, and LLM fallback
+                    </p>
+                </motion.div>
+
+                {/* Main Processing Flow Container */}
+                <div className="relative bg-gradient-to-br from-neutral-950 via-neutral-900 to-neutral-950 border border-neutral-800 rounded-2xl p-8 overflow-hidden">
+                    {/* Background Effects */}
+                    <div className="absolute inset-0 opacity-10">
+                        <div className="absolute inset-0" style={{
+                            backgroundImage: `radial-gradient(circle at 1px 1px, rgba(168, 85, 247, 0.3) 1px, transparent 0)`,
+                            backgroundSize: '40px 40px'
+                        }} />
+                    </div>
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-purple-500/5 rounded-full blur-3xl animate-pulse" />
+
+                    <div className="relative z-10">
+                        {/* Incoming Command */}
+                        <motion.div
+                            initial={{ opacity: 0, x: -50 }}
+                            whileInView={{ opacity: 1, x: 0 }}
+                            viewport={{ once: true }}
+                            className="flex justify-center mb-8"
+                        >
+                            <div className="inline-flex items-center gap-3 px-6 py-4 bg-gradient-to-r from-cyan-500/20 to-blue-500/20 border border-cyan-500/40 rounded-xl">
+                                <motion.div
+                                    animate={{ scale: [1, 1.2, 1] }}
+                                    transition={{ duration: 2, repeat: Infinity }}
+                                    className="w-3 h-3 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/50"
+                                />
+                                <span className="text-lg font-bold text-white">Incoming Command</span>
+                                <code className="text-sm text-cyan-300 bg-black/30 px-2 py-1 rounded font-mono">ls -la /etc</code>
+                            </div>
+                        </motion.div>
+
+                        {/* Animated Arrow Down */}
+                        <div className="flex justify-center mb-8">
+                            <AnimatedVerticalFlow color="cyan" />
+                        </div>
+
+                        {/* Three Layers */}
+                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                            {/* Layer 1: Deterministic Execution */}
+                            <ProcessingLayer
+                                layerNumber={1}
+                                title="Deterministic Execution"
+                                color="cyan"
+                                delay={0.2}
+                                nodes={[
+                                    { name: "Command Parser", detail: "Syntax Analysis", icon: "⚡" },
+                                    { name: "Virtual Filesystem", detail: "Simulated FS/DB", icon: "📁" }
+                                ]}
+                                flowResult="success"
+                                flowLabel="Success → Response"
+                                flowColor="green"
+                            />
+
+                            {/* Layer 2: Validation & Error Handling */}
+                            <ProcessingLayer
+                                layerNumber={2}
+                                title="Validation & Error Handling"
+                                color="yellow"
+                                delay={0.4}
+                                nodes={[
+                                    { name: "Syntax Validation", detail: "Command Structure", icon: "✓" },
+                                    { name: "Injection Detection", detail: "Security Filter", icon: "🛡️" },
+                                    { name: "Error Simulation", detail: "Realistic Errors", icon: "⚠️" }
+                                ]}
+                                flowResult="fallback"
+                                flowLabel="Not Handled → Layer 2"
+                                flowColor="yellow"
+                            />
+
+                            {/* Layer 3: LLM Fallback */}
+                            <ProcessingLayer
+                                layerNumber={3}
+                                title="LLM Fallback"
+                                color="purple"
+                                delay={0.6}
+                                nodes={[
+                                    { name: "LLM Guard", detail: "Prompt Injection Filter", icon: "🔒" },
+                                    { name: "LLM Response", detail: "GPT-4o / Gemini", icon: "🧠" },
+                                    { name: "Output Cleaning", detail: "Response Sanitization", icon: "✨" }
+                                ]}
+                                flowResult="response"
+                                flowLabel="Clean → LLM Response"
+                                flowColor="purple"
+                            />
+                        </div>
+
+                        {/* Final Response */}
+                        <div className="flex justify-center mt-8">
+                            <AnimatedVerticalFlow color="green" />
+                        </div>
+
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: 0.8 }}
+                            className="flex justify-center mt-8"
+                        >
+                            <div className="inline-flex items-center gap-3 px-8 py-5 bg-gradient-to-r from-green-500/20 to-emerald-500/20 border border-green-500/40 rounded-xl">
+                                <motion.div
+                                    animate={{ scale: [1, 1.3, 1], opacity: [0.5, 1, 0.5] }}
+                                    transition={{ duration: 1.5, repeat: Infinity }}
+                                    className="w-4 h-4 bg-green-400 rounded-full shadow-lg shadow-green-400/50"
+                                />
+                                <span className="text-xl font-bold text-white">Response</span>
+                                <span className="text-sm text-green-300">Delivered to Attacker</span>
+                            </div>
+                        </motion.div>
+
+                        {/* Flow Statistics */}
+                        <motion.div
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: 1 }}
+                            className="mt-12 grid grid-cols-2 md:grid-cols-4 gap-4"
+                        >
+                            <ProcessingStat label="Deterministic Hit Rate" value="~70%" icon="⚡" color="cyan" />
+                            <ProcessingStat label="Validation Pass Rate" value="~25%" icon="✓" color="yellow" />
+                            <ProcessingStat label="LLM Fallback" value="~5%" icon="🧠" color="purple" />
+                            <ProcessingStat label="Avg Response Time" value="<50ms" icon="⏱️" color="green" />
+                        </motion.div>
+                    </div>
+                </div>
+
+                {/* Detailed Layer Cards */}
+                <div className="mt-12 grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <LayerDetailCard
+                        title="Layer 1: Deterministic"
+                        description="Fast, predictable command execution using pre-programmed responses and virtual filesystem operations."
+                        features={["Command pattern matching", "Virtual filesystem operations", "Pre-built response templates", "Zero latency execution"]}
+                        color="cyan"
+                    />
+                    <LayerDetailCard
+                        title="Layer 2: Validation"
+                        description="Security validation layer that detects injection attempts and generates realistic error responses."
+                        features={["SQL/Command injection detection", "Syntax validation", "Error message simulation", "Attack pattern logging"]}
+                        color="yellow"
+                    />
+                    <LayerDetailCard
+                        title="Layer 3: LLM Fallback"
+                        description="Intelligent AI-powered response generation for unhandled commands with prompt injection protection."
+                        features={["LLM Guard protection", "GPT-4o / Gemini integration", "Context-aware responses", "Output sanitization"]}
+                        color="purple"
+                    />
+                </div>
+            </div>
+        </section>
+    );
+}
+
+// Processing Layer Component
+function ProcessingLayer({
+    layerNumber,
+    title,
+    color,
+    delay,
+    nodes,
+    flowResult,
+    flowLabel,
+    flowColor
+}: {
+    layerNumber: number;
+    title: string;
+    color: "cyan" | "yellow" | "purple";
+    delay: number;
+    nodes: { name: string; detail: string; icon: string }[];
+    flowResult: "success" | "fallback" | "response";
+    flowLabel: string;
+    flowColor: "green" | "yellow" | "purple";
+}) {
+    const colorClasses = {
+        cyan: "from-cyan-500/20 to-cyan-600/10 border-cyan-500/40",
+        yellow: "from-yellow-500/20 to-orange-500/10 border-yellow-500/40",
+        purple: "from-purple-500/20 to-pink-500/10 border-purple-500/40"
+    };
+
+    const flowColorClasses = {
+        green: "text-green-400 border-green-500/30 bg-green-500/10",
+        yellow: "text-yellow-400 border-yellow-500/30 bg-yellow-500/10",
+        purple: "text-purple-400 border-purple-500/30 bg-purple-500/10"
+    };
+
+    const headerColors = {
+        cyan: "text-cyan-400",
+        yellow: "text-yellow-400",
+        purple: "text-purple-400"
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ delay }}
+            className={cn(
+                "relative p-6 rounded-xl bg-gradient-to-br border backdrop-blur-sm",
+                colorClasses[color]
+            )}
+        >
+            {/* Layer Header */}
+            <div className="flex items-center gap-3 mb-6">
+                <div className={cn(
+                    "w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold",
+                    color === "cyan" ? "bg-cyan-500/20 text-cyan-400" :
+                        color === "yellow" ? "bg-yellow-500/20 text-yellow-400" :
+                            "bg-purple-500/20 text-purple-400"
+                )}>
+                    {layerNumber}
+                </div>
+                <div>
+                    <h3 className={cn("font-bold text-white text-sm", headerColors[color])}>{title}</h3>
+                    <span className="text-xs text-neutral-500">Layer {layerNumber}</span>
+                </div>
+            </div>
+
+            {/* Processing Nodes */}
+            <div className="space-y-3 mb-6">
+                {nodes.map((node, i) => (
+                    <motion.div
+                        key={node.name}
+                        initial={{ opacity: 0, x: -20 }}
+                        whileInView={{ opacity: 1, x: 0 }}
+                        viewport={{ once: true }}
+                        transition={{ delay: delay + (i * 0.1) }}
+                        className="flex items-center gap-3 p-3 bg-black/30 rounded-lg border border-white/5"
+                    >
+                        <span className="text-xl">{node.icon}</span>
+                        <div>
+                            <p className="text-sm font-semibold text-white">{node.name}</p>
+                            <p className="text-xs text-neutral-500">{node.detail}</p>
+                        </div>
+                    </motion.div>
+                ))}
+            </div>
+
+            {/* Flow Result Indicator */}
+            <motion.div
+                initial={{ opacity: 0 }}
+                whileInView={{ opacity: 1 }}
+                viewport={{ once: true }}
+                transition={{ delay: delay + 0.3 }}
+                className={cn(
+                    "flex items-center gap-2 px-3 py-2 rounded-lg border text-xs",
+                    flowColorClasses[flowColor]
+                )}
+            >
+                <motion.div
+                    animate={{ x: [0, 5, 0] }}
+                    transition={{ duration: 1.5, repeat: Infinity }}
+                >
+                    →
+                </motion.div>
+                <span>{flowLabel}</span>
+            </motion.div>
+        </motion.div>
+    );
+}
+
+// Animated Vertical Flow
+function AnimatedVerticalFlow({ color }: { color: "cyan" | "green" | "purple" }) {
+    const colorClasses = {
+        cyan: "from-cyan-500/50 to-cyan-500/0",
+        green: "from-green-500/50 to-green-500/0",
+        purple: "from-purple-500/50 to-purple-500/0"
+    };
+
+    const packetColors = {
+        cyan: "bg-cyan-400 shadow-cyan-400/50",
+        green: "bg-green-400 shadow-green-400/50",
+        purple: "bg-purple-400 shadow-purple-400/50"
+    };
+
+    return (
+        <div className="relative h-12 w-1 flex flex-col items-center">
+            <motion.div
+                initial={{ scaleY: 0 }}
+                whileInView={{ scaleY: 1 }}
+                viewport={{ once: true }}
+                className={cn("w-0.5 h-full bg-gradient-to-b", colorClasses[color])}
+            />
+            <motion.div
+                animate={{ y: [0, 40, 0] }}
+                transition={{ duration: 2, repeat: Infinity, ease: "easeInOut" }}
+                className={cn("absolute top-0 w-2 h-2 rounded-full shadow-lg", packetColors[color])}
+            />
+            <div className={cn(
+                "absolute bottom-0 w-0 h-0 border-l-4 border-r-4 border-t-8 border-transparent",
+                color === "cyan" ? "border-t-cyan-500/50" :
+                    color === "green" ? "border-t-green-500/50" :
+                        "border-t-purple-500/50"
+            )} />
+        </div>
+    );
+}
+
+// Processing Stat Component
+function ProcessingStat({ label, value, icon, color }: { label: string; value: string; icon: string; color: "cyan" | "yellow" | "purple" | "green" }) {
+    const colorClasses = {
+        cyan: "border-cyan-500/30 bg-cyan-500/5",
+        yellow: "border-yellow-500/30 bg-yellow-500/5",
+        purple: "border-purple-500/30 bg-purple-500/5",
+        green: "border-green-500/30 bg-green-500/5"
+    };
+
+    const textColors = {
+        cyan: "text-cyan-400",
+        yellow: "text-yellow-400",
+        purple: "text-purple-400",
+        green: "text-green-400"
+    };
+
+    return (
+        <div className={cn("flex items-center gap-3 px-4 py-3 rounded-lg border", colorClasses[color])}>
+            <span className="text-2xl">{icon}</span>
+            <div>
+                <p className={cn("text-sm font-bold", textColors[color])}>{value}</p>
+                <p className="text-[10px] text-neutral-500">{label}</p>
+            </div>
+        </div>
+    );
+}
+
+// Layer Detail Card Component
+function LayerDetailCard({
+    title,
+    description,
+    features,
+    color
+}: {
+    title: string;
+    description: string;
+    features: string[];
+    color: "cyan" | "yellow" | "purple";
+}) {
+    const borderColors = {
+        cyan: "hover:border-cyan-500/50",
+        yellow: "hover:border-yellow-500/50",
+        purple: "hover:border-purple-500/50"
+    };
+
+    const iconColors = {
+        cyan: "text-cyan-500",
+        yellow: "text-yellow-500",
+        purple: "text-purple-500"
+    };
+
+    return (
+        <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            className={cn(
+                "p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm hover:shadow-md transition-all",
+                borderColors[color]
+            )}
+        >
+            <h4 className={cn("font-semibold text-neutral-900 dark:text-white mb-2", iconColors[color])}>{title}</h4>
+            <p className="text-sm text-neutral-600 dark:text-neutral-400 mb-4">{description}</p>
+            <ul className="space-y-2">
+                {features.map((feature, i) => (
+                    <li key={i} className="text-sm text-neutral-500 dark:text-neutral-400 flex items-center gap-2">
+                        <span className={cn("w-1.5 h-1.5",
+                            color === "cyan" ? "bg-cyan-500" :
+                                color === "yellow" ? "bg-yellow-500" :
+                                    "bg-purple-500"
+                        )} />
+                        {feature}
+                    </li>
+                ))}
+            </ul>
+        </motion.div>
+    );
+}
+
+// ============================================================================
 // SECTION 2: ML ALGORITHMS
 // ============================================================================
 export function MLSection() {
     // Chart data
     const accuracyData = mlAlgorithms.map(algo => ({
         name: algo.name.split(" ")[0],
-        accuracy: parseFloat(algo.accuracy.replace("%", "")),
+        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace("%", "")) : 0,
         fill: algo.type === "Anomaly Detection" ? "#06b6d4" : algo.type === "Clustering" ? "#8b5cf6" : "#10b981"
     }));
 
@@ -367,7 +1070,7 @@ export function MLSection() {
 
     const radarData = mlAlgorithms.map(algo => ({
         algorithm: algo.name.split(" ")[0],
-        accuracy: parseFloat(algo.accuracy.replace("%", "")),
+        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace("%", "")) : 0,
         fullMark: 100
     }));
 
@@ -400,17 +1103,19 @@ export function MLSection() {
 
                 {/* Visualizations */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
-                    {/* Accuracy Bar Chart */}
+                    {/* Accuracy Bar Chart - FTP Model Performance */}
                     <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
-                        <h3 className="text-lg font-semibold mb-4 text-neutral-900 dark:text-white">Algorithm Accuracy</h3>
+                        <h3 className="text-lg font-semibold mb-2 text-neutral-900 dark:text-white">Algorithm Accuracy</h3>
+                        <p className="text-xs text-neutral-500 mb-4">FTP Model Performance (14,386 samples)</p>
                         <ResponsiveContainer width="100%" height={250}>
                             <BarChart data={accuracyData} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
-                                <XAxis type="number" domain={[80, 100]} stroke="#9ca3af" />
+                                <XAxis type="number" domain={[0, 100]} stroke="#9ca3af" />
                                 <YAxis dataKey="name" type="category" width={80} stroke="#9ca3af" fontSize={12} />
                                 <Tooltip
                                     contentStyle={{ backgroundColor: "#1f2937", border: "1px solid #374151", borderRadius: "8px" }}
                                     labelStyle={{ color: "#fff" }}
+                                    formatter={(value: number) => [`${value.toFixed(1)}%`, "Accuracy"]}
                                 />
                                 <Bar dataKey="accuracy" radius={[0, 4, 4, 0]}>
                                     {accuracyData.map((entry, index) => (
@@ -454,7 +1159,7 @@ export function MLSection() {
                             <RadarChart cx="50%" cy="50%" outerRadius="80%" data={radarData}>
                                 <PolarGrid stroke="#374151" />
                                 <PolarAngleAxis dataKey="algorithm" stroke="#9ca3af" fontSize={10} />
-                                <PolarRadiusAxis angle={90} domain={[80, 100]} stroke="#9ca3af" />
+                                <PolarRadiusAxis angle={90} domain={[0, 100]} stroke="#9ca3af" />
                                 <Radar name="Accuracy" dataKey="accuracy" stroke="#06b6d4" fill="#06b6d4" fillOpacity={0.5} />
                             </RadarChart>
                         </ResponsiveContainer>
@@ -464,9 +1169,9 @@ export function MLSection() {
                 {/* ML Stats Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12">
                     <StatsCard title="Total Algorithms" value="6" subtitle="Active Models" icon={<IconCpu />} />
-                    <StatsCard title="Highest Accuracy" value="96.1%" subtitle="XGBoost" icon={<IconChartBar />} />
-                    <StatsCard title="Model Files" value="9" subtitle="Trained Models" icon={<IconFileDatabase />} />
-                    <StatsCard title="Services Covered" value="3" subtitle="SSH • FTP • MySQL" icon={<IconServer />} />
+                    <StatsCard title="Highest Accuracy" value="99.7%" subtitle="FTP XGBoost" icon={<IconChartBar />} />
+                    <StatsCard title="Training Samples" value="14.5K+" subtitle="FTP + MySQL" icon={<IconFileDatabase />} />
+                    <StatsCard title="Services Trained" value="2" subtitle="FTP • MySQL" icon={<IconServer />} />
                 </div>
             </div>
         </section>
@@ -480,6 +1185,100 @@ function MLAlgorithmCard({ algorithm, index }: { algorithm: MLAlgorithm; index: 
         "Supervised Learning": "text-green-400"
     };
 
+    // Get display title based on algorithm type
+    const getDisplayTitle = (): string => {
+        if (algorithm.type === "Clustering") {
+            const score = algorithm.silhouette_score;
+            return `Silhouette: ${typeof score === "number" ? score.toFixed(3) : "N/A"}`;
+        }
+        if (algorithm.type === "Supervised Learning") {
+            return String(algorithm.accuracy ?? "N/A");
+        }
+        return String(algorithm.accuracy ?? "N/A");
+    };
+
+    // Render metrics based on algorithm type
+    const renderMetrics = () => {
+        if (algorithm.type === "Clustering") {
+            return (
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <span className="text-slate-500">Clusters:</span>
+                        <span className="ml-2 text-purple-400 font-semibold">{algorithm.clusters ?? "N/A"}</span>
+                    </div>
+                    <div>
+                        <span className="text-slate-500">Silhouette:</span>
+                        <span className="ml-2 text-purple-400 font-semibold">
+                            {typeof algorithm.silhouette_score === "number"
+                                ? algorithm.silhouette_score.toFixed(3)
+                                : "N/A"}
+                        </span>
+                    </div>
+                    <div className="col-span-2">
+                        <span className="text-slate-500">FTP:</span>
+                        <span className="ml-2 text-green-400">
+                            {algorithm.serviceMetrics?.ftp?.clusters ?? "—"} clusters
+                        </span>
+                        <span className="mx-2 text-slate-600">|</span>
+                        <span className="text-slate-500">MySQL:</span>
+                        <span className="ml-2 text-emerald-400">
+                            {algorithm.serviceMetrics?.mysql?.clusters ?? "—"} clusters
+                        </span>
+                    </div>
+                </div>
+            );
+        }
+
+        if (algorithm.type === "Supervised Learning") {
+            return (
+                <div className="grid grid-cols-2 gap-2 text-xs">
+                    <div>
+                        <span className="text-slate-500">Accuracy:</span>
+                        <span className="ml-2 text-green-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
+                    </div>
+                    <div>
+                        <span className="text-slate-500">AUC Score:</span>
+                        <span className="ml-2 text-green-400 font-semibold">
+                            {typeof algorithm.auc_score === "number"
+                                ? algorithm.auc_score.toFixed(3)
+                                : "N/A"}
+                        </span>
+                    </div>
+                    <div>
+                        <span className="text-slate-500">FTP:</span>
+                        <span className="ml-2 text-green-400">{algorithm.serviceMetrics?.ftp?.accuracy ?? "Training"}</span>
+                    </div>
+                    <div>
+                        <span className="text-slate-500">MySQL:</span>
+                        <span className="ml-2 text-emerald-400">{algorithm.serviceMetrics?.mysql?.accuracy ?? "Training"}</span>
+                    </div>
+                </div>
+            );
+        }
+
+        // Anomaly Detection
+        return (
+            <div className="grid grid-cols-2 gap-2 text-xs">
+                <div>
+                    <span className="text-slate-500">Accuracy:</span>
+                    <span className="ml-2 text-cyan-400 font-semibold">{algorithm.accuracy ?? "N/A"}</span>
+                </div>
+                <div>
+                    <span className="text-slate-500">Precision:</span>
+                    <span className="ml-2 text-slate-400">{algorithm.precision ?? "N/A"}</span>
+                </div>
+                <div>
+                    <span className="text-slate-500">Recall:</span>
+                    <span className="ml-2 text-slate-400">{algorithm.recall ?? "N/A"}</span>
+                </div>
+                <div>
+                    <span className="text-slate-500">F1:</span>
+                    <span className="ml-2 text-slate-400">{algorithm.f1Score ?? "N/A"}</span>
+                </div>
+            </div>
+        );
+    };
+
     return (
         <motion.div
             initial={{ opacity: 0, y: 20 }}
@@ -488,7 +1287,7 @@ function MLAlgorithmCard({ algorithm, index }: { algorithm: MLAlgorithm; index: 
             transition={{ delay: index * 0.1 }}
             className="h-[320px] w-full"
         >
-            <PinContainer title={algorithm.accuracy} href="#">
+            <PinContainer title={getDisplayTitle()} href="#">
                 <div className="flex flex-col p-4 tracking-tight text-slate-100/50 w-[280px] h-[220px]">
                     <h3 className="max-w-xs font-bold text-base text-slate-100">
                         {algorithm.name}
@@ -496,28 +1295,11 @@ function MLAlgorithmCard({ algorithm, index }: { algorithm: MLAlgorithm; index: 
                     <div className={cn("text-xs font-medium mt-1", typeColors[algorithm.type])}>
                         {algorithm.type}
                     </div>
-                    <p className="text-sm text-slate-400 mt-3 leading-relaxed">
+                    <p className="text-sm text-slate-400 mt-3 leading-relaxed line-clamp-2">
                         {algorithm.description}
                     </p>
                     <div className="mt-auto pt-4 border-t border-white/10">
-                        <div className="grid grid-cols-2 gap-2 text-xs">
-                            <div>
-                                <span className="text-slate-500">Accuracy:</span>
-                                <span className="ml-2 text-cyan-400 font-semibold">{algorithm.accuracy}</span>
-                            </div>
-                            <div>
-                                <span className="text-slate-500">Precision:</span>
-                                <span className="ml-2 text-slate-400">{algorithm.precision}</span>
-                            </div>
-                            <div>
-                                <span className="text-slate-500">Recall:</span>
-                                <span className="ml-2 text-slate-400">{algorithm.recall}</span>
-                            </div>
-                            <div>
-                                <span className="text-slate-500">F1:</span>
-                                <span className="ml-2 text-slate-400">{algorithm.f1Score}</span>
-                            </div>
-                        </div>
+                        {renderMetrics()}
                     </div>
                 </div>
             </PinContainer>
@@ -916,7 +1698,7 @@ export function FooterSection() {
                                 href={developerInfo.github}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+                                className="p-2.5 rounded-lg bg-neutral-800 hover:bg-neutral-700 border border-neutral-700 hover:border-neutral-600 text-white transition-all duration-200 hover:scale-110"
                             >
                                 <IconBrandGithub className="w-5 h-5" />
                             </a>
@@ -924,7 +1706,7 @@ export function FooterSection() {
                                 href={developerInfo.linkedin}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="p-2 rounded-lg bg-white/5 hover:bg-white/10 text-neutral-400 hover:text-white transition-colors"
+                                className="p-2.5 rounded-lg bg-[#0A66C2] hover:bg-[#004182] border border-[#0A66C2] text-white transition-all duration-200 hover:scale-110"
                             >
                                 <IconBrandLinkedin className="w-5 h-5" />
                             </a>

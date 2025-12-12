@@ -4,6 +4,7 @@ import { BackgroundRippleEffect } from "@/components/ui/background-ripple-effect
 import {
     HeroSection,
     ArchitectureSection,
+    CommandProcessingSection,
     MLSection,
     DatasetsSection,
     ServicesSection,
@@ -28,6 +29,11 @@ export default function DashboardPage() {
                 {/* Section 1: Architecture Diagram */}
                 <section id="architecture">
                     <ArchitectureSection />
+                </section>
+
+                {/* Section 1.5: Command Processing Flow */}
+                <section id="command-processing">
+                    <CommandProcessingSection />
                 </section>
 
                 {/* Section 2: ML Algorithms */}
