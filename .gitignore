@@ -185,6 +185,8 @@ config.conf
 
 # Session Data and Logs
 sessions/
+datasets/
+research-papers/
 *.log
 forensic_chain.json
 session_summary.json
@@ -198,14 +200,9 @@ training_report.json
 downloads/
 uploads/
 created_files/
-research-papers/
 nexus-components-aarch.jpg
 report_overview.pdf
-datasets/
-cowrie.*
-*.csv
 ml_prompt.txt
-models/
 
 # API Keys and Secrets
 *api_key*
@@ -214,5 +211,3 @@ models/
 *password*
 credentials*
 auth* 
-
-file.txt
