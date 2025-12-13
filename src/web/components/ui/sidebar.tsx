@@ -96,13 +96,14 @@ export const DesktopSidebar = ({
           width: animate ? (open ? "300px" : "60px") : "300px",
         }}
         transition={{
-          duration: 0.3,
-          ease: "easeInOut",
+          duration: 0.15,
+          ease: [0.25, 0.1, 0.25, 1], // Faster cubic-bezier
         }}
         style={{
           willChange: "width",
           transform: "translateZ(0)",
           backfaceVisibility: "hidden",
+          contain: "layout style",
         }}
         onMouseEnter={() => setOpen(true)}
         onMouseLeave={() => setOpen(false)}
@@ -124,13 +125,13 @@ export const MobileSidebar = ({
     <>
       <div
         className={cn(
-          "h-10 px-4 py-4 flex flex-row md:hidden  items-center justify-between bg-neutral-100 dark:bg-neutral-800 w-full"
+          "h-10 px-4 py-4 flex flex-row md:hidden items-center justify-between bg-neutral-100 dark:bg-neutral-800 w-full"
         )}
         {...props}
       >
         <div className="flex justify-end z-20 w-full">
           <IconMenu2
-            className="text-neutral-800 dark:text-neutral-200"
+            className="text-neutral-800 dark:text-neutral-200 cursor-pointer"
             onClick={() => setOpen(!open)}
           />
         </div>
@@ -141,16 +142,20 @@ export const MobileSidebar = ({
               animate={{ x: 0, opacity: 1 }}
               exit={{ x: "-100%", opacity: 0 }}
               transition={{
-                duration: 0.3,
-                ease: "easeInOut",
+                duration: 0.15,
+                ease: [0.25, 0.1, 0.25, 1],
               }}
               className={cn(
                 "fixed h-full w-full inset-0 bg-white dark:bg-neutral-900 p-10 z-[100] flex flex-col justify-between",
                 className
               )}
+              style={{
+                willChange: "transform, opacity",
+                backfaceVisibility: "hidden",
+              }}
             >
               <div
-                className="absolute right-10 top-10 z-50 text-neutral-800 dark:text-neutral-200"
+                className="absolute right-10 top-10 z-50 text-neutral-800 dark:text-neutral-200 cursor-pointer"
                 onClick={() => setOpen(!open)}
               >
                 <IconX />
@@ -177,22 +182,25 @@ export const SidebarLink = ({
     <Link
       href={link.href}
       className={cn(
-        "flex items-center justify-start gap-2  group/sidebar py-2",
+        "flex items-center justify-start gap-2 group/sidebar py-2",
         className
       )}
       {...props}
     >
       {link.icon}
 
-      <motion.span
-        animate={{
-          display: animate ? (open ? "inline-block" : "none") : "inline-block",
-          opacity: animate ? (open ? 1 : 0) : 1,
+      <span
+        className={cn(
+          "text-neutral-700 dark:text-neutral-200 text-sm group-hover/sidebar:translate-x-1 whitespace-pre inline-block !p-0 !m-0",
+          "transition-[opacity,transform] duration-150 ease-out",
+          animate && !open ? "opacity-0 w-0 overflow-hidden" : "opacity-100"
+        )}
+        style={{
+          willChange: "opacity",
         }}
-        className="text-neutral-700 dark:text-neutral-200 text-sm group-hover/sidebar:translate-x-1 transition duration-150 whitespace-pre inline-block !p-0 !m-0"
       >
         {link.label}
-      </motion.span>
+      </span>
     </Link>
   );
 };

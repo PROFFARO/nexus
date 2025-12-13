@@ -14,7 +14,6 @@ import {
     IconLock,
     IconSearch
 } from "@tabler/icons-react";
-import { motion } from "framer-motion";
 import Image from "next/image";
 import { cn } from "@/lib/utils";
 import { usePathname } from "next/navigation";
@@ -112,15 +111,15 @@ function DashboardLayoutInner({
                             <div className="h-8 w-8 relative flex-shrink-0">
                                 <Image src="/assets/nexus_logo.svg" alt="NEXUS" fill className="object-contain" />
                             </div>
-                            <motion.span
-                                animate={{
-                                    display: open ? "inline-block" : "none",
-                                    opacity: open ? 1 : 0,
-                                }}
-                                className="font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-neutral-800 to-neutral-600 dark:from-white dark:to-neutral-400 whitespace-pre"
+                            <span
+                                className={cn(
+                                    "font-bold text-xl bg-clip-text text-transparent bg-gradient-to-r from-neutral-800 to-neutral-600 dark:from-white dark:to-neutral-400 whitespace-pre",
+                                    "transition-[opacity,width] duration-150 ease-out",
+                                    open ? "opacity-100" : "opacity-0 w-0 overflow-hidden"
+                                )}
                             >
                                 NEXUS
-                            </motion.span>
+                            </span>
                         </div>
 
                         {/* Search Button */}
@@ -129,24 +128,24 @@ function DashboardLayoutInner({
                                 e.preventDefault();
                                 openSearch();
                             }}
-                            className="mt-6 w-full flex items-center justify-start gap-2 py-2 px-2 cursor-pointer group text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5 rounded transition-all duration-200"
+                            className="mt-6 w-full flex items-center justify-start gap-2 py-2 px-2 cursor-pointer group text-neutral-600 dark:text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-white/5 rounded transition-colors duration-150"
                         >
                             <IconSearch className="h-5 w-5 flex-shrink-0 group-hover:text-primary transition-colors" />
-                            <motion.span
-                                animate={{
-                                    display: open ? "inline-block" : "none",
-                                    opacity: open ? 1 : 0,
-                                }}
-                                className="text-sm group-hover:translate-x-1 transition duration-150 whitespace-pre inline-block"
+                            <span
+                                className={cn(
+                                    "text-sm group-hover:translate-x-1 whitespace-pre inline-block",
+                                    "transition-[opacity,transform] duration-150 ease-out",
+                                    open ? "opacity-100" : "opacity-0 w-0 overflow-hidden"
+                                )}
                             >
                                 Search
-                            </motion.span>
-                            <motion.div
-                                animate={{
-                                    display: open ? "flex" : "none",
-                                    opacity: open ? 1 : 0,
-                                }}
-                                className="ml-auto flex items-center gap-0.5"
+                            </span>
+                            <div
+                                className={cn(
+                                    "ml-auto flex items-center gap-0.5",
+                                    "transition-opacity duration-150",
+                                    open ? "opacity-100" : "opacity-0"
+                                )}
                             >
                                 <kbd className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-200 dark:bg-neutral-800 rounded text-neutral-500 dark:text-neutral-400">
                                     Ctrl
@@ -154,7 +153,7 @@ function DashboardLayoutInner({
                                 <kbd className="px-1.5 py-0.5 text-[10px] font-medium bg-neutral-200 dark:bg-neutral-800 rounded text-neutral-500 dark:text-neutral-400">
                                     K
                                 </kbd>
-                            </motion.div>
+                            </div>
                         </button>
 
                         <div className="mt-4 flex flex-col gap-2">
@@ -197,7 +196,15 @@ function DashboardLayoutInner({
             </Sidebar>
 
             {/* Main Content */}
-            <main className="flex-1 overflow-auto bg-[var(--background)] p-4 md:p-8 transition-all duration-300">
+            <main
+                className="flex-1 overflow-auto bg-[var(--background)] p-4 md:p-8"
+                style={{
+                    willChange: "scroll-position",
+                    transform: "translateZ(0)",
+                    WebkitOverflowScrolling: "touch",
+                    contain: "paint",
+                }}
+            >
                 <div className="max-w-7xl mx-auto h-full w-full">
                     {children}
                 </div>

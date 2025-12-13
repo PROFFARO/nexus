@@ -159,6 +159,38 @@ function StatBadge({ icon, value, label }: { icon: React.ReactNode; value: strin
 // SECTION 1: ARCHITECTURE DIAGRAM - ANIMATED FLOW VISUALIZATION
 // ============================================================================
 export function ArchitectureSection() {
+    // Calculate dynamic training stats
+    const archStats = useMemo(() => {
+        let totalSamples = 0;
+        const servicesSet = new Set<string>();
+
+        mlAlgorithms.forEach(algo => {
+            const services = ["ftp", "mysql", "ssh"] as const;
+            services.forEach(service => {
+                const metrics = algo.serviceMetrics?.[service];
+                if (metrics?.status === "trained" && metrics.training_samples) {
+                    servicesSet.add(service.toUpperCase());
+                    // Count samples per service only once (use first algorithm's count per service)
+                }
+            });
+        });
+
+        // Get unique sample counts per service (from first algorithm)
+        const ftpSamples = mlAlgorithms[0]?.serviceMetrics?.ftp?.training_samples || 0;
+        const mysqlSamples = mlAlgorithms[0]?.serviceMetrics?.mysql?.training_samples || 0;
+        const sshSamples = mlAlgorithms[0]?.serviceMetrics?.ssh?.training_samples || 0;
+        totalSamples = ftpSamples + mysqlSamples + sshSamples;
+
+        const formattedSamples = totalSamples >= 1000
+            ? `${Math.round(totalSamples / 1000).toLocaleString()}K+`
+            : `${totalSamples.toLocaleString()}+`;
+
+        return {
+            trainingSamples: formattedSamples,
+            servicesCount: servicesSet.size
+        };
+    }, []);
+
     return (
         <section className="w-full py-20 px-4 overflow-hidden">
             <div className="max-w-7xl mx-auto">
@@ -377,7 +409,7 @@ export function ArchitectureSection() {
                                 transition={{ delay: 0.8 }}
                                 className="mt-8 grid grid-cols-2 md:grid-cols-4 gap-4"
                             >
-                                <TechStat label="Training Samples" value="14,563+" icon="📊" />
+                                <TechStat label="Training Samples" value={archStats.trainingSamples} icon="📊" />
                                 <TechStat label="ML Algorithms" value="6 Active" icon="🤖" />
                                 <TechStat label="AI Providers" value="5 Integrated" icon="🧠" />
                                 <TechStat label="Attack Detection" value="Real-time" icon="⚡" />
@@ -658,7 +690,7 @@ function FlowCard({ title, items, icon }: { title: string; items: string[]; icon
 // ============================================================================
 export function CommandProcessingSection() {
     return (
-        <section className="w-full py-20 px-4 overflow-hidden">
+        <section id="command-processing" className="w-full py-20 px-4 overflow-hidden">
             <div className="max-w-7xl mx-auto">
                 {/* Section Header */}
                 <motion.div
@@ -713,9 +745,10 @@ export function CommandProcessingSection() {
                         </div>
 
                         {/* Three Layers */}
-                        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                        <div id="command-processing-layers" className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                             {/* Layer 1: Deterministic Execution */}
                             <ProcessingLayer
+                                id="command-processing-layer1"
                                 layerNumber={1}
                                 title="Deterministic Execution"
                                 color="cyan"
@@ -731,6 +764,7 @@ export function CommandProcessingSection() {
 
                             {/* Layer 2: Validation & Error Handling */}
                             <ProcessingLayer
+                                id="command-processing-layer2"
                                 layerNumber={2}
                                 title="Validation & Error Handling"
                                 color="yellow"
@@ -747,6 +781,7 @@ export function CommandProcessingSection() {
 
                             {/* Layer 3: LLM Fallback */}
                             <ProcessingLayer
+                                id="command-processing-layer3"
                                 layerNumber={3}
                                 title="LLM Fallback"
                                 color="purple"
@@ -787,6 +822,7 @@ export function CommandProcessingSection() {
 
                         {/* Flow Statistics */}
                         <motion.div
+                            id="command-processing-stats"
                             initial={{ opacity: 0, y: 20 }}
                             whileInView={{ opacity: 1, y: 0 }}
                             viewport={{ once: true }}
@@ -829,6 +865,7 @@ export function CommandProcessingSection() {
 
 // Processing Layer Component
 function ProcessingLayer({
+    id,
     layerNumber,
     title,
     color,
@@ -838,6 +875,7 @@ function ProcessingLayer({
     flowLabel,
     flowColor
 }: {
+    id?: string;
     layerNumber: number;
     title: string;
     color: "cyan" | "yellow" | "purple";
@@ -867,6 +905,7 @@ function ProcessingLayer({
 
     return (
         <motion.div
+            id={id}
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
@@ -1055,10 +1094,62 @@ function LayerDetailCard({
 // SECTION 2: ML ALGORITHMS
 // ============================================================================
 export function MLSection() {
+    // Dynamically calculate stats from data
+    const mlStats = useMemo(() => {
+        // Calculate total training samples across all services
+        let totalTrainingSamples = 0;
+        let servicesTrainedSet = new Set<string>();
+        let highestAccuracy = 0;
+        let highestAccuracyModel = "";
+        let highestAccuracyService = "";
+
+        mlAlgorithms.forEach(algo => {
+            // Check each service
+            const services = ["ftp", "mysql", "ssh"] as const;
+            services.forEach(service => {
+                const metrics = algo.serviceMetrics?.[service];
+                if (metrics?.status === "trained") {
+                    servicesTrainedSet.add(service.toUpperCase());
+
+                    // Add training samples (only count once per service per algorithm)
+                    if (metrics.training_samples) {
+                        totalTrainingSamples += metrics.training_samples;
+                    }
+
+                    // Check for highest accuracy
+                    const accuracyStr = metrics.accuracy;
+                    if (accuracyStr && typeof accuracyStr === "string" && accuracyStr !== "Pending") {
+                        const accuracyNum = parseFloat(accuracyStr.replace("%", ""));
+                        if (accuracyNum > highestAccuracy) {
+                            highestAccuracy = accuracyNum;
+                            highestAccuracyModel = algo.name.split(" ")[0];
+                            highestAccuracyService = service.toUpperCase();
+                        }
+                    }
+                }
+            });
+        });
+
+        // Format training samples (remove duplicates by dividing by algos that use same data)
+        const uniqueTrainingSamples = Math.round(totalTrainingSamples / mlAlgorithms.length);
+        const formattedSamples = uniqueTrainingSamples >= 1000
+            ? `${(uniqueTrainingSamples / 1000).toFixed(1)}K+`
+            : `${uniqueTrainingSamples}+`;
+
+        return {
+            totalAlgorithms: mlAlgorithms.length,
+            highestAccuracy: `${highestAccuracy.toFixed(1)}%`,
+            highestAccuracyLabel: `${highestAccuracyService} ${highestAccuracyModel}`,
+            trainingSamples: formattedSamples,
+            servicesTrainedCount: servicesTrainedSet.size,
+            servicesTrainedLabel: Array.from(servicesTrainedSet).join(" • ")
+        };
+    }, []);
+
     // Chart data
     const accuracyData = mlAlgorithms.map(algo => ({
         name: algo.name.split(" ")[0],
-        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace("%", "")) : 0,
+        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace(/[^0-9.]/g, "")) : 0,
         fill: algo.type === "Anomaly Detection" ? "#06b6d4" : algo.type === "Clustering" ? "#8b5cf6" : "#10b981"
     }));
 
@@ -1070,7 +1161,7 @@ export function MLSection() {
 
     const radarData = mlAlgorithms.map(algo => ({
         algorithm: algo.name.split(" ")[0],
-        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace("%", "")) : 0,
+        accuracy: algo.accuracy && algo.accuracy !== "N/A" ? parseFloat(String(algo.accuracy).replace(/[^0-9.]/g, "")) : 0,
         fullMark: 100
     }));
 
@@ -1103,10 +1194,10 @@ export function MLSection() {
 
                 {/* Visualizations */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-8 mt-16">
-                    {/* Accuracy Bar Chart - FTP Model Performance */}
+                    {/* Accuracy Bar Chart - Best Model Performance */}
                     <div className="p-6 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 shadow-sm">
                         <h3 className="text-lg font-semibold mb-2 text-neutral-900 dark:text-white">Algorithm Accuracy</h3>
-                        <p className="text-xs text-neutral-500 mb-4">FTP Model Performance (14,386 samples)</p>
+                        <p className="text-xs text-neutral-500 mb-4">Best Model: {mlStats.highestAccuracyLabel} ({mlStats.highestAccuracy})</p>
                         <ResponsiveContainer width="100%" height={250}>
                             <BarChart data={accuracyData} layout="vertical">
                                 <CartesianGrid strokeDasharray="3 3" stroke="#374151" />
@@ -1168,10 +1259,10 @@ export function MLSection() {
 
                 {/* ML Stats Cards */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-12">
-                    <StatsCard title="Total Algorithms" value="6" subtitle="Active Models" icon={<IconCpu />} />
-                    <StatsCard title="Highest Accuracy" value="99.7%" subtitle="FTP XGBoost" icon={<IconChartBar />} />
-                    <StatsCard title="Training Samples" value="14.5K+" subtitle="FTP + MySQL" icon={<IconFileDatabase />} />
-                    <StatsCard title="Services Trained" value="2" subtitle="FTP • MySQL" icon={<IconServer />} />
+                    <StatsCard title="Total Algorithms" value={String(mlStats.totalAlgorithms)} subtitle="Active Models" icon={<IconCpu />} />
+                    <StatsCard title="Highest Accuracy" value={mlStats.highestAccuracy} subtitle={mlStats.highestAccuracyLabel} icon={<IconChartBar />} />
+                    <StatsCard title="Training Samples" value={mlStats.trainingSamples} subtitle={mlStats.servicesTrainedLabel} icon={<IconFileDatabase />} />
+                    <StatsCard title="Services Trained" value={String(mlStats.servicesTrainedCount)} subtitle={mlStats.servicesTrainedLabel} icon={<IconServer />} />
                 </div>
             </div>
         </section>
