@@ -267,7 +267,7 @@ graph LR
         IF[Isolation Forest]
         SVM[One-Class SVM]
         HDB[HDBSCAN Clustering]
-        RF[Random Forest]
+        RF[Xgboost]
         FAISS[FAISS Similarity]
     end
     
@@ -449,7 +449,7 @@ python train_service-ml.py --service ssh --algorithms isolation_forest,hdbscan
 # - hdbscan           : Density clustering
 # - dbscan            : Density clustering
 # - kmeans            : Centroid clustering
-# - random_forest     : Supervised classification
+# - xgboost           : Supervised classification
 ```
 
 ### Metric Evaluation
